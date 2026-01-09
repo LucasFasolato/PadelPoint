@@ -1,0 +1,8 @@
+{
+    "nombre": "PadelPoint Centro",
+    "direccion": "Av. Siempre Viva 123",
+    "telefono": "3415555555",
+    "email": "centro@padelpoint.com",
+    "latitud": -32.9525,
+    "longitud": -60.6393
+}

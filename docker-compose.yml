@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: padelpoint_db
+    environment:
+      POSTGRES_USER: padelpoint
+      POSTGRES_PASSWORD: padelpoint
+      POSTGRES_DB: padelpoint
+    ports:
+      - "5434:5432"
+    volumes:
+      - padelpoint_pg:/var/lib/postgresql/data
+
+volumes:
+  padelpoint_pg:
