@@ -5,6 +5,11 @@ import { ClubsModule } from './modules/clubs/clubs.module';
 import { CourtsModule } from './modules/courts/courts.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
+import { AgendaModule } from './modules/agenda/agenda.module';
+import { ReportsnestModule } from './g/modules/reportsnest/reportsnest.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { UsersModule } from './modules/users/users.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -32,6 +37,16 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
     AvailabilityModule,
 
     ReservationsModule,
+
+    AgendaModule,
+
+    ReportsnestModule,
+
+    ReportsModule,
+
+    UsersModule,
+
+    AuthModule,
   ],
 })
 export class AppModule {}
