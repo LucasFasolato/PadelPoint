@@ -25,7 +25,7 @@ export class AvailabilityController {
   }
 
   // Crear reglas en lote (varios días)
-  @Post('rules/bulk')
+  @Post('')
   bulk(@Body() dto: BulkCreateAvailabilityDto) {
     return this.service.bulkCreate(dto);
   }
