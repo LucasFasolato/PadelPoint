@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Brackets } from 'typeorm';
 import { DateTime } from 'luxon';
 
 import { Court } from '../courts/court.entity';
@@ -37,6 +38,15 @@ export class AgendaService {
     @InjectRepository(CourtAvailabilityOverride)
     private readonly overrideRepo: Repository<CourtAvailabilityOverride>,
   ) {}
+
+  private combineDateTime(date: string, time: string): Date {
+    // date: YYYY-MM-DD
+    // time: HH:MM
+    // Business TZ: America/Argentina/Cordoba
+    return DateTime.fromISO(`${date}T${time}`, {
+      zone: 'America/Argentina/Cordoba',
+    }).toJSDate();
+  }
 
   async getDailyAgenda(params: {
     clubId: string;
@@ -151,7 +161,6 @@ export class AgendaService {
       }),
     };
   }
-
   // ---------------------------
   // BLOCK endpoint (agenda)
   // ---------------------------
@@ -185,6 +194,38 @@ export class AgendaService {
       throw new BadRequestException('endTime must be greater than startTime');
     }
 
+    // Build block window as timestamptz in business TZ (America/Argentina/Cordoba)
+    // Reuse your existing helpers so it matches your Reservation logic.
+    const blockStart = this.combineDateTime(date, input.startTime); // Date
+    const blockEnd = this.combineDateTime(date, input.endTime); // Date
+
+    // Prevent blocking if overlaps a CONFIRMED reservation or a valid HOLD
+    // Overlap: existing.startAt < blockEnd AND existing.endAt > blockStart
+    const conflict = await this.reservationRepo
+      .createQueryBuilder('r')
+      .where('r.courtId = :courtId', { courtId: input.courtId })
+      .andWhere('r.startAt < :blockEnd', { blockEnd })
+      .andWhere('r.endAt > :blockStart', { blockStart })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('r.status = :confirmed', { confirmed: 'confirmed' }).orWhere(
+            new Brackets((qb2) => {
+              qb2
+                .where('r.status = :hold', { hold: 'hold' })
+                .andWhere('r.expiresAt IS NOT NULL')
+                .andWhere('r.expiresAt > NOW()');
+            }),
+          );
+        }),
+      )
+      .getOne();
+
+    if (conflict) {
+      throw new ConflictException(
+        `Cannot block slot: there is a ${conflict.status} reservation overlapping this time window`,
+      );
+    }
+
     const ent = this.overrideRepo.create({
       court,
       fecha: date as any,
@@ -212,12 +253,17 @@ export class AgendaService {
     if (!override) throw new NotFoundException('Override not found');
 
     const courtClubId = (override as any).court?.club?.id;
-    if (!courtClubId)
+    if (!courtClubId) {
       throw new BadRequestException('Override has no club context');
+    }
 
     if (courtClubId !== input.clubId) {
       throw new BadRequestException('Override does not belong to this club');
     }
+
+    // Optional: also prevent "updating" a block into an overlapping window,
+    // but since updateBlock only toggles blocked/reason (no time range change),
+    // there is no new overlap to validate here.
 
     override.bloqueado = input.blocked;
     if (input.reason !== undefined) {

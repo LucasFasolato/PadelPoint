@@ -12,6 +12,10 @@ import { Challenge } from './challenge.entity';
 import { ChallengeStatus } from './challenge-status.enum';
 import { ChallengeType } from './challenge-type.enum';
 import { User } from '../users/user.entity';
+import {
+  ChallengeInvite,
+  ChallengeInviteStatus,
+} from './challenge-invite.entity';
 
 @Injectable()
 export class ChallengesService {
@@ -309,16 +313,12 @@ export class ChallengesService {
   ) {
     return this.dataSource.transaction(async (trx) => {
       const repo = trx.getRepository(Challenge);
+      const userRepo = trx.getRepository(User);
 
-      // 🔒 lock row
+      // 🔒 Lock SOLO la fila de challenges (sin LEFT JOIN)
       const ch = await repo
         .createQueryBuilder('c')
         .setLock('pessimistic_write')
-        .leftJoinAndSelect('c.teamA1', 'a1')
-        .leftJoinAndSelect('c.teamA2', 'a2')
-        .leftJoinAndSelect('c.teamB1', 'b1')
-        .leftJoinAndSelect('c.teamB2', 'b2')
-        .leftJoinAndSelect('c.invitedOpponent', 'inv')
         .where('c.id = :id', { id })
         .getOne();
 
@@ -328,8 +328,9 @@ export class ChallengesService {
         throw new BadRequestException('Not an OPEN challenge');
       }
 
-      if (ch.status !== ChallengeStatus.PENDING) {
-        throw new BadRequestException('Challenge is not pending');
+      // cannot accept own open challenge
+      if (ch.teamA1Id === meUserId || ch.teamA2Id === meUserId) {
+        throw new BadRequestException('You cannot accept your own challenge');
       }
 
       if (ch.teamB1Id) {
@@ -337,19 +338,18 @@ export class ChallengesService {
         throw new BadRequestException('Challenge already accepted');
       }
 
-      // cannot accept own open challenge
-      if (ch.teamA1Id === meUserId || ch.teamA2Id === meUserId) {
-        throw new BadRequestException('You cannot accept your own challenge');
+      if (ch.status !== ChallengeStatus.PENDING) {
+        throw new BadRequestException('Challenge is not pending');
       }
 
       // Load me
-      const me = await trx
-        .getRepository(User)
-        .findOne({ where: { id: meUserId } });
+      const me = await userRepo.findOne({ where: { id: meUserId } as any });
       if (!me) throw new NotFoundException('User not found');
 
       // Category validation strict MVP
       if (ch.targetCategory) {
+        // ⚠️ Ideal: que getUserCategoryOrThrow use trx internamente.
+        // Si hoy usa repos fuera, igual funciona, pero es mejor pasar trx si podés.
         const myCat = await this.getUserCategoryOrThrow(meUserId);
         if (myCat !== ch.targetCategory) {
           throw new BadRequestException(
@@ -365,9 +365,18 @@ export class ChallengesService {
           throw new BadRequestException('Partner cannot be yourself');
         }
 
-        partner = await trx
-          .getRepository(User)
-          .findOne({ where: { id: partnerUserId } });
+        // ensure partner not already in Team A (ch acá no tiene A2 cargado, pero sí tiene IDs)
+        this.assertUniquePlayers({
+          teamA1: ch.teamA1Id,
+          teamA2: ch.teamA2Id,
+          teamB1: null,
+          teamB2: null,
+          candidate: partnerUserId,
+        });
+
+        partner = await userRepo.findOne({
+          where: { id: partnerUserId } as any,
+        });
         if (!partner) throw new NotFoundException('Partner not found');
 
         if (ch.targetCategory) {
@@ -378,28 +387,77 @@ export class ChallengesService {
             );
           }
         }
-
-        // ensure partner not already in Team A
-        this.assertUniquePlayers({
-          teamA1: ch.teamA1Id,
-          teamA2: ch.teamA2Id,
-          teamB1: null,
-          teamB2: null,
-          candidate: partnerUserId,
-        });
       }
 
       // Assign Team B
-      ch.teamB1 = me;
       ch.teamB1Id = me.id;
-
-      ch.teamB2 = partner;
       ch.teamB2Id = partner ? partner.id : null;
 
       ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
 
-      const saved = await repo.save(ch);
-      return this.toView(saved);
+      await repo.save(ch);
+
+      // Re-load con relations (SIN lock) para toView()
+      const full = await repo.findOne({
+        where: { id: ch.id } as any,
+        relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2', 'invitedOpponent'],
+      });
+
+      // En teoría no debería ser null, pero por seguridad:
+      if (!full)
+        throw new NotFoundException('Challenge not found after update');
+
+      return this.toView(full);
+    });
+  }
+
+  async cancelOpen(id: string, meUserId: string) {
+    return this.dataSource.transaction(async (trx) => {
+      const repo = trx.getRepository(Challenge);
+
+      // 🔒 lock challenge row (sin joins)
+      const ch = await repo
+        .createQueryBuilder('c')
+        .setLock('pessimistic_write')
+        .where('c.id = :id', { id })
+        .getOne();
+
+      if (!ch) throw new NotFoundException('Challenge not found');
+
+      if (ch.type !== ChallengeType.OPEN) {
+        throw new BadRequestException('Not an OPEN challenge');
+      }
+
+      // Solo creator/captain A1
+      if (ch.teamA1Id !== meUserId) {
+        throw new BadRequestException('Not allowed');
+      }
+
+      // Cancelable states
+      if (
+        ![ChallengeStatus.PENDING, ChallengeStatus.ACCEPTED].includes(ch.status)
+      ) {
+        throw new BadRequestException('Challenge is not cancellable');
+      }
+
+      ch.status = ChallengeStatus.CANCELLED;
+      await repo.save(ch);
+
+      // (Opcional) cancelar invites pendientes del challenge
+      await trx
+        .getRepository(ChallengeInvite)
+        .update(
+          { challengeId: ch.id, status: ChallengeInviteStatus.PENDING } as any,
+          { status: ChallengeInviteStatus.CANCELLED } as any,
+        );
+
+      // devolver vista completa
+      const full = await repo.findOne({
+        where: { id: ch.id } as any,
+        relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2', 'invitedOpponent'],
+      });
+
+      return this.toView(full ?? ch);
     });
   }
 
@@ -417,8 +475,8 @@ export class ChallengesService {
   }
 
   private computeStatus(ch: Challenge, fallback: ChallengeStatus) {
-    const hasA = Boolean(ch.teamA1) && Boolean(ch.teamA2);
-    const hasB = Boolean(ch.teamB1) && Boolean(ch.teamB2);
+    const hasA = Boolean(ch.teamA1Id) && Boolean(ch.teamA2Id);
+    const hasB = Boolean(ch.teamB1Id) && Boolean(ch.teamB2Id);
     if (hasA && hasB) return ChallengeStatus.READY;
     return fallback;
   }

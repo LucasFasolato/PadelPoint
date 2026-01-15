@@ -1,4 +1,3 @@
-// src/modules/agenda/dto/agenda-block.dto.ts
 import {
   IsBoolean,
   IsISO8601,

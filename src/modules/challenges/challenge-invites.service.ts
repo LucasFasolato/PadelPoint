@@ -8,12 +8,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
-import { Challenge } from './challenge.entity';
-import { ChallengeStatus } from './challenge-status.enum';
+import { Challenge } from '../challenges/challenge.entity';
+import { ChallengeStatus } from '../challenges/challenge-status.enum';
 import {
   ChallengeInvite,
   ChallengeInviteStatus,
-} from './challenge-invite.entity';
+  ChallengeSide,
+} from '../challenges/challenge-invite.entity';
 
 @Injectable()
 export class ChallengeInvitesService {
@@ -63,7 +64,13 @@ export class ChallengeInvitesService {
       const chRepo = trx.getRepository(Challenge);
       const invRepo = trx.getRepository(ChallengeInvite);
 
-      const ch = await chRepo.findOne({ where: { id: challengeId } });
+      // 🔒 lock challenge row (evita carreras con accept/cancel)
+      const ch = await chRepo
+        .createQueryBuilder('c')
+        .setLock('pessimistic_write')
+        .where('c.id = :id', { id: challengeId })
+        .getOne();
+
       if (!ch) throw new NotFoundException('Challenge not found');
 
       if (!this.isEditableChallengeStatus(ch.status)) {
@@ -81,25 +88,31 @@ export class ChallengeInvitesService {
         );
       }
 
+      // side determinado por capitán
+      const side: ChallengeSide = inviterIsA
+        ? ChallengeSide.A
+        : ChallengeSide.B;
+
       // team slot must be free
-      if (inviterIsA && ch.teamA2Id) {
+      if (side === ChallengeSide.A && ch.teamA2Id) {
         throw new BadRequestException('Team A already has a partner');
       }
-      if (inviterIsB && ch.teamB2Id) {
+      if (side === ChallengeSide.B && ch.teamB2Id) {
         throw new BadRequestException('Team B already has a partner');
       }
 
       // invitee exists + not already in challenge
       const invitee = await this.users.findById(inviteeId);
       if (!invitee) throw new NotFoundException('Invitee not found');
+
       this.assertNotAlreadyInChallenge(ch, inviteeId);
 
-      // prevent multiple pending invites per team slot:
-      // if inviter is A captain, cancel any pending invite for this challenge created by teamA1
+      // 🔁 Evitar múltiples invites abiertos para el mismo slot:
+      // cancelamos invites pendientes para (challengeId, side)
       await invRepo.update(
         {
           challengeId,
-          inviterId,
+          side,
           status: ChallengeInviteStatus.PENDING,
         },
         { status: ChallengeInviteStatus.CANCELLED },
@@ -109,6 +122,7 @@ export class ChallengeInvitesService {
         challengeId,
         inviterId,
         inviteeId,
+        side,
         status: ChallengeInviteStatus.PENDING,
       });
 
@@ -119,14 +133,15 @@ export class ChallengeInvitesService {
           challengeId: saved.challengeId,
           inviterId: saved.inviterId,
           inviteeId: saved.inviteeId,
+          side: saved.side,
           status: saved.status,
           createdAt: saved.createdAt,
         };
       } catch (e: any) {
-        // unique (challengeId, inviteeId)
+        // unique (challengeId, inviteeId, side)
         if (String(e?.code) === '23505') {
           throw new ConflictException(
-            'This user already has an invite for this challenge',
+            'This user already has an invite for this challenge/side',
           );
         }
         throw e;
@@ -139,7 +154,7 @@ export class ChallengeInvitesService {
       const invRepo = trx.getRepository(ChallengeInvite);
       const chRepo = trx.getRepository(Challenge);
 
-      // lock invite row
+      // 🔒 lock invite row
       const invite = await invRepo
         .createQueryBuilder('i')
         .setLock('pessimistic_write')
@@ -155,7 +170,7 @@ export class ChallengeInvitesService {
         throw new BadRequestException('Invite is not pending');
       }
 
-      // lock challenge row too
+      // 🔒 lock challenge row too
       const ch = await chRepo
         .createQueryBuilder('c')
         .setLock('pessimistic_write')
@@ -163,6 +178,7 @@ export class ChallengeInvitesService {
         .getOne();
 
       if (!ch) throw new NotFoundException('Challenge not found');
+
       if (!this.isEditableChallengeStatus(ch.status)) {
         throw new BadRequestException(
           'Challenge is not editable at this stage',
@@ -171,33 +187,30 @@ export class ChallengeInvitesService {
 
       this.assertNotAlreadyInChallenge(ch, meUserId);
 
-      // assign to correct team based on inviter captain
-      if (ch.teamA1Id === invite.inviterId) {
+      // asigna slot por side (explícito)
+      if (invite.side === ChallengeSide.A) {
         if (ch.teamA2Id)
           throw new BadRequestException('Team A already has a partner');
         ch.teamA2Id = meUserId;
-      } else if (ch.teamB1Id === invite.inviterId) {
+      } else if (invite.side === ChallengeSide.B) {
         if (ch.teamB2Id)
           throw new BadRequestException('Team B already has a partner');
         ch.teamB2Id = meUserId;
       } else {
-        throw new BadRequestException(
-          'Invalid invite (inviter is not a captain)',
-        );
+        throw new BadRequestException('Invalid invite side');
       }
 
       invite.status = ChallengeInviteStatus.ACCEPTED;
-
       ch.status = this.computeChallengeStatus(ch);
 
       await chRepo.save(ch);
       await invRepo.save(invite);
 
-      // cancel other pending invites for this same team slot (same inviter)
+      // cancelar otros invites pendientes del mismo slot
       await invRepo.update(
         {
           challengeId: ch.id,
-          inviterId: invite.inviterId,
+          side: invite.side,
           status: ChallengeInviteStatus.PENDING,
         },
         { status: ChallengeInviteStatus.CANCELLED },
@@ -208,7 +221,9 @@ export class ChallengeInvitesService {
   }
 
   async rejectInvite(inviteId: string, meUserId: string) {
-    const invite = await this.inviteRepo.findOne({ where: { id: inviteId } });
+    const invite = await this.inviteRepo.findOne({
+      where: { id: inviteId } as any,
+    });
     if (!invite) throw new NotFoundException('Invite not found');
     if (invite.inviteeId !== meUserId)
       throw new BadRequestException('Not allowed');
@@ -221,7 +236,9 @@ export class ChallengeInvitesService {
   }
 
   async cancelInvite(inviteId: string, meUserId: string) {
-    const invite = await this.inviteRepo.findOne({ where: { id: inviteId } });
+    const invite = await this.inviteRepo.findOne({
+      where: { id: inviteId } as any,
+    });
     if (!invite) throw new NotFoundException('Invite not found');
     if (invite.inviterId !== meUserId)
       throw new BadRequestException('Not allowed');
@@ -231,5 +248,75 @@ export class ChallengeInvitesService {
     invite.status = ChallengeInviteStatus.CANCELLED;
     const saved = await this.inviteRepo.save(invite);
     return { ok: true, id: saved.id, status: saved.status };
+  }
+
+  async inbox(userId: string, status?: string) {
+    const where: any = { inviteeId: userId };
+
+    // si querés filtrar por status desde query param
+    if (status) where.status = status;
+
+    const rows = await this.inviteRepo.find({
+      where,
+      relations: ['inviter', 'invitee', 'challenge'],
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+
+    return rows.map((i) => ({
+      id: i.id,
+      challengeId: i.challengeId,
+      side: i.side,
+      status: i.status,
+      createdAt: i.createdAt,
+      inviter: i.inviter
+        ? {
+            userId: i.inviter.id,
+            email: i.inviter.email,
+            displayName: i.inviter.displayName,
+          }
+        : { userId: i.inviterId },
+      invitee: i.invitee
+        ? {
+            userId: i.invitee.id,
+            email: i.invitee.email,
+            displayName: i.invitee.displayName,
+          }
+        : { userId: i.inviteeId },
+    }));
+  }
+
+  async outbox(userId: string, status?: string) {
+    const where: any = { inviterId: userId };
+    if (status) where.status = status;
+
+    const rows = await this.inviteRepo.find({
+      where,
+      relations: ['inviter', 'invitee', 'challenge'],
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+
+    return rows.map((i) => ({
+      id: i.id,
+      challengeId: i.challengeId,
+      side: i.side,
+      status: i.status,
+      createdAt: i.createdAt,
+      inviter: i.inviter
+        ? {
+            userId: i.inviter.id,
+            email: i.inviter.email,
+            displayName: i.inviter.displayName,
+          }
+        : { userId: i.inviterId },
+      invitee: i.invitee
+        ? {
+            userId: i.invitee.id,
+            email: i.invitee.email,
+            displayName: i.invitee.displayName,
+          }
+        : { userId: i.inviteeId },
+    }));
   }
 }

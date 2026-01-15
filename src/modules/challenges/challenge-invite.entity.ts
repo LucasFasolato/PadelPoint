@@ -18,8 +18,13 @@ export enum ChallengeInviteStatus {
   EXPIRED = 'expired',
 }
 
+export enum ChallengeSide {
+  A = 'A',
+  B = 'B',
+}
+
 @Entity('challenge_invites')
-@Index(['challengeId', 'inviteeId'], { unique: true })
+@Index(['challengeId', 'inviteeId', 'side'], { unique: true })
 export class ChallengeInvite {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -44,6 +49,9 @@ export class ChallengeInvite {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'inviteeId' })
   invitee!: User;
+
+  @Column({ type: 'enum', enum: ChallengeSide })
+  side!: ChallengeSide;
 
   @Column({
     type: 'enum',

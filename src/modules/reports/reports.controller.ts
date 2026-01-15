@@ -3,6 +3,7 @@ import { ReportsService } from './reports.service';
 import { RevenueQueryDto } from './dto/revenue-query.dto';
 import { OccupancyQueryDto } from './dto/occupancy-query.dto';
 import { PeakHoursQueryDto } from './dto/peak-hours-query.dto';
+import { SummaryQueryDto } from './dto/summary-query.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -21,5 +22,10 @@ export class ReportsController {
   @Get('peak-hours')
   peakHours(@Query() q: PeakHoursQueryDto) {
     return this.reportsService.peakHoursReport(q);
+  }
+
+  @Get('summary')
+  summary(@Query() q: SummaryQueryDto) {
+    return this.reportsService.summaryReport(q);
   }
 }

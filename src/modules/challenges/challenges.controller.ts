@@ -100,4 +100,10 @@ export class ChallengesController {
     const me = req.user as AuthUser;
     return this.service.acceptOpen(id, me.userId);
   }
+
+  @Patch(':id/cancel-open')
+  cancelOpen(@Req() req: Request, @Param('id') id: string) {
+    const me = req.user as AuthUser;
+    return this.service.cancelOpen(id, me.userId);
+  }
 }

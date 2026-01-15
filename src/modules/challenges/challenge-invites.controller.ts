@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +27,20 @@ export class ChallengeInvitesController {
   ) {
     const me = req.user as AuthUser;
     return this.service.inviteTeammate(dto.challengeId, me.userId, dto.userId);
+  }
+
+  // Inbox de INVITES (soy invitee)
+  @Get('inbox')
+  inbox(@Req() req: Request, @Query('status') status?: string) {
+    const me = req.user as AuthUser;
+    return this.service.inbox(me.userId, status);
+  }
+
+  // Outbox de INVITES (soy inviter)
+  @Get('outbox')
+  outbox(@Req() req: Request, @Query('status') status?: string) {
+    const me = req.user as AuthUser;
+    return this.service.outbox(me.userId, status);
   }
 
   @Patch(':id/accept')

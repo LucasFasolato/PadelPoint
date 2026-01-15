@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+
 import { EloHistory, EloHistoryReason } from './elo-history.entity';
 import { CompetitiveProfile } from './competitive-profile.entity';
 import {
@@ -38,44 +39,34 @@ export class EloService {
     return 24;
   }
 
-  // Adjust this mapping if your Challenge fields differ.
-  private extractParticipants(ch: any) {
-    const a1 =
-      ch.teamAPlayer1Id ??
-      ch.teamAPlayer1?.id ??
-      ch.playerA1Id ??
-      ch.playerA1?.id;
-    const a2 =
-      ch.teamAPlayer2Id ??
-      ch.teamAPlayer2?.id ??
-      ch.playerA2Id ??
-      ch.playerA2?.id;
-    const b1 =
-      ch.teamBPlayer1Id ??
-      ch.teamBPlayer1?.id ??
-      ch.playerB1Id ??
-      ch.playerB1?.id;
-    const b2 =
-      ch.teamBPlayer2Id ??
-      ch.teamBPlayer2?.id ??
-      ch.playerB2Id ??
-      ch.playerB2?.id;
+  /**
+   * ✅ Extract participants from YOUR actual Challenge schema.
+   * Fallback to relations if present.
+   */
+  private extractParticipantsOrThrow(ch: Challenge) {
+    const a1 = ch.teamA1Id ?? (ch as any).teamA1?.id ?? null;
+    const a2 = ch.teamA2Id ?? (ch as any).teamA2?.id ?? null;
+    const b1 = ch.teamB1Id ?? (ch as any).teamB1?.id ?? null;
+    const b2 = ch.teamB2Id ?? (ch as any).teamB2?.id ?? null;
 
-    const ids = [a1, a2, b1, b2].filter(Boolean) as string[];
-    if (ids.length !== 4)
-      throw new BadRequestException('Challenge must have 4 players');
+    if (!a1 || !a2 || !b1 || !b2) {
+      throw new BadRequestException(
+        'Challenge must have 4 players assigned (teamA1Id/teamA2Id/teamB1Id/teamB2Id)',
+      );
+    }
 
-    return { teamA: [a1, a2], teamB: [b1, b2] };
+    return {
+      teamA: [a1, a2] as [string, string],
+      teamB: [b1, b2] as [string, string],
+    };
   }
 
   private async getOrCreateProfile(manager: EntityManager, userId: string) {
     const repo = manager.getRepository(CompetitiveProfile);
 
-    let p = await repo.findOne({ where: { userId }, relations: ['user'] });
+    let p = await repo.findOne({ where: { userId } });
     if (p) return p;
 
-    // If your UsersService already exists you can use it, but inside tx we keep it simple:
-    // We only need userId + relation, so we can set without loading user.
     p = repo.create({
       userId,
       elo: 1200,
@@ -101,6 +92,7 @@ export class EloService {
 
   /**
    * Apply Elo inside an existing transaction.
+   * Robust: locks match (and challenge) to avoid concurrent apply.
    */
   async applyForMatchTx(manager: EntityManager, matchId: string) {
     const matchRepo = manager.getRepository(MatchResult);
@@ -108,33 +100,48 @@ export class EloService {
     const profileRepo = manager.getRepository(CompetitiveProfile);
     const historyRepo = manager.getRepository(EloHistory);
 
-    const match = await matchRepo.findOne({ where: { id: matchId } });
+    // 🔒 Lock match row (critical for idempotency)
+    const match = await matchRepo
+      .createQueryBuilder('m')
+      .setLock('pessimistic_write')
+      .where('m.id = :id', { id: matchId })
+      .getOne();
+
     if (!match) throw new NotFoundException('Match result not found');
 
     if (match.status !== MatchResultStatus.CONFIRMED) {
       throw new BadRequestException('Match must be CONFIRMED to apply ELO');
     }
 
-    // Idempotent #1
+    // ✅ Idempotent primary guard (safe because row is locked)
     if (match.eloApplied) return { ok: true, alreadyApplied: true };
 
-    // Idempotent #2 (history exists for this match)
-    const exists = await historyRepo.findOne({
-      where: { reason: EloHistoryReason.MATCH_RESULT, refId: matchId },
-    });
-    if (exists) {
+    // 🔒 Lock challenge row too (optional but consistent)
+    const challenge = await challengeRepo
+      .createQueryBuilder('c')
+      .setLock('pessimistic_read')
+      .where('c.id = :id', { id: match.challengeId })
+      .getOne();
+
+    if (!challenge) throw new NotFoundException('Challenge not found');
+
+    const { teamA, teamB } = this.extractParticipantsOrThrow(challenge);
+
+    // ✅ Backup idempotency: if ANY history for this match exists, mark applied
+    // (this is extra safety if something weird happened previously)
+    const anyHistory = await historyRepo
+      .createQueryBuilder('h')
+      .where('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+      .andWhere('h.refId = :refId', { refId: matchId })
+      .getOne();
+
+    if (anyHistory) {
       match.eloApplied = true;
       await matchRepo.save(match);
       return { ok: true, alreadyApplied: true };
     }
 
-    const challenge = await challengeRepo.findOne({
-      where: { id: match.challengeId as any },
-    });
-    if (!challenge) throw new NotFoundException('Challenge not found');
-
-    const { teamA, teamB } = this.extractParticipants(challenge);
-
+    // Load / create profiles
     const pA1 = await this.getOrCreateProfile(manager, teamA[0]);
     const pA2 = await this.getOrCreateProfile(manager, teamA[1]);
     const pB1 = await this.getOrCreateProfile(manager, teamB[0]);
@@ -162,7 +169,7 @@ export class EloService {
     const deltaA = Math.round(kA * (SA - EA));
     const deltaB = Math.round(kB * (SB - EB));
 
-    const apply = (p: CompetitiveProfile, delta: number, won: boolean) => {
+    const applyDelta = (p: CompetitiveProfile, delta: number, won: boolean) => {
       const before = p.elo;
       const after = before + delta;
 
@@ -175,23 +182,17 @@ export class EloService {
       return { before, after };
     };
 
-    const a1 = apply(pA1, deltaA, teamAWon);
-    const a2 = apply(pA2, deltaA, teamAWon);
-    const b1 = apply(pB1, deltaB, !teamAWon);
-    const b2 = apply(pB2, deltaB, !teamAWon);
+    const a1 = applyDelta(pA1, deltaA, teamAWon);
+    const a2 = applyDelta(pA2, deltaA, teamAWon);
+    const b1 = applyDelta(pB1, deltaB, !teamAWon);
+    const b2 = applyDelta(pB2, deltaB, !teamAWon);
 
     await profileRepo.save([pA1, pA2, pB1, pB2]);
 
-    const profilesByUser: Record<string, CompetitiveProfile> = {
-      [teamA[0]]: pA1,
-      [teamA[1]]: pA2,
-      [teamB[0]]: pB1,
-      [teamB[1]]: pB2,
-    };
-
+    // Write history (4 rows)
     await historyRepo.save([
       historyRepo.create({
-        profileId: profilesByUser[teamA[0]].id,
+        profileId: pA1.id,
         eloBefore: a1.before,
         eloAfter: a1.after,
         delta: deltaA,
@@ -199,7 +200,7 @@ export class EloService {
         refId: matchId,
       }),
       historyRepo.create({
-        profileId: profilesByUser[teamA[1]].id,
+        profileId: pA2.id,
         eloBefore: a2.before,
         eloAfter: a2.after,
         delta: deltaA,
@@ -207,7 +208,7 @@ export class EloService {
         refId: matchId,
       }),
       historyRepo.create({
-        profileId: profilesByUser[teamB[0]].id,
+        profileId: pB1.id,
         eloBefore: b1.before,
         eloAfter: b1.after,
         delta: deltaB,
@@ -215,7 +216,7 @@ export class EloService {
         refId: matchId,
       }),
       historyRepo.create({
-        profileId: profilesByUser[teamB[1]].id,
+        profileId: pB2.id,
         eloBefore: b2.before,
         eloAfter: b2.after,
         delta: deltaB,
