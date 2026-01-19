@@ -1,0 +1,7 @@
+export enum PaymentIntentStatus {
+  PENDING = 'PENDING',
+  REQUIRES_ACTION = 'REQUIRES_ACTION',
+  SUCCEEDED = 'SUCCEEDED',
+  CANCELLED = 'CANCELLED',
+  EXPIRED = 'EXPIRED',
+}

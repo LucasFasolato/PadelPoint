@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-
+import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 
@@ -15,6 +15,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CompetitiveModule } from './modules/competitive/competitive.module';
 import { ChallengesModule } from './modules/challenges/challenges.module';
 import { MatchesModule } from './modules/matches/matches.module';
+import { PaymentsModule } from './payments/payments.module';
+import { ClubMembersModule } from './modules/club-members/club-members.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -22,6 +25,7 @@ import { MatchesModule } from './modules/matches/matches.module';
       isGlobal: true,
       load: [configuration],
     }),
+    ScheduleModule.forRoot(),
 
     DatabaseModule,
 
@@ -36,6 +40,9 @@ import { MatchesModule } from './modules/matches/matches.module';
     CompetitiveModule,
     ChallengesModule,
     MatchesModule,
+    PaymentsModule,
+    ClubMembersModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

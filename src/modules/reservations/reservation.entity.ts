@@ -54,6 +54,9 @@ export class Reservation {
   @Column('decimal', { precision: 10, scale: 2 })
   precio!: number;
 
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  checkoutToken!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

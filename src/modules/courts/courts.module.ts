@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { Court } from './court.entity';
 import { Club } from '../clubs/club.entity';
-import { CourtsController } from './courts.controller';
+
 import { CourtsService } from './courts.service';
+import { CourtsController } from './courts.controller';
+import { PublicCourtsController } from './public-courts.controller';
+
+import { ClubMembersModule } from '../club-members/club-members.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Court, Club])],
-  controllers: [CourtsController],
+  imports: [TypeOrmModule.forFeature([Court, Club]), ClubMembersModule],
+  controllers: [CourtsController, PublicCourtsController],
   providers: [CourtsService],
+  exports: [CourtsService],
 })
 export class CourtsModule {}
