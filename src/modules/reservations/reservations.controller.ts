@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Query,
@@ -30,29 +31,51 @@ function parseReservationStatus(raw?: string): ReservationStatus | undefined {
 export class ReservationsController {
   constructor(private readonly service: ReservationsService) {}
 
+  // 1. Creation (Public or Private depending on logic, usually Public for Booking)
   @Post('hold')
   createHold(@Body() dto: CreateHoldDto) {
+    // Service MUST use a Transaction (QueryRunner) here to prevent double booking
     return this.service.createHold(dto);
   }
 
+  // 2. Admin Actions
   @Patch(':id/confirm')
+  @UseGuards(JwtAuthGuard)
   confirm(@Param('id') id: string) {
     return this.service.confirm(id);
   }
 
   @Patch(':id/cancel')
+  @UseGuards(JwtAuthGuard)
   cancel(@Param('id') id: string) {
     return this.service.cancel(id);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   getById(@Param('id') id: string) {
     return this.service.getById(id);
   }
 
-  @Get()
-  list() {
-    return this.service.listAll();
+  // 3. Consolidated List Endpoint (Dashboard)
+  // Replaces listByClub, listByCourt, and listByClubRange duplications
+  @Get('list')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
+  list(
+    @Query('clubId') clubId: string, // Guard checks if user has access to this club
+    @Query('courtId') courtId: string, // Optional filter
+    @Query() range: ReservationsRangeQueryDto, // contains from, to
+    @Query('status', new ParseEnumPipe(ReservationStatus, { optional: true }))
+    status?: ReservationStatus,
+  ) {
+    return this.service.listReservations({
+      clubId,
+      courtId,
+      from: range.from,
+      to: range.to,
+      status,
+      includeExpiredHolds: range.includeExpiredHolds === 'true',
+    });
   }
 
   @Get('club/:clubId')

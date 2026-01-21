@@ -10,10 +10,11 @@ import { PublicCourtsController } from './public-courts.controller';
 
 import { ClubMembersModule } from '../club-members/club-members.module';
 import { ClubMember } from '../club-members/club-member.entity';
+import { Reservation } from '../reservations/reservation.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Court, Club, ClubMember]),
+    TypeOrmModule.forFeature([Court, Club, ClubMember, Reservation]),
     ClubMembersModule,
   ],
   controllers: [CourtsController, PublicCourtsController],

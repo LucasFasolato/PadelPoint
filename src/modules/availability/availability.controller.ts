@@ -6,55 +6,59 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AvailabilityService } from './availability.service';
 import { CreateAvailabilityRuleDto } from './dto/create-availability-rule.dto';
 import { BulkCreateAvailabilityDto } from './dto/bulk-create-availability.dto';
 import { AvailabilityRangeQueryDto } from './dto/availability-range-query.dto';
+import { AvailabilitySlotDto } from './dto/availability-slot.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
-import { OverrideRangeQueryDto } from './dto/override-range-query.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ClubAccessGuard } from '../club-members/club-access.guard';
 
 @Controller('availability')
 export class AvailabilityController {
   constructor(private readonly service: AvailabilityService) {}
 
-  // Crear una regla (1 día)
+  // --- CONFIGURATION (Protected) ---
+
   @Post('rules')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
   createRule(@Body() dto: CreateAvailabilityRuleDto) {
     return this.service.createRule(dto);
   }
 
-  // Crear reglas en lote (varios días)
-  @Post('')
+  @Post('rules/bulk')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
   bulk(@Body() dto: BulkCreateAvailabilityDto) {
     return this.service.bulkCreate(dto);
   }
 
-  // Listar reglas por cancha
   @Get('rules/court/:courtId')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
   listByCourt(@Param('courtId') courtId: string) {
     return this.service.listByCourt(courtId);
   }
 
-  // Disponibilidad por rango (slots on-the-fly)
-  @Get()
-  availabilityRange(@Query() q: AvailabilityRangeQueryDto) {
-    return this.service.availabilityRange(q);
-  }
-
-  // Overrides (bloqueos comerciales)
   @Post('overrides')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
   createOverride(@Body() dto: CreateOverrideDto) {
     return this.service.createOverride(dto);
   }
 
-  @Get('overrides')
-  listOverrides(@Query() q: OverrideRangeQueryDto) {
-    return this.service.listOverrides(q);
-  }
-
   @Delete('overrides/:id')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
   deleteOverride(@Param('id') id: string) {
     return this.service.deleteOverride(id);
+  }
+
+  // --- CALCULATION (Public / Dashboard) ---
+
+  @Get('slots')
+  async getSlots(
+    @Query() q: AvailabilityRangeQueryDto,
+  ): Promise<AvailabilitySlotDto[]> {
+    return this.service.calculateAvailability(q);
   }
 }

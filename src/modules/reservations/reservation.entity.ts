@@ -16,7 +16,9 @@ export enum ReservationStatus {
 }
 
 @Entity({ name: 'reservations' })
-@Index(['court', 'startAt', 'endAt'])
+// ⚡ PERFORMANCE KEY: This Composite Index allows blazing fast Overlap Checks
+// We include 'status' because we usually filter out cancelled reservations
+@Index(['court', 'startAt', 'endAt', 'status'])
 export class Reservation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -64,7 +66,14 @@ export class Reservation {
   @Column({ type: 'varchar', length: 40, nullable: true })
   clienteTelefono!: string | null;
 
-  @Column('decimal', { precision: 10, scale: 2 })
+  @Column('decimal', {
+    precision: 10,
+    scale: 2,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string): number => parseFloat(value),
+    },
+  })
   precio!: number;
 
   @CreateDateColumn()

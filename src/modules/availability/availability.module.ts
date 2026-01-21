@@ -5,6 +5,8 @@ import { AvailabilityService } from './availability.service';
 import { CourtAvailabilityRule } from './court-availability-rule.entity';
 import { Court } from '../courts/court.entity';
 import { CourtAvailabilityOverride } from './court-availability-override.entity';
+import { ClubMembersModule } from '../club-members/club-members.module';
+import { ClubMember } from '../club-members/club-member.entity';
 
 @Module({
   imports: [
@@ -12,7 +14,9 @@ import { CourtAvailabilityOverride } from './court-availability-override.entity'
       CourtAvailabilityRule,
       CourtAvailabilityOverride,
       Court,
+      ClubMember,
     ]),
+    ClubMembersModule,
   ],
   controllers: [AvailabilityController],
   providers: [AvailabilityService],

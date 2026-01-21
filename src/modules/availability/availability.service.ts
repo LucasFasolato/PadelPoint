@@ -8,17 +8,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { CourtAvailabilityRule } from './court-availability-rule.entity';
 import { Court } from '../courts/court.entity';
-import { BulkCreateAvailabilityDto } from './dto/bulk-create-availability.dto';
-import { CreateAvailabilityRuleDto } from './dto/create-availability-rule.dto';
-import { AvailabilityRangeQueryDto } from './dto/availability-range-query.dto';
 import { CourtAvailabilityOverride } from './court-availability-override.entity';
+import { CreateAvailabilityRuleDto } from './dto/create-availability-rule.dto';
+import { BulkCreateAvailabilityDto } from './dto/bulk-create-availability.dto';
+import { AvailabilityRangeQueryDto } from './dto/availability-range-query.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
 import { OverrideRangeQueryDto } from './dto/override-range-query.dto';
 
-// --- ADD THIS CONSTANT ---
 const TZ_DB = 'America/Argentina/Cordoba';
 
-function timeToMinutes(hhmm: string) {
+function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
 }
@@ -35,6 +34,19 @@ function clampRangeDays(from: string, to: string, maxDays = 31) {
   }
 }
 
+export interface AvailabilitySlot {
+  fecha: string;
+  courtId: string;
+  courtNombre: string;
+  ruleId: string;
+  horaInicio: string;
+  horaFin: string;
+  ocupado: boolean;
+  estado: 'ocupado' | 'libre';
+  motivoBloqueo: string | null;
+  reservationId: string | null;
+}
+
 @Injectable()
 export class AvailabilityService {
   constructor(
@@ -46,12 +58,9 @@ export class AvailabilityService {
     private readonly overrideRepo: Repository<CourtAvailabilityOverride>,
   ) {}
 
-  // ... (createRule, bulkCreate, listByCourt methods remain EXACTLY the same) ...
+  // --- RULES MANAGEMENT ---
   async createRule(dto: CreateAvailabilityRuleDto) {
-    const court = await this.courtRepo.findOne({
-      where: { id: dto.courtId },
-      relations: ['club'],
-    });
+    const court = await this.courtRepo.findOne({ where: { id: dto.courtId } });
     if (!court) throw new NotFoundException('Cancha no encontrada');
 
     if (timeToMinutes(dto.horaFin) <= timeToMinutes(dto.horaInicio)) {
@@ -71,9 +80,7 @@ export class AvailabilityService {
       return await this.ruleRepo.save(ent);
     } catch (e: any) {
       if (String(e?.code) === '23505')
-        throw new ConflictException(
-          'Ya existe una regla para esa cancha/día/horaInicio',
-        );
+        throw new ConflictException('Regla duplicada para esta cancha/día');
       throw e;
     }
   }
@@ -93,7 +100,6 @@ export class AvailabilityService {
         diaSemana: In(dias),
         horaInicio: dto.horaInicio,
       },
-      relations: ['court'],
     });
 
     const existsKey = new Set(
@@ -133,16 +139,15 @@ export class AvailabilityService {
     });
   }
 
-  // >>>>>> FIXED METHOD <<<<<<
-  async availabilityRange(q: AvailabilityRangeQueryDto) {
+  // --- MAIN AVAILABILITY CALCULATION (SQL) ---
+  async calculateAvailability(
+    q: AvailabilityRangeQueryDto,
+  ): Promise<AvailabilitySlot[]> {
     clampRangeDays(q.from, q.to, 31);
 
-    const from = q.from;
-    const to = q.to;
-    const clubId = q.clubId ?? null;
-    const courtId = q.courtId ?? null;
+    const { from, to, clubId, courtId } = q;
 
-    // We inject the timezone into the SQL string
+    // Use parameterized query safe against injection, but interpolate constants like TZ
     const sql = `
     WITH dias AS (
       SELECT gs::date AS fecha
@@ -203,68 +208,60 @@ export class AvailabilityService {
       s."ruleId",
       to_char(s.ts_inicio, 'HH24:MI') AS "horaInicio",
       to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
-
       (
-        -- ocupado por override bloqueado
         EXISTS (
-          SELECT 1
-          FROM "court_availability_overrides" o
+          SELECT 1 FROM "court_availability_overrides" o
           WHERE o.bloqueado = true
             AND o."courtId" = s."courtId"
             AND o.fecha = s.fecha
             AND s.ts_inicio::time < o."horaFin"
             AND s.ts_fin::time > o."horaInicio"
-            AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
         )
         OR
-        -- ocupado por reserva confirmada o hold vigente
         EXISTS (
-          SELECT 1
-          FROM "reservations" r
+          SELECT 1 FROM "reservations" r
           WHERE r."courtId" = s."courtId"
             AND r.status IN ('hold','confirmed')
             AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
-            -- HERE IS THE FIX: Use Cordoba TZ instead of UTC for the generated slot --
             AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
             AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
         )
       ) AS ocupado,
-
       (
-        SELECT o.motivo
-        FROM "court_availability_overrides" o
+        SELECT o.motivo FROM "court_availability_overrides" o
         WHERE o.bloqueado = true
           AND o."courtId" = s."courtId"
           AND o.fecha = s.fecha
           AND s.ts_inicio::time < o."horaFin"
           AND s.ts_fin::time > o."horaInicio"
-          AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
-        ORDER BY o."horaInicio"
-        LIMIT 1
+        ORDER BY o."horaInicio" LIMIT 1
       ) AS "motivoBloqueo",
-
       (
-        SELECT r.id
-        FROM "reservations" r
+        SELECT r.id FROM "reservations" r
         WHERE r."courtId" = s."courtId"
           AND r.status IN ('hold','confirmed')
           AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
-          -- AND HERE TOO --
           AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
           AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
-        ORDER BY r."createdAt" DESC
-        LIMIT 1
+        ORDER BY r."createdAt" DESC LIMIT 1
       ) AS "reservationId"
-
     FROM slots s
     ORDER BY s.fecha, s.ts_inicio, s."courtNombre";
     `;
 
-    const rows = await this.dataSource.query(sql, [from, to, clubId, courtId]);
+    // Type the raw result
+    const rows = await this.dataSource.query(sql, [
+      from,
+      to,
+      clubId || null,
+      courtId || null,
+    ]);
 
-    return rows.map((r: any) => {
-      const ocupado =
+    // Explicitly map response to satisfy TypeScript
+    return rows.map((r: any): AvailabilitySlot => {
+      const isOccupied =
         r.ocupado === true || r.ocupado === 't' || r.ocupado === 1;
+
       return {
         fecha: r.fecha,
         courtId: r.courtId,
@@ -272,15 +269,15 @@ export class AvailabilityService {
         ruleId: r.ruleId,
         horaInicio: r.horaInicio,
         horaFin: r.horaFin,
-        ocupado,
-        estado: ocupado ? 'ocupado' : 'libre',
+        ocupado: isOccupied,
+        estado: isOccupied ? 'ocupado' : 'libre',
         motivoBloqueo: r.motivoBloqueo ?? null,
         reservationId: r.reservationId ?? null,
       };
     });
   }
 
-  // ... (createOverride, listOverrides, deleteOverride remain same) ...
+  // --- OVERRIDES MANAGEMENT ---
   async createOverride(dto: CreateOverrideDto) {
     const court = await this.courtRepo.findOne({
       where: { id: dto.courtId },
@@ -319,21 +316,22 @@ export class AvailabilityService {
         );
     }
 
+    // Use raw query for formatting
     const sql = `
-    SELECT
-      o.id,
-      o."courtId",
-      o.fecha::text AS fecha,
-      to_char(o."horaInicio", 'HH24:MI') AS "horaInicio",
-      to_char(o."horaFin", 'HH24:MI') AS "horaFin",
-      o.bloqueado,
-      o.motivo,
-      o."createdAt"
-    FROM "court_availability_overrides" o
-    WHERE o."courtId" = $1::uuid
-      AND o.fecha BETWEEN $2::date AND $3::date
-    ORDER BY o.fecha, o."horaInicio";
-  `;
+      SELECT
+        o.id,
+        o."courtId",
+        o.fecha::text AS fecha,
+        to_char(o."horaInicio", 'HH24:MI') AS "horaInicio",
+        to_char(o."horaFin", 'HH24:MI') AS "horaFin",
+        o.bloqueado,
+        o.motivo,
+        o."createdAt"
+      FROM "court_availability_overrides" o
+      WHERE o."courtId" = $1::uuid
+        AND o.fecha BETWEEN $2::date AND $3::date
+      ORDER BY o.fecha, o."horaInicio";
+    `;
 
     return await this.dataSource.query(sql, [q.courtId, q.from, q.to]);
   }
@@ -341,7 +339,6 @@ export class AvailabilityService {
   async deleteOverride(id: string) {
     const ent = await this.overrideRepo.findOne({
       where: { id },
-      relations: ['court'],
     });
     if (!ent) throw new NotFoundException('Override no encontrado');
     await this.overrideRepo.remove(ent);
