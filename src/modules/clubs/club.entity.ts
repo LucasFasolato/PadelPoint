@@ -3,9 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { ClubMember } from '../club-members/club-member.entity';
 
 @Entity({ name: 'clubs' })
 @Index(['email'], { unique: true })
@@ -34,6 +36,9 @@ export class Club {
 
   @Column({ type: 'boolean', default: true })
   activo!: boolean;
+
+  @OneToMany(() => ClubMember, (member) => member.club)
+  members: ClubMember[];
 
   @CreateDateColumn()
   createdAt!: Date;

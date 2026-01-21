@@ -15,6 +15,9 @@ import { CourtAvailabilityOverride } from './court-availability-override.entity'
 import { CreateOverrideDto } from './dto/create-override.dto';
 import { OverrideRangeQueryDto } from './dto/override-range-query.dto';
 
+// --- ADD THIS CONSTANT ---
+const TZ_DB = 'America/Argentina/Cordoba';
+
 function timeToMinutes(hhmm: string) {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
@@ -43,6 +46,7 @@ export class AvailabilityService {
     private readonly overrideRepo: Repository<CourtAvailabilityOverride>,
   ) {}
 
+  // ... (createRule, bulkCreate, listByCourt methods remain EXACTLY the same) ...
   async createRule(dto: CreateAvailabilityRuleDto) {
     const court = await this.courtRepo.findOne({
       where: { id: dto.courtId },
@@ -129,7 +133,7 @@ export class AvailabilityService {
     });
   }
 
-  // Slots on-the-fly (por rango de fechas)
+  // >>>>>> FIXED METHOD <<<<<<
   async availabilityRange(q: AvailabilityRangeQueryDto) {
     clampRangeDays(q.from, q.to, 31);
 
@@ -138,13 +142,14 @@ export class AvailabilityService {
     const clubId = q.clubId ?? null;
     const courtId = q.courtId ?? null;
 
+    // We inject the timezone into the SQL string
     const sql = `
     WITH dias AS (
-        SELECT gs::date AS fecha
-        FROM generate_series($1::date, $2::date, interval '1 day') gs
+      SELECT gs::date AS fecha
+      FROM generate_series($1::date, $2::date, interval '1 day') gs
     ),
     rules AS (
-        SELECT
+      SELECT
         r.id AS "ruleId",
         r."diaSemana",
         r."horaInicio",
@@ -153,15 +158,15 @@ export class AvailabilityService {
         c.id AS "courtId",
         c.nombre AS "courtNombre",
         c."clubId" AS "clubId"
-        FROM "court_availability_rules" r
-        JOIN "courts" c ON c.id = r."courtId"
-        WHERE r.activo = true
+      FROM "court_availability_rules" r
+      JOIN "courts" c ON c.id = r."courtId"
+      WHERE r.activo = true
         AND ($4::uuid IS NULL OR c.id = $4::uuid)
         AND ($3::uuid IS NULL OR c."clubId" = $3::uuid)
         AND c.activa = true
     ),
     base AS (
-        SELECT
+      SELECT
         d.fecha,
         ru."ruleId",
         ru."courtId",
@@ -169,63 +174,87 @@ export class AvailabilityService {
         ru."horaInicio",
         ru."horaFin",
         ru."slotMinutos"
-        FROM dias d
-        JOIN rules ru
+      FROM dias d
+      JOIN rules ru
         ON ru."diaSemana" = EXTRACT(DOW FROM d.fecha)::int
     ),
     slots AS (
-        SELECT
+      SELECT
         b.fecha,
         b."courtId",
         b."courtNombre",
         b."ruleId",
         (b.fecha::timestamp + (b."horaInicio"::time) + (gs.n * make_interval(mins => b."slotMinutos"))) AS ts_inicio,
         (b.fecha::timestamp + (b."horaInicio"::time) + ((gs.n + 1) * make_interval(mins => b."slotMinutos"))) AS ts_fin
-        FROM base b
-        JOIN LATERAL (
+      FROM base b
+      JOIN LATERAL (
         SELECT generate_series(
-            0,
-            floor(
-            (
-                EXTRACT(EPOCH FROM (b."horaFin"::time - b."horaInicio"::time)) / 60
-            ) / b."slotMinutos"
-            )::int - 1
+          0,
+          floor(
+            (EXTRACT(EPOCH FROM (b."horaFin"::time - b."horaInicio"::time)) / 60) / b."slotMinutos"
+          )::int - 1
         ) AS n
-        ) gs ON true
+      ) gs ON true
     )
     SELECT
-        s.fecha::text AS fecha,
-        s."courtId",
-        s."courtNombre",
-        s."ruleId",
-        to_char(s.ts_inicio, 'HH24:MI') AS "horaInicio",
-        to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
+      s.fecha::text AS fecha,
+      s."courtId",
+      s."courtNombre",
+      s."ruleId",
+      to_char(s.ts_inicio, 'HH24:MI') AS "horaInicio",
+      to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
 
-        (
+      (
+        -- ocupado por override bloqueado
         EXISTS (
-            SELECT 1
-            FROM "court_availability_overrides" o
-            WHERE o.bloqueado = true
+          SELECT 1
+          FROM "court_availability_overrides" o
+          WHERE o.bloqueado = true
             AND o."courtId" = s."courtId"
             AND o.fecha = s.fecha
             AND s.ts_inicio::time < o."horaFin"
             AND s.ts_fin::time > o."horaInicio"
             AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
         )
-        ) AS ocupado,
+        OR
+        -- ocupado por reserva confirmada o hold vigente
+        EXISTS (
+          SELECT 1
+          FROM "reservations" r
+          WHERE r."courtId" = s."courtId"
+            AND r.status IN ('hold','confirmed')
+            AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+            -- HERE IS THE FIX: Use Cordoba TZ instead of UTC for the generated slot --
+            AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
+            AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
+        )
+      ) AS ocupado,
 
-        (
+      (
         SELECT o.motivo
         FROM "court_availability_overrides" o
         WHERE o.bloqueado = true
-            AND o."courtId" = s."courtId"
-            AND o.fecha = s.fecha
-            AND s.ts_inicio::time < o."horaFin"
-            AND s.ts_fin::time > o."horaInicio"
-            AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
+          AND o."courtId" = s."courtId"
+          AND o.fecha = s.fecha
+          AND s.ts_inicio::time < o."horaFin"
+          AND s.ts_fin::time > o."horaInicio"
+          AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
         ORDER BY o."horaInicio"
         LIMIT 1
-        ) AS "motivoBloqueo"
+      ) AS "motivoBloqueo",
+
+      (
+        SELECT r.id
+        FROM "reservations" r
+        WHERE r."courtId" = s."courtId"
+          AND r.status IN ('hold','confirmed')
+          AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+          -- AND HERE TOO --
+          AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
+          AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
+        ORDER BY r."createdAt" DESC
+        LIMIT 1
+      ) AS "reservationId"
 
     FROM slots s
     ORDER BY s.fecha, s.ts_inicio, s."courtNombre";
@@ -236,7 +265,6 @@ export class AvailabilityService {
     return rows.map((r: any) => {
       const ocupado =
         r.ocupado === true || r.ocupado === 't' || r.ocupado === 1;
-
       return {
         fecha: r.fecha,
         courtId: r.courtId,
@@ -247,10 +275,12 @@ export class AvailabilityService {
         ocupado,
         estado: ocupado ? 'ocupado' : 'libre',
         motivoBloqueo: r.motivoBloqueo ?? null,
+        reservationId: r.reservationId ?? null,
       };
     });
   }
 
+  // ... (createOverride, listOverrides, deleteOverride remain same) ...
   async createOverride(dto: CreateOverrideDto) {
     const court = await this.courtRepo.findOne({
       where: { id: dto.courtId },
@@ -277,7 +307,6 @@ export class AvailabilityService {
   async listOverrides(q: OverrideRangeQueryDto) {
     clampRangeDays(q.from, q.to, 62);
 
-    // opcional: validar que court pertenezca al clubId si viene
     if (q.clubId) {
       const court = await this.courtRepo.findOne({
         where: { id: q.courtId },

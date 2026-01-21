@@ -18,40 +18,36 @@ export class ClubMembersService {
     private readonly users: UsersService,
   ) {}
 
-  async listMembers(clubId: string) {
-    const members = await this.repo.find({
-      where: { clubId },
-      relations: ['user'], // para devolver email/displayName
+  // 1. List Members (Used by Frontend)
+  async findAllByClub(clubId: string) {
+    return this.repo.find({
+      where: { clubId }, // Using clubId directly is usually safer/faster
+      relations: ['user'], // Essential: Load user to get email/name
       order: { createdAt: 'ASC' },
     });
-
-    return members.map((m) => ({
-      userId: m.userId,
-      email: m.user.email,
-      displayName: m.user.displayName,
-      role: m.role,
-      active: m.active,
-      createdAt: m.createdAt,
-    }));
   }
 
-  async addMemberByEmail(input: {
-    clubId: string;
-    email: string;
-    role: ClubMemberRole;
-  }) {
-    const email = input.email.toLowerCase().trim();
-    const user = await this.users.findByEmail(email);
-    if (!user) throw new NotFoundException('User not found');
+  // 2. Create/Invite Member (Used by Frontend)
+  async create(clubId: string, email: string, role: string) {
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check if user exists in the platform
+    const user = await this.users.findByEmail(cleanEmail);
+    if (!user) throw new NotFoundException('User not found in PadelPoint');
+
+    // Convert string to Enum
+    const roleEnum =
+      role === 'ADMIN' ? ClubMemberRole.ADMIN : ClubMemberRole.STAFF;
 
     return this.upsertMember({
       userId: user.id,
-      clubId: input.clubId,
-      role: input.role,
+      clubId,
+      role: roleEnum,
     });
   }
 
-  async upsertMember(input: {
+  // Helper for Create/Update
+  private async upsertMember(input: {
     userId: string;
     clubId: string;
     role: ClubMemberRole;
@@ -62,7 +58,7 @@ export class ClubMembersService {
 
     if (existing) {
       existing.role = input.role;
-      existing.active = true;
+      existing.active = true; // Re-activate if they were removed
       return this.repo.save(existing);
     }
 
@@ -76,6 +72,7 @@ export class ClubMembersService {
     return this.repo.save(created);
   }
 
+  // 3. Remove/Update Member (Logic to protect last Admin)
   async updateMember(input: {
     clubId: string;
     userId: string;
@@ -87,25 +84,24 @@ export class ClubMembersService {
     });
     if (!member) throw new NotFoundException('Membership not found');
 
-    // regla pro: evitar que se desactive el último ADMIN del club
-    const wantsToRemoveAdmin =
+    // Rule: Cannot disable/demote the last ADMIN
+    const wantsToDemoteOrRemove =
       (input.role &&
         input.role !== ClubMemberRole.ADMIN &&
         member.role === ClubMemberRole.ADMIN) ||
-      (typeof input.active === 'boolean' &&
-        input.active === false &&
-        member.role === ClubMemberRole.ADMIN);
+      (input.active === false && member.role === ClubMemberRole.ADMIN);
 
-    if (wantsToRemoveAdmin) {
-      const admins = await this.repo.count({
+    if (wantsToDemoteOrRemove) {
+      const adminCount = await this.repo.count({
         where: {
           clubId: input.clubId,
           role: ClubMemberRole.ADMIN,
           active: true,
         },
       });
-      if (admins <= 1)
+      if (adminCount <= 1) {
         throw new BadRequestException('Cannot remove the last club admin');
+      }
     }
 
     if (input.role) member.role = input.role;

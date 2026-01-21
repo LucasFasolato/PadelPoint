@@ -58,16 +58,12 @@ export class PaymentsService {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  private async validateReservationOwnershipOrToken(args: {
+  private validateReservationOwnershipOrToken(args: {
     reservation: Reservation;
     userId: string;
     checkoutToken?: string;
     publicCheckout?: boolean;
   }) {
-    // Tu Reservation hoy no tiene userId, así que:
-    // - MODO JWT: permitimos a cualquier usuario autenticado (por ahora)
-    // - MODO PUBLIC: exigimos checkoutToken correcto
     if (args.publicCheckout) {
       if (!args.checkoutToken)
         throw new BadRequestException('checkoutToken is required');
@@ -115,12 +111,21 @@ export class PaymentsService {
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
-    await this.validateReservationOwnershipOrToken({
+    this.validateReservationOwnershipOrToken({
       reservation,
       userId: input.userId,
       checkoutToken: input.checkoutToken,
       publicCheckout: input.publicCheckout,
     });
+
+    if (reservation.status === ReservationStatus.HOLD) {
+      if (
+        !reservation.expiresAt ||
+        reservation.expiresAt.getTime() <= Date.now()
+      ) {
+        throw new BadRequestException('Reservation hold expired');
+      }
+    }
 
     if (reservation.status === ReservationStatus.CONFIRMED) {
       throw new BadRequestException('Reservation is already confirmed');
@@ -274,7 +279,7 @@ export class PaymentsService {
         });
         if (!reservation) throw new NotFoundException('Reservation not found');
 
-        await this.validateReservationOwnershipOrToken({
+        this.validateReservationOwnershipOrToken({
           reservation,
           userId: input.userId,
           checkoutToken: input.checkoutToken,
@@ -300,6 +305,8 @@ export class PaymentsService {
         if (reservation.status === ReservationStatus.HOLD) {
           reservation.status = ReservationStatus.CONFIRMED;
           reservation.expiresAt = null;
+          reservation.checkoutTokenExpiresAt = null;
+          reservation.confirmedAt = new Date();
           await reservationRepo.save(reservation);
 
           await eventRepo.save(

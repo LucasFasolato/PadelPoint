@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In, ILike } from 'typeorm';
 
 import { Club } from './club.entity';
 import { CreateClubDto } from './dto/create-club.dto';
@@ -153,6 +153,20 @@ export class ClubsService {
     return { ok: true };
   }
 
+  async findClubsManagedByUser(userId: string) {
+    return (
+      this.repo
+        .createQueryBuilder('club')
+        // Join the members relation (assuming defined in Club entity as 'members')
+        .innerJoin('club.members', 'member')
+        // Filter where THIS user is the member
+        .where('member.userId = :userId', { userId })
+        // Filter where the user is an ADMIN of the club
+        .andWhere('member.role = :role', { role: ClubMemberRole.ADMIN })
+        .getMany()
+    );
+  }
+
   async getPublicOverview(clubId: string) {
     const club = await this.repo.findOne({ where: { id: clubId } });
     if (!club || !club.activo)
@@ -193,8 +207,8 @@ export class ClubsService {
             ownerType: MediaOwnerType.COURT,
             kind: MediaKind.COURT_PRIMARY,
             active: true,
-            ownerId: courtIds as any,
-          } as any,
+            ownerId: In(courtIds), // ✅
+          },
           order: { createdAt: 'DESC' },
         })
       : [];
@@ -231,5 +245,23 @@ export class ClubsService {
         };
       }),
     };
+  }
+
+  async search(query: string) {
+    if (!query) {
+      // Si no hay búsqueda, devolvemos los últimos 10 clubes registrados
+      return this.repo.find({
+        take: 10,
+        order: { createdAt: 'DESC' },
+      });
+    }
+
+    return this.repo.find({
+      where: [
+        { nombre: ILike(`%${query}%`) }, // Busca por nombre
+        { direccion: ILike(`%${query}%`) }, // O busca por dirección/ciudad
+      ],
+      take: 20,
+    });
   }
 }

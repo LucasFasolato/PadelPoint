@@ -1,4 +1,3 @@
-// src/modules/courts/courts.controller.ts
 import {
   Body,
   Controller,
@@ -9,7 +8,6 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 
 import { CourtsService } from './courts.service';
 import { CreateCourtDto } from './dto/create-court.dto';

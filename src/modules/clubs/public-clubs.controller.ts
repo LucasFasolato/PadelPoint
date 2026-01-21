@@ -5,7 +5,12 @@ import { ClubsService } from './clubs.service';
 export class PublicClubsController {
   constructor(private readonly clubs: ClubsService) {}
 
-  @Get(':clubId/overview')
+  @Get()
+  findAll() {
+    return this.clubs.findAllPublic();
+  }
+
+  @Get(':clubId')
   overview(@Param('clubId') clubId: string) {
     return this.clubs.getPublicOverview(clubId);
   }

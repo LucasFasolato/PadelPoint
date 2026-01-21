@@ -41,7 +41,6 @@ export class CourtsService {
   async findByClub(clubId: string) {
     return this.repo.find({
       where: { club: { id: clubId } },
-      relations: ['club'],
       order: { nombre: 'ASC' },
     });
   }

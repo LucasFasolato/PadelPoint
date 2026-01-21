@@ -41,6 +41,19 @@ export class Reservation {
   @Column({ type: 'timestamptz', nullable: true })
   expiresAt!: Date | null;
 
+  // checkout público
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  checkoutToken!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  checkoutTokenExpiresAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  confirmedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
+
   // sin auth por ahora → datos mínimos del cliente
   @Column({ type: 'varchar', length: 120 })
   clienteNombre!: string;
@@ -53,9 +66,6 @@ export class Reservation {
 
   @Column('decimal', { precision: 10, scale: 2 })
   precio!: number;
-
-  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
-  checkoutToken!: string | null;
 
   @CreateDateColumn()
   createdAt!: Date;

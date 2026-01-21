@@ -1,53 +1,27 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
-
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ClubAccessGuard } from './club-access.guard';
-import { ClubRoles } from './club-roles.decorator';
-import { ClubMemberRole } from './enums/club-member-role.enum';
-
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ClubMembersService } from './club-members.service';
-import { AddClubMemberDto } from './dto/add-club-member.dto';
-import { UpdateClubMemberDto } from './dto/update-club-member.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+// Import your ClubAccessGuard if you want to ensure only Admins can list members
+import { ClubAccessGuard } from './club-access.guard';
 
-@Controller('clubs/:clubId/members')
-@UseGuards(JwtAuthGuard, ClubAccessGuard)
-@ClubRoles(ClubMemberRole.ADMIN)
+@Controller('clubs')
 export class ClubMembersController {
-  constructor(private readonly clubMembersService: ClubMembersService) {}
+  constructor(private readonly service: ClubMembersService) {}
 
-  @Get()
-  list(@Param('clubId') clubId: string) {
-    return this.clubMembersService.listMembers(clubId);
+  // GET /clubs/:clubId/members
+  @Get(':clubId/members')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard) // Protect: Only club members can see the list
+  async findAll(@Param('clubId') clubId: string) {
+    return this.service.findAllByClub(clubId);
   }
 
-  @Post()
-  add(@Param('clubId') clubId: string, @Body() dto: AddClubMemberDto) {
-    return this.clubMembersService.addMemberByEmail({
-      clubId,
-      email: dto.email,
-      role: dto.role,
-    });
-  }
-
-  @Patch(':userId')
-  update(
+  // POST /clubs/:clubId/members
+  @Post(':clubId/members')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard) // Protect: Only existing members can invite
+  async create(
     @Param('clubId') clubId: string,
-    @Param('userId') userId: string,
-    @Body() dto: UpdateClubMemberDto,
+    @Body() body: { email: string; role: string },
   ) {
-    return this.clubMembersService.updateMember({
-      clubId,
-      userId,
-      role: dto.role,
-      active: dto.active,
-    });
+    return this.service.create(clubId, body.email, body.role);
   }
 }
