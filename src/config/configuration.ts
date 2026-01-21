@@ -6,14 +6,16 @@ export default () => {
   return {
     port: env.PORT,
     nodeEnv: env.NODE_ENV,
+    DATABASE_URL: env.DATABASE_URL, 
     db: {
       host: env.DB_HOST,
       port: env.DB_PORT,
       user: env.DB_USER,
       password: env.DB_PASS,
       name: env.DB_NAME,
-      sync: env.DB_SYNC === 'true',
-      log: env.DB_LOG === 'true',
+      // Note: env.DB_SYNC and DB_LOG are now booleans from the schema validation
+      sync: env.DB_SYNC,
+      log: env.DB_LOG,
     },
     jwt: {
       secret: env.JWT_SECRET,
