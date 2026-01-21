@@ -9,19 +9,21 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
-        host: config.get<string>('db.host'),
-        port: config.get<number>('db.port'),
-        username: config.get<string>('db.user'),
-        password: config.get<string>('db.password'),
-        database: config.get<string>('db.name'),
+        // Simplified: Only use the URL instead of separate host/port/user/pass
+        url: config.get<string>('DATABASE_URL'),
 
         autoLoadEntities: true,
 
-        // ✅ recomendado para migraciones: false
-        // Si querés permitirlo en dev con DB_SYNC=true, dejalo así:
-        synchronize: config.get<boolean>('db.sync') === false,
+        // Recommended for migrations: false
+        synchronize: config.get<boolean>('db.sync') === true,
 
         logging: config.get<boolean>('db.log') === true,
+
+        // Critical for Railway Pro production database connections
+        ssl:
+          config.get<string>('NODE_ENV') === 'production'
+            ? { rejectUnauthorized: false }
+            : false,
       }),
     }),
   ],
