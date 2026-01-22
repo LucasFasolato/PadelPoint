@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
@@ -27,10 +28,20 @@ function parseReservationStatus(raw?: string): ReservationStatus | undefined {
   return raw as ReservationStatus;
 }
 
+interface RequestWithUser extends Request {
+  user: { email: string; userId: string; role: string };
+}
+
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly service: ReservationsService) {}
 
+  @Get('mine')
+  @UseGuards(JwtAuthGuard)
+  async findMine(@Req() req: RequestWithUser) {
+    // We search by email because reservations are linked to 'clienteEmail'
+    return this.service.listUserMatches(req.user.email);
+  }
   // 1. Creation (Public or Private depending on logic, usually Public for Booking)
   @Post('hold')
   createHold(@Body() dto: CreateHoldDto) {

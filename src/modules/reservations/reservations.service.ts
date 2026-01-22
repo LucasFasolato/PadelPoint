@@ -441,4 +441,21 @@ export class ReservationsService {
     ]);
     return { expiredCount: rows.length, ids: rows.map((r) => r.id) };
   }
+
+  async listUserMatches(email: string) {
+    // Normalize email to ensure matches (trim + lowercase usually recommended)
+    const normalizedEmail = email.trim();
+
+    return this.reservaRepo.find({
+      where: {
+        // We check if the reservation was made with this client email
+        clienteEmail: normalizedEmail,
+      },
+      relations: ['court', 'court.club'], // We need Club info for the frontend card
+      order: {
+        startAt: 'DESC', // Newest/Upcoming first
+      },
+      take: 50, // Limit to last 50 matches for performance
+    });
+  }
 }
