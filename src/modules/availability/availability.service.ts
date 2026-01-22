@@ -344,4 +344,25 @@ export class AvailabilityService {
     await this.overrideRepo.remove(ent);
     return { ok: true };
   }
+
+  async cleanupDuplicates() {
+    const sql = `
+      DELETE FROM "court_availability_rules" a USING (
+        SELECT MIN(ctid) as ctid, "courtId", "diaSemana", "horaInicio"
+        FROM "court_availability_rules" 
+        GROUP BY "courtId", "diaSemana", "horaInicio" HAVING COUNT(*) > 1
+      ) b
+      WHERE a."courtId" = b."courtId" 
+        AND a."diaSemana" = b."diaSemana" 
+        AND a."horaInicio" = b."horaInicio" 
+        AND a.ctid <> b.ctid;
+    `;
+
+    // Execute the raw query
+    // Note: DELETE queries usually return the number of affected rows in the second element of the array in some drivers,
+    // or just execute silently. We return a success message.
+    await this.dataSource.query(sql);
+
+    return { message: 'Duplicate rules cleaned successfully' };
+  }
 }

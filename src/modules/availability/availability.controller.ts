@@ -61,4 +61,10 @@ export class AvailabilityController {
   ): Promise<AvailabilitySlotDto[]> {
     return this.service.calculateAvailability(q);
   }
+
+  @Delete('admin/cleanup-duplicates')
+  @UseGuards(JwtAuthGuard, ClubAccessGuard)
+  cleanupDuplicates() {
+    return this.service.cleanupDuplicates();
+  }
 }
