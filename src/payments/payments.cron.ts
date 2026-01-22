@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PaymentsService } from './payments.service';
 
 @Injectable()
@@ -9,24 +9,19 @@ export class PaymentsCron {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   // cada 1 minuto
-  @Cron('*/60 * * * * *')
+  @Cron(CronExpression.EVERY_MINUTE)
   async handleExpireIntents() {
     try {
-      const res = await this.paymentsService.expirePendingIntentsNow(200);
-      if (res.expiredCount > 0) {
+      const result = await this.paymentsService.expirePendingIntentsNow();
+
+      // El "?.expiredCount" nos protege por si acaso, pero con el fix del service ya no debería fallar.
+      if (result?.expiredCount > 0) {
         this.logger.log(
-          `Expired intents=${res.expiredCount}, releasedReservations=${res.releasedReservations}`,
+          `Expired ${result.expiredCount} intents, released ${result.releasedReservations} reservations`,
         );
       }
-    } catch (e: unknown) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : typeof e === 'string'
-            ? e
-            : JSON.stringify(e);
-
-      this.logger.error(`Expire intents failed: ${msg}`);
+    } catch (e) {
+      this.logger.error('Expire intents job failed', e);
     }
   }
 }

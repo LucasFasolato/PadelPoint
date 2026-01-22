@@ -3,9 +3,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 
 import { PaymentIntent } from './payment-intent.entity';
 import { PaymentTransaction } from './payment-transaction.entity';
@@ -20,12 +22,13 @@ import {
   Reservation,
   ReservationStatus,
 } from '../modules/reservations/reservation.entity';
-import { ConfigService } from '@nestjs/config';
 
 type JsonObject = Record<string, any>;
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
@@ -45,19 +48,6 @@ export class PaymentsService {
 
   private computeExpiresAt(minutes = 15): Date {
     return new Date(Date.now() + minutes * 60 * 1000);
-  }
-
-  private ensureIntentUsable(intent: PaymentIntent) {
-    if (intent.status === PaymentIntentStatus.SUCCEEDED) return;
-    if (
-      intent.status === PaymentIntentStatus.CANCELLED ||
-      intent.status === PaymentIntentStatus.EXPIRED
-    ) {
-      throw new BadRequestException(`Intent not payable: ${intent.status}`);
-    }
-    if (intent.expiresAt && intent.expiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('PaymentIntent expired');
-    }
   }
 
   private validateReservationOwnershipOrToken(args: {
@@ -87,7 +77,7 @@ export class PaymentsService {
   }) {
     const currency = (input.currency ?? 'ARS').toUpperCase();
 
-    // Idempotencia: si ya existe, devolverlo (si corresponde)
+    // Idempotencia
     const existing = await this.intentRepo.findOne({
       where: {
         referenceType: input.referenceType,
@@ -95,13 +85,11 @@ export class PaymentsService {
       },
     });
     if (existing) {
-      // si es modo JWT, validamos owner del intent
       if (!input.publicCheckout && existing.userId !== input.userId)
         throw new ForbiddenException('Not allowed');
       return existing;
     }
 
-    // Soportamos RESERVATION primero (lo demás futuro)
     if (input.referenceType !== PaymentReferenceType.RESERVATION) {
       throw new BadRequestException(
         `Unsupported referenceType: ${input.referenceType}`,
@@ -121,9 +109,10 @@ export class PaymentsService {
     });
 
     if (reservation.status === ReservationStatus.HOLD) {
+      // Usar getTime() para seguridad en comparaciones
       if (
         !reservation.expiresAt ||
-        reservation.expiresAt.getTime() <= Date.now()
+        new Date(reservation.expiresAt).getTime() <= Date.now()
       ) {
         throw new BadRequestException('Reservation hold expired');
       }
@@ -136,7 +125,8 @@ export class PaymentsService {
       throw new BadRequestException('Reservation is cancelled');
     }
 
-    const amount = reservation.precio.toFixed(2);
+    // Convertir precio a string con 2 decimales para la DB (numeric/money type)
+    const amount = Number(reservation.precio).toFixed(2);
 
     const intent = this.intentRepo.create({
       userId: input.publicCheckout ? 'public' : input.userId,
@@ -214,16 +204,13 @@ export class PaymentsService {
       });
       if (!intent) throw new NotFoundException('PaymentIntent not found');
 
-      // MODO JWT: validamos dueño del intent
       if (!input.publicCheckout && intent.userId !== input.userId)
         throw new ForbiddenException('Not allowed');
 
-      // Idempotencia
       if (intent.status === PaymentIntentStatus.SUCCEEDED) {
         return { ok: true, intent };
       }
 
-      // Expiración / estados inválidos
       if (
         intent.status === PaymentIntentStatus.CANCELLED ||
         intent.status === PaymentIntentStatus.EXPIRED
@@ -233,7 +220,10 @@ export class PaymentsService {
         );
       }
 
-      if (intent.expiresAt && intent.expiresAt.getTime() < Date.now()) {
+      if (
+        intent.expiresAt &&
+        new Date(intent.expiresAt).getTime() < Date.now()
+      ) {
         intent.status = PaymentIntentStatus.EXPIRED;
         await intentRepo.save(intent);
         await eventRepo.save(
@@ -246,7 +236,7 @@ export class PaymentsService {
         throw new BadRequestException('PaymentIntent expired');
       }
 
-      // Crear tx SUCCESS
+      // Success TX
       const tx = txRepo.create({
         paymentIntentId: intent.id,
         provider: PaymentProvider.SIMULATED,
@@ -259,7 +249,7 @@ export class PaymentsService {
       });
       await txRepo.save(tx);
 
-      // Set intent SUCCEEDED
+      // Intent SUCCEEDED
       intent.status = PaymentIntentStatus.SUCCEEDED;
       intent.paidAt = new Date();
       intent.expiresAt = null;
@@ -273,7 +263,7 @@ export class PaymentsService {
         }),
       );
 
-      // Aplicar efecto de negocio
+      // Lógica de negocio (Reservas)
       if (intent.referenceType === PaymentReferenceType.RESERVATION) {
         const reservation = await reservationRepo.findOne({
           where: { id: intent.referenceId },
@@ -289,7 +279,7 @@ export class PaymentsService {
         });
 
         if (reservation.status === ReservationStatus.CANCELLED) {
-          // cancelamos intent para consistencia
+          // Revertir intent
           intent.status = PaymentIntentStatus.CANCELLED;
           await intentRepo.save(intent);
           await eventRepo.save(
@@ -356,7 +346,10 @@ export class PaymentsService {
         return { ok: true, intent };
       }
 
-      if (intent.expiresAt && intent.expiresAt.getTime() < Date.now()) {
+      if (
+        intent.expiresAt &&
+        new Date(intent.expiresAt).getTime() < Date.now()
+      ) {
         intent.status = PaymentIntentStatus.EXPIRED;
         await intentRepo.save(intent);
         await eventRepo.save(
@@ -397,11 +390,15 @@ export class PaymentsService {
   }
 
   /**
-   * Cron job: expira intents PENDING vencidos y libera reservas HOLD (si aplica).
+   * ✅ FIX CRÍTICO:
+   * Ahora devuelve SIEMPRE un objeto, incluso si los crons están deshabilitados.
+   * Esto evita que el Cron Job crashee con "Cannot read properties of undefined".
    */
   async expirePendingIntentsNow(limit = 200) {
-    // Safety check to save resources on Railway
-    if (this.configService.get<boolean>('enableCrons') === false) return;
+    if (this.configService.get<boolean>('enableCrons') === false) {
+      // Retorno seguro por defecto
+      return { ok: true, expiredCount: 0, releasedReservations: 0 };
+    }
 
     return this.dataSource.transaction(async (manager) => {
       const intentRepo = manager.getRepository(PaymentIntent);
@@ -436,7 +433,6 @@ export class PaymentsService {
           }),
         );
 
-        // Si era reserva, liberamos HOLD (cancel o dejar hold?) -> recomiendo CANCELLED por limpieza
         if (intent.referenceType === PaymentReferenceType.RESERVATION) {
           const reservation = await reservationRepo.findOne({
             where: { id: intent.referenceId },
@@ -445,7 +441,6 @@ export class PaymentsService {
           if (!reservation) continue;
 
           if (reservation.status === ReservationStatus.HOLD) {
-            // Política: liberar el HOLD => CANCELLED (o podrías dejar HOLD y set expiresAt null)
             reservation.status = ReservationStatus.CANCELLED;
             reservation.expiresAt = null;
             await reservationRepo.save(reservation);
