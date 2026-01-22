@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config'; // Added ConfigService
 import { initCloudinary } from './cloudinary.client';
 
 import { MediaAsset } from './media-asset.entity';
@@ -23,10 +24,11 @@ type AuthUser = { userId: string; email: string; role: UserRole };
 
 @Injectable()
 export class MediaService {
-  private readonly cloudinary = initCloudinary();
+  private readonly cloudinary;
 
   constructor(
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService, // Injected ConfigService
 
     @InjectRepository(MediaAsset)
     private readonly mediaRepo: Repository<MediaAsset>,
@@ -36,18 +38,21 @@ export class MediaService {
 
     @InjectRepository(ClubMember)
     private readonly clubMembersRepo: Repository<ClubMember>,
-  ) {}
+  ) {
+    // Correctly initialize Cloudinary using the validated configuration object
+    const cloudinaryConfig = this.configService.get('cloudinary');
+    this.cloudinary = initCloudinary(cloudinaryConfig);
+  }
 
   private maxBytes(): number {
-    const v = Number(process.env.MEDIA_MAX_BYTES ?? '5000000');
-    return Number.isFinite(v) ? v : 5_000_000;
+    return this.configService.get<number>('media.maxBytes');
   }
 
   private allowedFormats(): Set<string> {
-    const raw = (process.env.MEDIA_ALLOWED_FORMATS ?? 'jpg,jpeg,png,webp')
+    const raw = this.configService
+      .get<string>('media.allowedFormats')
       .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
+      .map((s) => s.trim().toLowerCase());
     return new Set(raw);
   }
 
@@ -65,21 +70,14 @@ export class MediaService {
     ownerId: string,
     kind: MediaKind,
   ) {
-    // ordenado y estable
     return `padelpoint/${ownerType.toLowerCase()}/${ownerId}/${kind.toLowerCase()}`;
   }
 
-  /**
-   * Permisos:
-   * - USER_AVATAR: solo el mismo usuario (o platform admin)
-   * - CLUB_*: miembro del club (ADMIN o STAFF) o platform admin
-   * - COURT_*: miembro del club dueño de la court (ADMIN o STAFF) o platform admin
-   */
   private async assertMediaAccess(
     user: AuthUser,
     dto: { ownerType: MediaOwnerType; ownerId: string; kind: MediaKind },
   ) {
-    if (user.role === UserRole.ADMIN) return; // platform admin
+    if (user.role === UserRole.ADMIN) return;
 
     if (dto.ownerType === MediaOwnerType.USER) {
       if (dto.ownerId !== user.userId)
@@ -107,7 +105,6 @@ export class MediaService {
     });
     if (!membership) throw new ForbiddenException('Not a member of this club');
 
-    // Para media, STAFF también puede (decisión producto). Si querés, podés limitar a ADMIN acá.
     if (
       ![ClubMemberRole.ADMIN, ClubMemberRole.STAFF].includes(membership.role)
     ) {
@@ -121,27 +118,27 @@ export class MediaService {
     const timestamp = Math.floor(Date.now() / 1000);
     const folder = this.buildFolder(dto.ownerType, dto.ownerId, dto.kind);
 
-    // Tip: public_id para single kinds, estable. Para gallery, agregamos hint + timestamp.
     const isSingle = this.isSingleKind(dto.kind);
     const basePublicId = isSingle
       ? `${folder}/main`
       : `${folder}/${dto.fileNameHint?.replace(/\s+/g, '-').toLowerCase() ?? 'img'}_${timestamp}`;
 
-    // Parámetros firmados
     const paramsToSign: Record<string, string | number> = {
       timestamp,
       folder,
       public_id: basePublicId,
     };
 
+    // Use the injected config to get the secret securely
+    const apiSecret = this.configService.get('cloudinary.apiSecret');
     const signature = this.cloudinary.utils.api_sign_request(
       paramsToSign,
-      process.env.CLOUDINARY_API_SECRET as string,
+      apiSecret,
     );
 
     return {
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: this.configService.get('cloudinary.cloudName'),
+      apiKey: this.configService.get('cloudinary.apiKey'),
       timestamp,
       folder,
       public_id: basePublicId,
@@ -152,7 +149,6 @@ export class MediaService {
   async register(user: AuthUser, dto: RegisterMediaDto) {
     await this.assertMediaAccess(user, dto);
 
-    // Validaciones de tamaño/formato (robustez)
     const maxBytes = this.maxBytes();
     if (typeof dto.bytes === 'number' && dto.bytes > maxBytes) {
       throw new BadRequestException(`File too large (max ${maxBytes} bytes)`);
@@ -168,7 +164,6 @@ export class MediaService {
     return this.dataSource.transaction(async (manager) => {
       const mediaRepo = manager.getRepository(MediaAsset);
 
-      // Si es “single kind”, desactivamos lo anterior
       if (this.isSingleKind(dto.kind)) {
         await mediaRepo.update(
           {
@@ -230,8 +225,6 @@ export class MediaService {
     ownerId: string,
     kind?: MediaKind,
   ) {
-    // ⚠️ público: SOLO devuelve activos, no chequea permisos
-    // si en el futuro querés ocultar USER avatars, lo filtramos acá.
     const where: Record<string, unknown> = { ownerType, ownerId, active: true };
     if (kind) where.kind = kind;
 
@@ -275,7 +268,6 @@ export class MediaService {
       ],
     });
 
-    // no lo consideres error: devolver null es cómodo para frontend
     return asset ?? null;
   }
 }

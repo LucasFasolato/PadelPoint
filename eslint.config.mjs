@@ -20,7 +20,8 @@ export default tseslint.config(
         ...globals.node,
         ...globals.jest,
       },
-      sourceType: 'commonjs',
+      // Change 'commonjs' to 'module' because you are using .mjs and NestJS 11
+      sourceType: 'module', 
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,

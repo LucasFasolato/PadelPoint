@@ -1,19 +1,15 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-export function initCloudinary() {
-  if (
-    !process.env.CLOUDINARY_CLOUD_NAME ||
-    !process.env.CLOUDINARY_API_KEY ||
-    !process.env.CLOUDINARY_API_SECRET
-  ) {
-    throw new Error('Cloudinary env vars not loaded');
-  }
-
+// Pass the config from NestJS instead of reading process.env directly
+export function initCloudinary(config: {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+}) {
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
+    cloud_name: config.cloudName,
+    api_key: config.apiKey,
+    api_secret: config.apiSecret,
   });
-
   return cloudinary;
 }

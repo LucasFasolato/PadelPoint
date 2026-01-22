@@ -8,9 +8,11 @@ import { Court } from '../courts/court.entity';
 import { PublicMediaController } from './public-media.controller';
 import { ClubMembersModule } from '../club-members/club-members.module';
 import { ClubMember } from '../club-members/club-member.entity';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([MediaAsset, Court, ClubMember]),
     ClubMembersModule,
   ],

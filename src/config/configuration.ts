@@ -6,20 +6,28 @@ export default () => {
   return {
     port: env.PORT,
     nodeEnv: env.NODE_ENV,
-    DATABASE_URL: env.DATABASE_URL, 
+    enableCrons: env.ENABLE_CRONS,
+    databaseUrl: env.DATABASE_URL,
     db: {
-      host: env.DB_HOST,
-      port: env.DB_PORT,
-      user: env.DB_USER,
-      password: env.DB_PASS,
-      name: env.DB_NAME,
-      // Note: env.DB_SYNC and DB_LOG are now booleans from the schema validation
       sync: env.DB_SYNC,
       log: env.DB_LOG,
     },
     jwt: {
       secret: env.JWT_SECRET,
       expiresIn: env.JWT_EXPIRES_IN,
+    },
+    cloudinary: {
+      cloudName: env.CLOUDINARY_CLOUD_NAME,
+      apiKey: env.CLOUDINARY_API_KEY,
+      apiSecret: env.CLOUDINARY_API_SECRET,
+    },
+    media: {
+      allowedFormats: env.MEDIA_ALLOWED_FORMATS,
+      maxBytes: env.MEDIA_MAX_BYTES,
+    },
+    mercadoPago: {
+      accessToken: env.MP_ACCESS_TOKEN,
+      currency: env.MP_CURRENCY,
     },
   };
 };

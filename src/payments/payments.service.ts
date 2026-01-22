@@ -20,6 +20,7 @@ import {
   Reservation,
   ReservationStatus,
 } from '../modules/reservations/reservation.entity';
+import { ConfigService } from '@nestjs/config';
 
 type JsonObject = Record<string, any>;
 
@@ -27,6 +28,7 @@ type JsonObject = Record<string, any>;
 export class PaymentsService {
   constructor(
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
 
     @InjectRepository(PaymentIntent)
     private readonly intentRepo: Repository<PaymentIntent>,
@@ -398,6 +400,9 @@ export class PaymentsService {
    * Cron job: expira intents PENDING vencidos y libera reservas HOLD (si aplica).
    */
   async expirePendingIntentsNow(limit = 200) {
+    // Safety check to save resources on Railway
+    if (this.configService.get<boolean>('enableCrons') === false) return;
+
     return this.dataSource.transaction(async (manager) => {
       const intentRepo = manager.getRepository(PaymentIntent);
       const eventRepo = manager.getRepository(PaymentEvent);

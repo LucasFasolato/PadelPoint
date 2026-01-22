@@ -7,24 +7,26 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        // Simplified: Only use the URL instead of separate host/port/user/pass
-        url: config.get<string>('DATABASE_URL'),
+      useFactory: (configService: ConfigService) => {
+        const isProduction = configService.get('nodeEnv') === 'production';
+        const dbUrl = configService.get<string>('databaseUrl');
 
-        autoLoadEntities: true,
+        // Detectar si necesitamos SSL (Railway lo requiere, Localhost usualmente no)
+        const sslEnabled =
+          isProduction ||
+          dbUrl.includes('rlwy.net') ||
+          dbUrl.includes('railway');
 
-        // Recommended for migrations: false
-        synchronize: config.get<boolean>('db.sync') === true,
-
-        logging: config.get<boolean>('db.log') === true,
-
-        // Critical for Railway Pro production database connections
-        ssl:
-          config.get<string>('NODE_ENV') === 'production'
-            ? { rejectUnauthorized: false }
-            : false,
-      }),
+        return {
+          type: 'postgres',
+          url: dbUrl,
+          autoLoadEntities: true,
+          // ✅ AQUI está la magia: leerá la variable DB_SYNC de Railway
+          synchronize: configService.get<boolean>('db.sync'),
+          logging: configService.get<boolean>('db.log'),
+          ssl: sslEnabled ? { rejectUnauthorized: false } : false,
+        };
+      },
     }),
   ],
 })

@@ -10,9 +10,11 @@ import { PaymentEvent } from './payment-event.entity';
 
 import { Reservation } from '../modules/reservations/reservation.entity';
 import { PaymentsCron } from './payments.cron';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([
       PaymentIntent,
       PaymentTransaction,
