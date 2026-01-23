@@ -10,7 +10,11 @@ import {
 import { Court } from '../courts/court.entity';
 
 @Entity({ name: 'court_availability_rules' })
-@Index(['court', 'diaSemana', 'horaInicio'], { unique: true })
+@Index(
+  'UQ_rule_court_day_start_end_slot',
+  ['court', 'diaSemana', 'horaInicio', 'horaFin', 'slotMinutos'],
+  { unique: true },
+)
 export class CourtAvailabilityRule {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

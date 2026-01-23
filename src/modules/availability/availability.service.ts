@@ -99,15 +99,24 @@ export class AvailabilityService {
         court: { id: dto.courtId },
         diaSemana: In(dias),
         horaInicio: dto.horaInicio,
+        horaFin: dto.horaFin,
+        slotMinutos: dto.slotMinutos,
       },
     });
 
     const existsKey = new Set(
-      existentes.map((r) => `${r.diaSemana}|${r.horaInicio}`),
+      existentes.map(
+        (r) => `${r.diaSemana}|${r.horaInicio}|${r.horaFin}|${r.slotMinutos}`,
+      ),
     );
 
     const toCreate = dias
-      .filter((d) => !existsKey.has(`${d}|${dto.horaInicio}`))
+      .filter(
+        (d) =>
+          !existsKey.has(
+            `${d}|${dto.horaInicio}|${dto.horaFin}|${dto.slotMinutos}`,
+          ),
+      )
       .map((d) =>
         this.ruleRepo.create({
           court,
@@ -201,7 +210,7 @@ export class AvailabilityService {
         ) AS n
       ) gs ON true
     )
-    SELECT
+    SELECT DISTINCT ON 
       s.fecha::text AS fecha,
       s."courtId",
       s."courtNombre",
@@ -246,7 +255,12 @@ export class AvailabilityService {
         ORDER BY r."createdAt" DESC LIMIT 1
       ) AS "reservationId"
     FROM slots s
-    ORDER BY s.fecha, s.ts_inicio, s."courtNombre";
+    ORDER BY
+      s.fecha,
+      s."courtId",
+      to_char(s.ts_inicio,'HH24:MI'),
+      to_char(s.ts_fin,'HH24:MI'),
+      s."ruleId";
     `;
 
     // Type the raw result
@@ -347,22 +361,31 @@ export class AvailabilityService {
 
   async cleanupDuplicates() {
     const sql = `
-      DELETE FROM "court_availability_rules" a USING (
-        SELECT MIN(ctid) as ctid, "courtId", "diaSemana", "horaInicio"
-        FROM "court_availability_rules" 
-        GROUP BY "courtId", "diaSemana", "horaInicio" HAVING COUNT(*) > 1
-      ) b
-      WHERE a."courtId" = b."courtId" 
-        AND a."diaSemana" = b."diaSemana" 
-        AND a."horaInicio" = b."horaInicio" 
-        AND a.ctid <> b.ctid;
-    `;
+    WITH ranked AS (
+      SELECT
+        ctid,
+        "courtId",
+        "diaSemana",
+        "horaInicio",
+        "horaFin",
+        "slotMinutos",
+        ROW_NUMBER() OVER (
+          PARTITION BY "courtId", "diaSemana", "horaInicio", "horaFin", "slotMinutos"
+          ORDER BY "createdAt" DESC
+        ) AS rn
+      FROM "court_availability_rules"
+    )
+    DELETE FROM "court_availability_rules" r
+    USING ranked x
+    WHERE r.ctid = x.ctid
+      AND x.rn > 1
+    RETURNING 1;
+  `;
 
-    // Execute the raw query
-    // Note: DELETE queries usually return the number of affected rows in the second element of the array in some drivers,
-    // or just execute silently. We return a success message.
-    await this.dataSource.query(sql);
-
-    return { message: 'Duplicate rules cleaned successfully' };
+    const rows = await this.dataSource.query(sql);
+    return {
+      message: 'Duplicate rules cleaned successfully',
+      deleted: Array.isArray(rows) ? rows.length : 0,
+    };
   }
 }
