@@ -216,65 +216,6 @@ export class ReservationsService {
     });
   }
 
-  // --- PUBLIC CHECKOUT ACTIONS ---
-  async getPublicById(id: string, token: string | null) {
-    const res = await this.reservaRepo.findOne({
-      where: { id },
-      relations: ['court', 'court.club'],
-    });
-    if (!res) throw new NotFoundException('Reserva no encontrada');
-
-    if (!token) throw new ForbiddenException('Token required');
-    this.assertCheckoutToken(res, token);
-
-    return {
-      id: res.id,
-      status: res.status,
-      startAt: res.startAt,
-      endAt: res.endAt,
-      expiresAt: res.expiresAt,
-      precio: res.precio,
-      court: {
-        id: res.court.id,
-        nombre: res.court.nombre,
-        superficie: res.court.superficie,
-        precioPorHora: res.court.precioPorHora,
-        club: {
-          id: res.court.club.id,
-          nombre: res.court.club.nombre,
-        },
-      },
-      cliente: {
-        nombre: res.clienteNombre,
-        email: res.clienteEmail,
-        telefono: res.clienteTelefono,
-      },
-      checkoutTokenExpiresAt: res.checkoutTokenExpiresAt,
-    };
-  }
-
-  async confirmPublic(id: string, token: string) {
-    const res = await this.reservaRepo.findOne({
-      where: { id },
-      relations: ['court'],
-    });
-    if (!res) throw new NotFoundException('Reserva no encontrada');
-
-    this.assertCheckoutToken(res, token);
-
-    if (res.status === ReservationStatus.CANCELLED)
-      throw new BadRequestException('Reserva cancelada');
-    if (res.status === ReservationStatus.CONFIRMED) return res;
-
-    if (this.isHoldExpired(res)) throw new ConflictException('El hold expiró');
-
-    res.status = ReservationStatus.CONFIRMED;
-    res.expiresAt = null;
-    // res.checkoutTokenExpiresAt = null;
-    res.confirmedAt = new Date();
-    return this.reservaRepo.save(res);
-  }
-
   async cancelPublic(id: string, token: string) {
     const res = await this.reservaRepo.findOne({ where: { id } });
     if (!res) throw new NotFoundException('Reserva no encontrada');
@@ -457,5 +398,73 @@ export class ReservationsService {
       },
       take: 50, // Limit to last 50 matches for performance
     });
+  }
+
+  private toPublicCheckout(res: Reservation) {
+    return {
+      id: res.id,
+      status: res.status,
+      startAt: res.startAt,
+      endAt: res.endAt,
+      expiresAt: res.expiresAt,
+      precio: res.precio,
+      checkoutTokenExpiresAt: res.checkoutTokenExpiresAt,
+      court: {
+        id: res.court.id,
+        nombre: res.court.nombre,
+        superficie: res.court.superficie,
+        precioPorHora: res.court.precioPorHora,
+        club: {
+          id: res.court.club.id,
+          nombre: res.court.club.nombre,
+          direccion: res.court.club.direccion,
+        },
+      },
+      cliente: {
+        nombre: res.clienteNombre,
+        email: res.clienteEmail,
+        telefono: res.clienteTelefono,
+      },
+    };
+  }
+
+  async getPublicById(id: string, token: string | null) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (!token) throw new ForbiddenException('Token required');
+    this.assertCheckoutToken(res, token);
+
+    return this.toPublicCheckout(res);
+  }
+
+  async confirmPublic(id: string, token: string) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    this.assertCheckoutToken(res, token);
+
+    if (res.status === ReservationStatus.CANCELLED)
+      throw new BadRequestException('Reserva cancelada');
+
+    if (res.status === ReservationStatus.CONFIRMED) {
+      return this.toPublicCheckout(res);
+    }
+
+    if (this.isHoldExpired(res)) throw new ConflictException('El hold expiró');
+
+    res.status = ReservationStatus.CONFIRMED;
+    res.expiresAt = null;
+    res.checkoutTokenExpiresAt = null;
+    res.confirmedAt = new Date();
+
+    const saved = await this.reservaRepo.save(res);
+    return this.toPublicCheckout(saved);
   }
 }
