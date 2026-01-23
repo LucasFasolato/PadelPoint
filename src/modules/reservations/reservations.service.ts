@@ -53,7 +53,7 @@ export class ReservationsService {
   private isHoldExpired(res: Reservation): boolean {
     if (res.status !== ReservationStatus.HOLD) return false;
     if (!res.expiresAt) return true;
-    return DateTime.fromJSDate(res.expiresAt).toMillis() <= Date.now();
+    return res.expiresAt.getTime() <= Date.now();
   }
 
   private assertCheckoutToken(res: Reservation, token: string): void {
@@ -124,16 +124,15 @@ export class ReservationsService {
       if (overlap.length > 0) throw new ConflictException('Turno ocupado');
 
       // 3. Prepare Data
-      const expiresAt = DateTime.now()
-        .setZone(TZ)
+      const expiresAt = DateTime.utc()
         .plus({ minutes: HOLD_MINUTES })
         .toJSDate();
 
-      const checkoutToken = makeToken();
-      const checkoutTokenExpiresAt = DateTime.now()
-        .setZone(TZ)
+      const checkoutTokenExpiresAt = DateTime.utc()
         .plus({ minutes: CHECKOUT_TOKEN_MINUTES })
         .toJSDate();
+
+      const checkoutToken = makeToken();
 
       // 4. Create Entity
       const ent = trx.getRepository(Reservation).create({
@@ -157,9 +156,9 @@ export class ReservationsService {
       return {
         id: saved.id,
         status: saved.status,
-        startAt: saved.startAt,
-        endAt: saved.endAt,
-        expiresAt: saved.expiresAt,
+        startAt: saved.startAt.toISOString(),
+        endAt: saved.endAt.toISOString(),
+        expiresAt: saved.expiresAt?.toISOString(),
         precio: saved.precio,
         checkoutToken: saved.checkoutToken,
       };
