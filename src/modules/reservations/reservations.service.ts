@@ -452,19 +452,20 @@ export class ReservationsService {
 
     if (res.status === ReservationStatus.CANCELLED)
       throw new BadRequestException('Reserva cancelada');
-
     if (res.status === ReservationStatus.CONFIRMED) {
-      return this.toPublicCheckout(res);
+      // Ya confirmada: devolvémela en formato public
+      return this.getPublicById(id, token);
     }
 
     if (this.isHoldExpired(res)) throw new ConflictException('El hold expiró');
 
     res.status = ReservationStatus.CONFIRMED;
     res.expiresAt = null;
-    res.checkoutTokenExpiresAt = null;
     res.confirmedAt = new Date();
 
-    const saved = await this.reservaRepo.save(res);
-    return this.toPublicCheckout(saved);
+    await this.reservaRepo.save(res);
+
+    // ✅ devolvemos payload público completo para success sin re-fetch
+    return this.getPublicById(id, token);
   }
 }
