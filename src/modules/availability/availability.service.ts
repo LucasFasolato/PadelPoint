@@ -209,58 +209,71 @@ export class AvailabilityService {
           )::int - 1
         ) AS n
       ) gs ON true
-    )
-    SELECT DISTINCT ON 
-      s.fecha::text AS fecha,
-      s."courtId",
-      s."courtNombre",
-      s."ruleId",
-      to_char(s.ts_inicio, 'HH24:MI') AS "horaInicio",
-      to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
-      (
-        EXISTS (
-          SELECT 1 FROM "court_availability_overrides" o
+    ),
+    final AS (
+      SELECT
+        s.fecha,
+        s."courtId",
+        s."courtNombre",
+        s."ruleId",
+        to_char(s.ts_inicio, 'HH24:MI') AS "horaInicio",
+        to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
+        (
+          EXISTS (
+            SELECT 1 FROM "court_availability_overrides" o
+            WHERE o.bloqueado = true
+              AND o."courtId" = s."courtId"
+              AND o.fecha = s.fecha
+              AND s.ts_inicio::time < o."horaFin"
+              AND s.ts_fin::time > o."horaInicio"
+          )
+          OR
+          EXISTS (
+            SELECT 1 FROM "reservations" r
+            WHERE r."courtId" = s."courtId"
+              AND r.status IN ('hold','confirmed')
+              AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+              AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
+              AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
+          )
+        ) AS ocupado,
+        (
+          SELECT o.motivo FROM "court_availability_overrides" o
           WHERE o.bloqueado = true
             AND o."courtId" = s."courtId"
             AND o.fecha = s.fecha
             AND s.ts_inicio::time < o."horaFin"
             AND s.ts_fin::time > o."horaInicio"
-        )
-        OR
-        EXISTS (
-          SELECT 1 FROM "reservations" r
+          ORDER BY o."horaInicio" LIMIT 1
+        ) AS "motivoBloqueo",
+        (
+          SELECT r.id FROM "reservations" r
           WHERE r."courtId" = s."courtId"
             AND r.status IN ('hold','confirmed')
             AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
-            AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
+            AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
             AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
-        )
-      ) AS ocupado,
-      (
-        SELECT o.motivo FROM "court_availability_overrides" o
-        WHERE o.bloqueado = true
-          AND o."courtId" = s."courtId"
-          AND o.fecha = s.fecha
-          AND s.ts_inicio::time < o."horaFin"
-          AND s.ts_fin::time > o."horaInicio"
-        ORDER BY o."horaInicio" LIMIT 1
-      ) AS "motivoBloqueo",
-      (
-        SELECT r.id FROM "reservations" r
-        WHERE r."courtId" = s."courtId"
-          AND r.status IN ('hold','confirmed')
-          AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
-          AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
-          AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
-        ORDER BY r."createdAt" DESC LIMIT 1
-      ) AS "reservationId"
-    FROM slots s
+          ORDER BY r."createdAt" DESC LIMIT 1
+        ) AS "reservationId"
+      FROM slots s
+    )
+    SELECT DISTINCT ON ("courtId", fecha, "horaInicio", "horaFin")
+      fecha::text AS fecha,
+      "courtId",
+      "courtNombre",
+      "ruleId",
+      "horaInicio",
+      "horaFin",
+      ocupado,
+      "motivoBloqueo",
+      "reservationId"
+    FROM final
     ORDER BY
-      s.fecha,
-      s."courtId",
-      to_char(s.ts_inicio,'HH24:MI'),
-      to_char(s.ts_fin,'HH24:MI'),
-      s."ruleId";
+      "courtId",
+      fecha,
+      "horaInicio",
+      "horaFin",
+      "ruleId";
     `;
 
     // Type the raw result
