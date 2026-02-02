@@ -19,7 +19,7 @@ import { NotificationsService } from '@/notifications/notifications.service';
 const TZ = 'America/Argentina/Cordoba';
 const HOLD_MINUTES = 10;
 const CHECKOUT_TOKEN_MINUTES = 30;
-const RECEIPT_TOKEN_MINUTES = 60 * 24 * 14; // 14 días
+// const RECEIPT_TOKEN_MINUTES = 60 * 24 * 14; // 14 días
 
 // Helpers
 function normalizeText(s: string): string {
@@ -51,158 +51,64 @@ export class ReservationsService {
   // ---------------------------
   // TIME (single source of truth)
   // ---------------------------
-  /**
-   * DB now() as UTC ISO string. This is the only time source for expiry logic.
-   */
-  private async getDbNowIso(trx?: any): Promise<string> {
-    const runner = trx?.query ? trx : this.dataSource;
-    const rows: Array<{ now: any }> =
-      await runner.query(`SELECT now() as now;`);
+  private async getDbNow(trx?: any): Promise<Date> {
+    const runner = trx ?? this.dataSource;
+    const rows: Array<{ now: string | Date }> =
+      await runner.query(`SELECT now() as now`);
     const v = rows?.[0]?.now;
-
-    // pg may return Date or string depending on driver config
     const dt =
       v instanceof Date
         ? DateTime.fromJSDate(v)
         : DateTime.fromISO(String(v), { setZone: true });
 
-    if (!dt.isValid) return new Date().toISOString(); // ultra fallback
-    return dt.toUTC().toISO();
+    if (!dt.isValid) return new Date();
+    return dt.toUTC().toJSDate();
   }
 
   private parseISO(iso: string): DateTime {
-    const dt = DateTime.fromISO(iso, { setZone: true }); // respeta Z u offset
+    const dt = DateTime.fromISO(iso, { setZone: true });
     if (!dt.isValid) throw new BadRequestException('Fecha inválida');
     return dt.setZone(TZ);
   }
 
-  // ---------------------------
-  // TOKEN VALIDATORS (VALUE checks are app-side + timingSafe)
-  // EXPIRY checks are DB-side (via SQL conditions or dbNow)
-  // ---------------------------
+  private async isHoldExpired(res: Reservation, trx?: any): Promise<boolean> {
+    if (res.status !== ReservationStatus.HOLD) return false;
+    if (!res.expiresAt) return true;
+    const dbNow = await this.getDbNow(trx);
+    return res.expiresAt.getTime() <= dbNow.getTime();
+  }
 
-  private assertTokenValue(
-    stored: string | null,
-    provided: string,
-    msg: string,
-  ) {
-    if (!stored) throw new ForbiddenException(msg);
-    if (!provided) throw new ForbiddenException(msg);
-    if (!safeEq(stored, provided))
+  private async assertCheckoutToken(
+    res: Reservation,
+    token: string,
+    trx?: any,
+  ): Promise<void> {
+    if (!token) throw new ForbiddenException('Token required');
+
+    if (!res.checkoutToken || !res.checkoutTokenExpiresAt) {
+      throw new ForbiddenException('Checkout token missing');
+    }
+
+    const dbNow = await this.getDbNow(trx);
+    if (res.checkoutTokenExpiresAt.getTime() <= dbNow.getTime()) {
+      throw new ForbiddenException('Checkout token expired');
+    }
+
+    if (!safeEq(res.checkoutToken, token)) {
       throw new ForbiddenException('Invalid token');
-  }
-
-  private async assertCheckoutTokenActive(
-    res: Reservation,
-    token: string,
-    trx?: any,
-  ) {
-    // value check
-    this.assertTokenValue(
-      res.checkoutToken ?? null,
-      token,
-      'Checkout token missing',
-    );
-
-    // expiry check with DB now
-    const runner = trx?.query ? trx : this.dataSource;
-    const rows = await runner.query(
-      `
-      SELECT 1
-      FROM "reservations"
-      WHERE id = $1::uuid
-        AND "checkoutTokenExpiresAt" IS NOT NULL
-        AND "checkoutTokenExpiresAt" > now()
-      LIMIT 1;
-      `,
-      [res.id],
-    );
-
-    if (!rows.length) throw new ForbiddenException('Checkout token expired');
-  }
-
-  private async assertReceiptTokenActive(
-    res: Reservation,
-    token: string,
-    trx?: any,
-  ) {
-    // value check
-    this.assertTokenValue(
-      res.receiptToken ?? null,
-      token,
-      'Receipt token missing',
-    );
-
-    // expiry check with DB now
-    const runner = trx?.query ? trx : this.dataSource;
-    const rows = await runner.query(
-      `
-      SELECT 1
-      FROM "reservations"
-      WHERE id = $1::uuid
-        AND "receiptTokenExpiresAt" IS NOT NULL
-        AND "receiptTokenExpiresAt" > now()
-      LIMIT 1;
-      `,
-      [res.id],
-    );
-
-    if (!rows.length) throw new ForbiddenException('Receipt token expired');
+    }
   }
 
   // ---------------------------
-  // PUBLIC SHAPE
+  // CREATE HOLD
   // ---------------------------
-
-  private async toPublicCheckout(res: Reservation, trx?: any) {
-    const serverNow = await this.getDbNowIso(trx);
-    const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
-
-    return {
-      id: res.id,
-      status: res.status,
-      startAt: iso(res.startAt),
-      endAt: iso(res.endAt),
-      expiresAt: iso(res.expiresAt),
-      precio: res.precio,
-
-      checkoutTokenExpiresAt: iso(res.checkoutTokenExpiresAt),
-      receiptToken: res.receiptToken ?? null,
-      receiptTokenExpiresAt: iso(res.receiptTokenExpiresAt),
-
-      serverNow, // ✅ DB now
-
-      court: {
-        id: res.court.id,
-        nombre: (res.court as any).nombre,
-        superficie: (res.court as any).superficie,
-        precioPorHora: (res.court as any).precioPorHora,
-        club: {
-          id: (res.court as any).club.id,
-          nombre: (res.court as any).club.nombre,
-          direccion: (res.court as any).club.direccion,
-        },
-      },
-      cliente: {
-        nombre: res.clienteNombre,
-        email: res.clienteEmail,
-        telefono: res.clienteTelefono,
-      },
-    };
-  }
-
-  // ---------------------------
-  // CREATE HOLD (DB-aligned time)
-  // ---------------------------
-
   async createHold(dto: CreateHoldDto) {
     const court = await this.courtRepo.findOne({
       where: { id: dto.courtId },
       relations: ['club'],
     });
     if (!court) throw new NotFoundException('Cancha no encontrada');
-    if (!(court as any).activa)
-      throw new BadRequestException('Cancha inactiva');
+    if (!court.activa) throw new BadRequestException('Cancha inactiva');
 
     const start = this.parseISO(dto.startAt);
     const end = this.parseISO(dto.endAt);
@@ -211,12 +117,14 @@ export class ReservationsService {
       throw new BadRequestException('endAt debe ser mayor a startAt');
     }
 
-    // Validación “no pasado” basada en TZ negocio (ok)
     if (start < DateTime.now().setZone(TZ).minus({ minutes: 1 })) {
       throw new BadRequestException('No puedes reservar en el pasado');
     }
 
     return await this.dataSource.transaction(async (trx) => {
+      const dbNow = await this.getDbNow(trx);
+      const dbNowLux = DateTime.fromJSDate(dbNow).toUTC();
+
       // 1) Overrides (Blocks)
       const overrideSql = `
         SELECT 1 FROM "court_availability_overrides" o
@@ -236,7 +144,7 @@ export class ReservationsService {
         throw new ConflictException('Horario bloqueado por evento/admin');
       }
 
-      // 2) Overlaps (Existing Reservations) usando DB now()
+      // 2) Overlaps
       const overlapSql = `
         SELECT 1 FROM "reservations" r
         WHERE r."courtId" = $1::uuid
@@ -253,79 +161,224 @@ export class ReservationsService {
       ]);
       if (overlap.length > 0) throw new ConflictException('Turno ocupado');
 
-      // 3) Crear HOLD usando DB now() + interval (🔥 fija el skew)
+      // 3) Prepare data (desde DB now)
+      const expiresAt = dbNowLux.plus({ minutes: HOLD_MINUTES }).toJSDate();
+      const checkoutTokenExpiresAt = dbNowLux
+        .plus({ minutes: CHECKOUT_TOKEN_MINUTES })
+        .toJSDate();
       const checkoutToken = makeToken();
 
-      const insertSql = `
-        INSERT INTO "reservations" (
-          "courtId",
-          "startAt",
-          "endAt",
-          "status",
-          "expiresAt",
-          "checkoutToken",
-          "checkoutTokenExpiresAt",
-          "clienteNombre",
-          "clienteEmail",
-          "clienteTelefono",
-          "precio"
-        )
-        VALUES (
-          $1::uuid,
-          $2::timestamptz,
-          $3::timestamptz,
-          'hold',
-          now() + ($4::int * interval '1 minute'),
-          $5::varchar,
-          now() + ($6::int * interval '1 minute'),
-          $7::varchar,
-          $8::varchar,
-          $9::varchar,
-          $10::numeric
-        )
-        RETURNING
-          id,
-          status,
-          "startAt",
-          "endAt",
-          "expiresAt",
-          precio,
-          "checkoutToken",
-          now() as "serverNow";
-      `;
-
-      const rows = await trx.query(insertSql, [
-        dto.courtId,
-        start.toISO(),
-        end.toISO(),
-        HOLD_MINUTES,
+      // 4) Create
+      const ent = trx.getRepository(Reservation).create({
+        court,
+        startAt: start.toJSDate(),
+        endAt: end.toJSDate(),
+        status: ReservationStatus.HOLD,
+        expiresAt,
         checkoutToken,
-        CHECKOUT_TOKEN_MINUTES,
-        normalizeText(dto.clienteNombre),
-        dto.clienteEmail ? normalizeText(dto.clienteEmail) : null,
-        dto.clienteTelefono ? normalizeText(dto.clienteTelefono) : null,
-        Number(dto.precio),
-      ]);
+        checkoutTokenExpiresAt,
+        clienteNombre: normalizeText(dto.clienteNombre),
+        clienteEmail: dto.clienteEmail ? normalizeText(dto.clienteEmail) : null,
+        clienteTelefono: dto.clienteTelefono
+          ? normalizeText(dto.clienteTelefono)
+          : null,
+        precio: Number(dto.precio),
+      });
 
-      const r = rows[0];
+      const saved = await trx.getRepository(Reservation).save(ent);
 
       return {
-        id: r.id,
-        status: r.status,
-        startAt: new Date(r.startAt).toISOString(),
-        endAt: new Date(r.endAt).toISOString(),
-        expiresAt: r.expiresAt ? new Date(r.expiresAt).toISOString() : null,
-        precio: Number(r.precio),
-        checkoutToken: r.checkoutToken,
-        serverNow: new Date(r.serverNow).toISOString(),
+        id: saved.id,
+        status: saved.status,
+        startAt: saved.startAt.toISOString(),
+        endAt: saved.endAt.toISOString(),
+        expiresAt: saved.expiresAt?.toISOString() ?? null,
+        precio: saved.precio,
+        checkoutToken: saved.checkoutToken,
+        serverNow: dbNow.toISOString(),
       };
     });
   }
 
   // ---------------------------
-  // INTERNAL ADMIN ACTIONS
+  // PUBLIC CHECKOUT HELPERS
   // ---------------------------
+  private async toPublicCheckout(res: Reservation, trx?: any) {
+    const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+    const dbNow = await this.getDbNow(trx);
 
+    return {
+      id: res.id,
+      status: res.status,
+      startAt: iso(res.startAt),
+      endAt: iso(res.endAt),
+      expiresAt: iso(res.expiresAt),
+      precio: res.precio,
+      checkoutTokenExpiresAt: iso(res.checkoutTokenExpiresAt),
+      serverNow: dbNow.toISOString(),
+
+      receiptToken: res.receiptToken,
+      receiptTokenExpiresAt: iso(res.receiptTokenExpiresAt),
+
+      court: {
+        id: res.court.id,
+        nombre: res.court.nombre,
+        superficie: res.court.superficie,
+        precioPorHora: res.court.precioPorHora,
+        club: {
+          id: res.court.club.id,
+          nombre: res.court.club.nombre,
+          direccion: res.court.club.direccion,
+        },
+      },
+      cliente: {
+        nombre: res.clienteNombre,
+        email: res.clienteEmail,
+        telefono: res.clienteTelefono,
+      },
+    };
+  }
+
+  async getPublicById(id: string, token: string | null) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    // HOLD / CANCELLED => checkout token
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      if (!token) throw new ForbiddenException('Checkout token required');
+      await this.assertCheckoutToken(res, token);
+      return this.toPublicCheckout(res);
+    }
+
+    // CONFIRMED no se expone aquí
+    throw new ForbiddenException('Use receipt endpoint');
+  }
+
+  // ---------------------------
+  // CONFIRM PUBLIC (ATÓMICO)
+  // ---------------------------
+  async confirmPublic(id: string, token: string) {
+    if (!token) throw new ForbiddenException('Token required');
+
+    return await this.dataSource.transaction(async (trx) => {
+      // 1) Intento atómico: hold válido + token válido => confirmed
+      const newReceipt = makeToken();
+
+      // 14 días exactos usando interval en SQL (más simple y consistente)
+      const sql = `
+        UPDATE "reservations"
+        SET
+          status = 'confirmed',
+          "expiresAt" = NULL,
+          "confirmedAt" = now(),
+          "receiptToken" = COALESCE("receiptToken", $3::text),
+          "receiptTokenExpiresAt" = COALESCE("receiptTokenExpiresAt", now() + interval '14 days'),
+          "checkoutToken" = NULL,
+          "checkoutTokenExpiresAt" = NULL
+        WHERE
+          id = $1::uuid
+          AND status = 'hold'
+          AND "expiresAt" IS NOT NULL
+          AND "expiresAt" > now()
+          AND "checkoutToken" = $2::text
+          AND "checkoutTokenExpiresAt" IS NOT NULL
+          AND "checkoutTokenExpiresAt" > now()
+        RETURNING id;
+      `;
+
+      const updated: Array<{ id: string }> = await trx.query(sql, [
+        id,
+        token,
+        newReceipt,
+      ]);
+
+      if (updated.length > 0) {
+        // 2) Ya confirmada exitosamente => devolvemos payload público
+        const res = await trx.getRepository(Reservation).findOne({
+          where: { id } as any,
+          relations: ['court', 'court.club'],
+        });
+        if (!res) throw new NotFoundException('Reserva no encontrada');
+
+        // ✅ disparar notificaciones acá (idempotentes en tu NotificationsService)
+        // (si todavía no lo conectaste, lo dejamos comentado)
+        // await this.notifications.onReservationConfirmed(res);
+
+        return this.toPublicCheckout(res, trx);
+      }
+
+      // 3) Si no se actualizó, diagnosticamos el motivo con datos actuales
+      const res = await trx.getRepository(Reservation).findOne({
+        where: { id } as any,
+        relations: ['court', 'court.club'],
+      });
+      if (!res) throw new NotFoundException('Reserva no encontrada');
+
+      if (res.status === ReservationStatus.CANCELLED) {
+        throw new BadRequestException('Reserva cancelada');
+      }
+
+      if (res.status === ReservationStatus.CONFIRMED) {
+        // ya no aceptamos checkout token (se invalida al confirmar)
+        throw new ForbiddenException('Use receipt endpoint');
+      }
+
+      // status == hold: puede ser expirado o token inválido
+      if (await this.isHoldExpired(res, trx)) {
+        throw new ConflictException('El hold expiró');
+      }
+
+      // token inválido / expirado
+      // (acá preferimos 403 para diferenciar de 409 expirado)
+      await this.assertCheckoutToken(res, token, trx);
+
+      // si pasó assert y aun así no updateó, sería rarísimo (race muy finita)
+      throw new ConflictException('No se pudo confirmar. Reintenta.');
+    });
+  }
+
+  // ---------------------------
+  // RECEIPT ENDPOINT
+  // ---------------------------
+  private assertReceiptToken(res: Reservation, token: string): void {
+    if (!token) throw new ForbiddenException('Receipt token required');
+    if (!res.receiptToken)
+      throw new ForbiddenException('Receipt token missing');
+
+    if (res.receiptTokenExpiresAt) {
+      const exp = DateTime.fromJSDate(res.receiptTokenExpiresAt).toMillis();
+      if (exp <= Date.now())
+        throw new ForbiddenException('Receipt token expired');
+    }
+
+    if (!safeEq(res.receiptToken, token)) {
+      throw new ForbiddenException('Invalid receipt token');
+    }
+  }
+
+  async getReceiptById(id: string, receiptToken: string | null) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      throw new ForbiddenException('Receipt available only for confirmed');
+    }
+
+    if (!receiptToken) throw new ForbiddenException('Receipt token required');
+    this.assertReceiptToken(res, receiptToken);
+
+    return this.toPublicCheckout(res);
+  }
+
+  // ---------------------------
+  // ADMIN + LISTS (sin cambios)
+  // ---------------------------
   async confirm(id: string) {
     const res = await this.reservaRepo.findOne({
       where: { id },
@@ -333,25 +386,12 @@ export class ReservationsService {
     });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
-    if (res.status === ReservationStatus.CANCELLED) {
+    if (res.status === ReservationStatus.CANCELLED)
       throw new BadRequestException('Reserva cancelada');
-    }
     if (res.status === ReservationStatus.CONFIRMED) return res;
 
-    // Confirm admin: check hold active with DB now
-    const ok = await this.dataSource.query(
-      `
-      SELECT 1
-      FROM "reservations"
-      WHERE id = $1::uuid
-        AND status = 'hold'
-        AND "expiresAt" IS NOT NULL
-        AND "expiresAt" > now()
-      LIMIT 1;
-      `,
-      [id],
-    );
-    if (!ok.length) throw new ConflictException('El hold expiró');
+    if (await this.isHoldExpired(res))
+      throw new ConflictException('El hold expiró');
 
     res.status = ReservationStatus.CONFIRMED;
     res.expiresAt = null;
@@ -393,7 +433,7 @@ export class ReservationsService {
     const res = await this.reservaRepo.findOne({ where: { id } });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
-    await this.assertCheckoutTokenActive(res, token);
+    await this.assertCheckoutToken(res, token);
 
     if (res.status === ReservationStatus.CANCELLED) return res;
 
@@ -402,6 +442,16 @@ export class ReservationsService {
     res.checkoutTokenExpiresAt = null;
     res.cancelledAt = new Date();
     return this.reservaRepo.save(res);
+  }
+
+  async listUserMatches(email: string) {
+    const normalizedEmail = email.trim();
+    return this.reservaRepo.find({
+      where: { clienteEmail: normalizedEmail },
+      relations: ['court', 'court.club'],
+      order: { startAt: 'DESC' },
+      take: 50,
+    });
   }
 
   // ---------------------------
@@ -545,169 +595,5 @@ export class ReservationsService {
       limit,
     ]);
     return { expiredCount: rows.length, ids: rows.map((r) => r.id) };
-  }
-
-  async listUserMatches(email: string) {
-    const normalizedEmail = email.trim();
-
-    return this.reservaRepo.find({
-      where: { clienteEmail: normalizedEmail },
-      relations: ['court', 'court.club'],
-      order: { startAt: 'DESC' },
-      take: 50,
-    });
-  }
-
-  // ---------------------------
-  // PUBLIC: GET CHECKOUT (HOLD/CANCELLED) via checkout token
-  // ---------------------------
-
-  async getPublicById(id: string, token: string | null) {
-    const res = await this.reservaRepo.findOne({
-      where: { id },
-      relations: ['court', 'court.club'],
-    });
-    if (!res) throw new NotFoundException('Reserva no encontrada');
-
-    // HOLD/CANCELLED => requiere checkout token
-    if (res.status !== ReservationStatus.CONFIRMED) {
-      if (!token) throw new ForbiddenException('Checkout token required');
-      await this.assertCheckoutTokenActive(res, token);
-      return this.toPublicCheckout(res);
-    }
-
-    // CONFIRMED => NO por checkout
-    throw new ForbiddenException('Use receipt endpoint');
-  }
-
-  // ---------------------------
-  // PUBLIC: CONFIRM (atomic DB-time check)
-  // - validates checkout token active (db)
-  // - confirms only if hold active (expiresAt > now())
-  // - generates receipt token (14d) using DB now
-  // - invalidates checkout token
-  // ---------------------------
-
-  async confirmPublic(id: string, token: string) {
-    const res = await this.reservaRepo.findOne({
-      where: { id },
-      relations: ['court', 'court.club'],
-    });
-    if (!res) throw new NotFoundException('Reserva no encontrada');
-
-    await this.assertCheckoutTokenActive(res, token);
-
-    if (res.status === ReservationStatus.CANCELLED) {
-      throw new BadRequestException('Reserva cancelada');
-    }
-
-    // idempotente: si ya está confirmada, devolvemos receipt view (pero requiere receipt endpoint)
-    // acá devolvemos el payload con receipt token si lo tiene; si no, lo generamos.
-    return await this.dataSource.transaction(async (trx) => {
-      // 🔥 Confirmación atómica: DB decide si el hold sigue vivo
-      // Además: generamos receipt token + expiración con DB now()
-      const newReceipt = makeToken();
-
-      const upd = await trx.query(
-        `
-        UPDATE "reservations"
-        SET
-          status = 'confirmed',
-          "expiresAt" = NULL,
-          "confirmedAt" = now(),
-          "receiptToken" = COALESCE("receiptToken", $2::varchar),
-          "receiptTokenExpiresAt" = COALESCE("receiptTokenExpiresAt", now() + ($3::int * interval '1 minute')),
-          "checkoutToken" = NULL,
-          "checkoutTokenExpiresAt" = NULL
-        WHERE id = $1::uuid
-          AND status = 'hold'
-          AND "expiresAt" IS NOT NULL
-          AND "expiresAt" > now()
-          AND "checkoutTokenExpiresAt" IS NOT NULL
-          AND "checkoutTokenExpiresAt" > now()
-        RETURNING id;
-        `,
-        [id, newReceipt, RECEIPT_TOKEN_MINUTES],
-      );
-
-      if (!upd.length) {
-        // distinguir causas con DB (no app time)
-        const state = await trx.query(
-          `
-          SELECT status,
-                 "expiresAt",
-                 "checkoutTokenExpiresAt"
-          FROM "reservations"
-          WHERE id = $1::uuid
-          LIMIT 1;
-          `,
-          [id],
-        );
-
-        if (!state.length) throw new NotFoundException('Reserva no encontrada');
-
-        const row = state[0];
-
-        // token expirado?
-        if (!row.checkoutTokenExpiresAt)
-          throw new ForbiddenException('Checkout token expired');
-        const tokenOk = await trx.query(
-          `SELECT 1 FROM "reservations" WHERE id=$1::uuid AND "checkoutTokenExpiresAt">now() LIMIT 1;`,
-          [id],
-        );
-        if (!tokenOk.length)
-          throw new ForbiddenException('Checkout token expired');
-
-        // hold expirado?
-        if (row.status === 'hold')
-          throw new ConflictException('El hold expiró');
-
-        // ya confirmada? -> devolvemos receipt (si existe) por receipt endpoint
-        if (row.status === 'confirmed')
-          throw new ConflictException('Ya confirmada');
-
-        throw new ConflictException('No se pudo confirmar la reserva');
-      }
-
-      // Traer fresh y devolver payload público (incluye receipt token)
-      const fresh = await trx.getRepository(Reservation).findOne({
-        where: { id } as any,
-        relations: ['court', 'court.club'],
-      });
-      if (!fresh) throw new NotFoundException('Reserva no encontrada');
-
-      // 🔔 Notificaciones: disparar (no bloquear confirm)
-      // (si querés robusto con outbox, lo hacemos después)
-      try {
-        await this.notifications.sendReservationConfirmedMock({
-          reservationId: fresh.id,
-        } as any);
-      } catch {
-        // swallow
-      }
-
-      return this.toPublicCheckout(fresh, trx);
-    });
-  }
-
-  // ---------------------------
-  // PUBLIC: RECEIPT (CONFIRMED) via receipt token
-  // ---------------------------
-
-  async getReceiptById(id: string, receiptToken: string | null) {
-    const res = await this.reservaRepo.findOne({
-      where: { id },
-      relations: ['court', 'court.club'],
-    });
-    if (!res) throw new NotFoundException('Reserva no encontrada');
-
-    if (res.status !== ReservationStatus.CONFIRMED) {
-      throw new ForbiddenException('Receipt available only for confirmed');
-    }
-
-    if (!receiptToken) throw new ForbiddenException('Receipt token required');
-    await this.assertReceiptTokenActive(res, receiptToken);
-
-    return this.toPublicCheckout(res);
   }
 }
