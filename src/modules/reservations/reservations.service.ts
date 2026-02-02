@@ -125,11 +125,13 @@ export class ReservationsService {
       if (overlap.length > 0) throw new ConflictException('Turno ocupado');
 
       // 3. Prepare Data
-      const expiresAt = DateTime.utc()
+      const expiresAt = DateTime.now()
+        .setZone(TZ)
         .plus({ minutes: HOLD_MINUTES })
         .toJSDate();
 
-      const checkoutTokenExpiresAt = DateTime.utc()
+      const checkoutTokenExpiresAt = DateTime.now()
+        .setZone(TZ)
         .plus({ minutes: CHECKOUT_TOKEN_MINUTES })
         .toJSDate();
 
