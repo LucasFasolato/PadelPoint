@@ -54,7 +54,7 @@ export class AgendaService {
     statuses?: string;
     mode: AgendaStatusMode;
   }): Promise<AgendaResponseDto> {
-    const date = this.parseISODate(params.date);
+    const date = this.parseISO(params.date);
     const dayStart = date.startOf('day');
     const dayEnd = date.endOf('day');
 
@@ -173,7 +173,7 @@ export class AgendaService {
     reason?: string;
     blocked: boolean;
   }) {
-    const date = this.parseISODate(input.date).toISODate()!;
+    const date = this.parseISO(input.date);
 
     // Validate court belongs to club + is active
     const court = await this.courtRepo.findOne({
@@ -400,11 +400,10 @@ export class AgendaService {
     return h * 60 + m;
   }
 
-  private parseISODate(isoDate: string) {
-    const dt = DateTime.fromISO(isoDate, { zone: TZ });
-    if (!dt.isValid || !dt.toISODate())
-      throw new BadRequestException('Invalid date');
-    return dt;
+  private parseISO(iso: string): DateTime {
+    const dt = DateTime.fromISO(iso, { setZone: true }); // respeta Z u offset
+    if (!dt.isValid) throw new BadRequestException('Fecha inválida');
+    return dt.setZone(TZ);
   }
 
   private async generateSlotsForClubOnDate(

@@ -21,7 +21,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           type: 'postgres',
           url: dbUrl,
           autoLoadEntities: true,
-          // ✅ AQUI está la magia: leerá la variable DB_SYNC de Railway
           synchronize: configService.get<boolean>('db.sync'),
           logging: configService.get<boolean>('db.log'),
           ssl: sslEnabled ? { rejectUnauthorized: false } : false,

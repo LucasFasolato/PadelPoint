@@ -45,17 +45,18 @@ export class ReservationsService {
   ) {}
 
   private parseISO(iso: string): DateTime {
-    const dt = DateTime.fromISO(iso, { zone: TZ });
+    const dt = DateTime.fromISO(iso, { setZone: true }); // respeta Z u offset
     if (!dt.isValid) throw new BadRequestException('Fecha inválida');
-    return dt;
+    return dt.setZone(TZ);
   }
 
   private isHoldExpired(res: Reservation): boolean {
     if (res.status !== ReservationStatus.HOLD) return false;
     if (!res.expiresAt) return true;
-    return res.expiresAt.getTime() <= Date.now();
+    return (
+      DateTime.fromJSDate(res.expiresAt, { zone: TZ }).toMillis() <= Date.now()
+    );
   }
-
   private assertCheckoutToken(res: Reservation, token: string): void {
     if (!res.checkoutToken || !res.checkoutTokenExpiresAt) {
       throw new ForbiddenException('Checkout token missing');
@@ -400,14 +401,19 @@ export class ReservationsService {
   }
 
   private toPublicCheckout(res: Reservation) {
+    const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
     return {
       id: res.id,
       status: res.status,
-      startAt: res.startAt,
-      endAt: res.endAt,
-      expiresAt: res.expiresAt,
+
+      startAt: iso(res.startAt),
+      endAt: iso(res.endAt),
+      expiresAt: iso(res.expiresAt),
+      checkoutTokenExpiresAt: iso(res.checkoutTokenExpiresAt),
+
       precio: res.precio,
-      checkoutTokenExpiresAt: res.checkoutTokenExpiresAt,
+
       court: {
         id: res.court.id,
         nombre: res.court.nombre,
@@ -419,6 +425,7 @@ export class ReservationsService {
           direccion: res.court.club.direccion,
         },
       },
+
       cliente: {
         nombre: res.clienteNombre,
         email: res.clienteEmail,
