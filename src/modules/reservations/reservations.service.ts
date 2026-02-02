@@ -19,6 +19,7 @@ import { NotificationsService } from '@/notifications/notifications.service';
 const TZ = 'America/Argentina/Cordoba';
 const HOLD_MINUTES = 10;
 const CHECKOUT_TOKEN_MINUTES = 30;
+const RECEIPT_TOKEN_MINUTES = 60 * 24 * 14; // 14 días (ajustable)
 
 // Helpers
 function normalizeText(s: string): string {
@@ -434,9 +435,8 @@ export class ReservationsService {
   // ---------------------------
   // PUBLIC CHECKOUT HELPERS
   // ---------------------------
-  private async toPublicCheckout(res: Reservation, trx?: any) {
+  private toPublicCheckout(res: Reservation) {
     const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
-    const dbNow = await this.getDbNow(trx);
 
     return {
       id: res.id,
@@ -446,7 +446,12 @@ export class ReservationsService {
       expiresAt: iso(res.expiresAt),
       precio: res.precio,
       checkoutTokenExpiresAt: iso(res.checkoutTokenExpiresAt),
-      serverNow: dbNow.toISOString(), // ✅ DB now
+      serverNow: new Date().toISOString(),
+
+      // ✅ para success
+      receiptToken: res.receiptToken,
+      receiptTokenExpiresAt: iso(res.receiptTokenExpiresAt),
+
       court: {
         id: res.court.id,
         nombre: res.court.nombre,
@@ -473,46 +478,86 @@ export class ReservationsService {
     });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
-    if (!token) throw new ForbiddenException('Token required');
-    await this.assertCheckoutToken(res, token);
+    // HOLD / CANCELLED: requiere checkout token
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      if (!token) throw new ForbiddenException('Checkout token required');
+      this.assertCheckoutToken(res, token);
+      return this.toPublicCheckout(res);
+    }
+
+    // CONFIRMED: no se expone desde este endpoint
+    throw new ForbiddenException('Use receipt endpoint');
+  }
+
+  async confirmPublic(id: string, token: string) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    this.assertCheckoutToken(res, token);
+
+    if (res.status === ReservationStatus.CANCELLED)
+      throw new BadRequestException('Reserva cancelada');
+
+    if (res.status === ReservationStatus.CONFIRMED) {
+      // Ya confirmada: igual devolvemos el public checkout con receipt
+      return this.toPublicCheckout(res);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    if (this.isHoldExpired(res)) throw new ConflictException('El hold expiró');
+
+    // ✅ confirmar
+    res.status = ReservationStatus.CONFIRMED;
+    res.expiresAt = null;
+    res.confirmedAt = new Date();
+
+    // ✅ generar receipt token (si no existe)
+    res.receiptToken = res.receiptToken ?? makeToken();
+    res.receiptTokenExpiresAt =
+      res.receiptTokenExpiresAt ??
+      DateTime.now().plus({ minutes: RECEIPT_TOKEN_MINUTES }).toJSDate();
+
+    // ✅ opcional: invalidar checkout token al confirmar (recomendado)
+    res.checkoutToken = null;
+    res.checkoutTokenExpiresAt = null;
+
+    await this.reservaRepo.save(res);
 
     return this.toPublicCheckout(res);
   }
 
-  async confirmPublic(id: string, token: string) {
-    // En confirm público usamos transacción para ser consistentes con dbNow
-    return this.dataSource.transaction(async (trx) => {
-      const repo = trx.getRepository(Reservation);
+  private assertReceiptToken(res: Reservation, token: string): void {
+    if (!res.receiptToken)
+      throw new ForbiddenException('Receipt token missing');
 
-      const res = await repo.findOne({
-        where: { id },
-        relations: ['court', 'court.club'],
-      });
-      if (!res) throw new NotFoundException('Reserva no encontrada');
+    if (res.receiptTokenExpiresAt) {
+      const exp = DateTime.fromJSDate(res.receiptTokenExpiresAt).toMillis();
+      if (exp <= Date.now())
+        throw new ForbiddenException('Receipt token expired');
+    }
 
-      await this.assertCheckoutToken(res, token, trx);
+    if (!safeEq(res.receiptToken, token)) {
+      throw new ForbiddenException('Invalid receipt token');
+    }
+  }
 
-      if (res.status === ReservationStatus.CANCELLED) {
-        throw new BadRequestException('Reserva cancelada');
-      }
-
-      if (res.status === ReservationStatus.CONFIRMED) {
-        return this.toPublicCheckout(res, trx);
-      }
-
-      if (await this.isHoldExpired(res, trx)) {
-        throw new ConflictException('El hold expiró');
-      }
-
-      res.status = ReservationStatus.CONFIRMED;
-      res.expiresAt = null;
-      res.checkoutTokenExpiresAt = null;
-      res.confirmedAt = new Date();
-
-      await repo.save(res);
-
-      // ✅ devolvemos payload público completo para success sin re-fetch
-      return this.toPublicCheckout(res, trx);
+  async getReceiptById(id: string, receiptToken: string | null) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
     });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      throw new ForbiddenException('Receipt available only for confirmed');
+    }
+
+    if (!receiptToken) throw new ForbiddenException('Receipt token required');
+    this.assertReceiptToken(res, receiptToken);
+
+    return this.toPublicCheckout(res);
   }
 }

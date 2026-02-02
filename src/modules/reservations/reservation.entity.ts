@@ -16,8 +16,6 @@ export enum ReservationStatus {
 }
 
 @Entity({ name: 'reservations' })
-// ⚡ PERFORMANCE KEY: This Composite Index allows blazing fast Overlap Checks
-// We include 'status' because we usually filter out cancelled reservations
 @Index(['court', 'startAt', 'endAt', 'status'])
 export class Reservation {
   @PrimaryGeneratedColumn('uuid')
@@ -39,16 +37,23 @@ export class Reservation {
   })
   status!: ReservationStatus;
 
-  // solo para HOLD
+  // HOLD
   @Column({ type: 'timestamptz', nullable: true })
   expiresAt!: Date | null;
 
-  // checkout público
+  // checkout público (para hold/confirm/cancel)
   @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
   checkoutToken!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   checkoutTokenExpiresAt!: Date | null;
+
+  // ✅ receipt token (para success / comprobante)
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  receiptToken!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  receiptTokenExpiresAt!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   confirmedAt!: Date | null;
@@ -56,7 +61,6 @@ export class Reservation {
   @Column({ type: 'timestamptz', nullable: true })
   cancelledAt!: Date | null;
 
-  // sin auth por ahora → datos mínimos del cliente
   @Column({ type: 'varchar', length: 120 })
   clienteNombre!: string;
 
@@ -76,9 +80,9 @@ export class Reservation {
   })
   precio!: number;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn()
   createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn()
   updatedAt!: Date;
 }
