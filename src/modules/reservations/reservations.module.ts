@@ -9,11 +9,13 @@ import { PublicReservationsController } from './public-reservations.controller';
 import { ExpireHoldsCron } from './expire-holds.cron';
 import { ClubMembersModule } from '../club-members/club-members.module';
 import { ClubMember } from '../club-members/club-member.entity';
+import { NotificationsModule } from '@/notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Reservation, Court, ClubMember]),
     ClubMembersModule,
+    NotificationsModule,
   ],
   controllers: [ReservationsController, PublicReservationsController],
   providers: [ReservationsService, ExpireHoldsCron],

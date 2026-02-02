@@ -13,6 +13,7 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { Reservation, ReservationStatus } from './reservation.entity';
 import { Court } from '../courts/court.entity';
 import { CreateHoldDto } from './dto/create-hold.dto';
+import { NotificationsService } from '@/notifications/notifications.service';
 
 // Configuration
 const TZ = 'America/Argentina/Cordoba';
@@ -43,6 +44,7 @@ export class ReservationsService {
     private readonly reservaRepo: Repository<Reservation>,
     @InjectRepository(Court)
     private readonly courtRepo: Repository<Court>,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ---------------------------
