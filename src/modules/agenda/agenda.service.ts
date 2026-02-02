@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Brackets } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
 
 import { Court } from '../courts/court.entity';
@@ -39,13 +39,13 @@ export class AgendaService {
     private readonly overrideRepo: Repository<CourtAvailabilityOverride>,
   ) {}
 
-  private combineDateTime(date: string, time: string): Date {
-    // date: YYYY-MM-DD
-    // time: HH:MM
+  private combineDateTime(dateISO: string, timeHHMM: string): Date {
+    // dateISO: YYYY-MM-DD
+    // timeHHMM: HH:MM
     // Business TZ: America/Argentina/Cordoba
-    return DateTime.fromISO(`${date}T${time}`, {
-      zone: 'America/Argentina/Cordoba',
-    }).toJSDate();
+    const dt = DateTime.fromISO(`${dateISO}T${timeHHMM}`, { zone: TZ });
+    if (!dt.isValid) throw new BadRequestException('Fecha/hora inválida');
+    return dt.toJSDate();
   }
 
   async getDailyAgenda(params: {
@@ -54,9 +54,9 @@ export class AgendaService {
     statuses?: string;
     mode: AgendaStatusMode;
   }): Promise<AgendaResponseDto> {
-    const date = this.parseISO(params.date);
-    const dayStart = date.startOf('day');
-    const dayEnd = date.endOf('day');
+    const day = this.parseISO(params.date); // DateTime en TZ
+    const dayStart = day.startOf('day');
+    const dayEnd = day.endOf('day');
 
     const allowedViewStatuses = this.parseStatuses(params.statuses);
 
@@ -68,13 +68,19 @@ export class AgendaService {
 
     const courtIds = courts.map((c) => c.id);
     if (courtIds.length === 0) {
-      return { date: dayStart.toISODate()!, clubId: params.clubId, courts: [] };
+      return {
+        date: dayStart.toISODate() ?? '',
+        clubId: params.clubId,
+        courts: [],
+      };
     }
 
-    const slots = await this.generateSlotsForClubOnDate(
-      params.clubId,
-      dayStart.toISODate(),
-    );
+    const dateISO = dayStart.toISODate();
+    if (!dateISO) {
+      throw new BadRequestException('Invalid date');
+    }
+
+    const slots = await this.generateSlotsForClubOnDate(params.clubId, dateISO);
 
     const slotsByCourt = new Map<
       string,
@@ -87,6 +93,7 @@ export class AgendaService {
       arr.push({ startAt: start, endAt: end });
       slotsByCourt.set(s.courtId, arr);
     }
+
     for (const [k, arr] of slotsByCourt) {
       arr.sort((a, b) => a.startAt.toMillis() - b.startAt.toMillis());
       slotsByCourt.set(k, arr);
@@ -95,7 +102,7 @@ export class AgendaService {
     const overrides = await this.overrideRepo.find({
       where: {
         court: { id: In(courtIds) } as any,
-        fecha: dayStart.toISODate() as any,
+        fecha: dateISO as any,
       } as any,
       relations: ['court'],
       order: { createdAt: 'DESC' } as any,
@@ -124,7 +131,7 @@ export class AgendaService {
     const reservationsByCourt = groupBy(reservations, (r) => r.court.id);
 
     return {
-      date: dayStart.toISODate()!,
+      date: dateISO,
       clubId: params.clubId,
       courts: courts.map((c) => {
         const courtSlots = slotsByCourt.get(c.id) ?? [];
@@ -140,13 +147,11 @@ export class AgendaService {
           }),
         );
 
-        // convert full -> simple (occupied) if needed
         const shapedSlots =
           params.mode === 'simple'
             ? fullSlots.map((s) => this.toSimpleStatus(s))
             : fullSlots;
 
-        // apply filter (free/blocked/occupied)
         const filteredSlots = allowedViewStatuses
           ? shapedSlots.filter((s) =>
               allowedViewStatuses.has(this.viewStatusOf(s.status)),
@@ -161,19 +166,23 @@ export class AgendaService {
       }),
     };
   }
+
   // ---------------------------
   // BLOCK endpoint (agenda)
   // ---------------------------
   async blockSlot(input: {
     clubId: string;
     courtId: string;
-    date: string; // YYYY-MM-DD
+    date: string; // YYYY-MM-DD (o ISO)
     startTime: string; // HH:MM
     endTime: string; // HH:MM
     reason?: string;
     blocked: boolean;
   }) {
-    const date = this.parseISO(input.date);
+    // Parse date as DateTime in business TZ
+    const day = this.parseISO(input.date);
+    const dateISO = day.toISODate();
+    if (!dateISO) throw new BadRequestException('Invalid date');
 
     // Validate court belongs to club + is active
     const court = await this.courtRepo.findOne({
@@ -194,13 +203,11 @@ export class AgendaService {
       throw new BadRequestException('endTime must be greater than startTime');
     }
 
-    // Build block window as timestamptz in business TZ (America/Argentina/Cordoba)
-    // Reuse your existing helpers so it matches your Reservation logic.
-    const blockStart = this.combineDateTime(date, input.startTime); // Date
-    const blockEnd = this.combineDateTime(date, input.endTime); // Date
+    // Build block window as timestamptz in business TZ
+    const blockStart = this.combineDateTime(dateISO, input.startTime); // Date
+    const blockEnd = this.combineDateTime(dateISO, input.endTime); // Date
 
     // Prevent blocking if overlaps a CONFIRMED reservation or a valid HOLD
-    // Overlap: existing.startAt < blockEnd AND existing.endAt > blockStart
     const conflict = await this.reservationRepo
       .createQueryBuilder('r')
       .where('r.courtId = :courtId', { courtId: input.courtId })
@@ -208,10 +215,12 @@ export class AgendaService {
       .andWhere('r.endAt > :blockStart', { blockStart })
       .andWhere(
         new Brackets((qb) => {
-          qb.where('r.status = :confirmed', { confirmed: 'confirmed' }).orWhere(
+          qb.where('r.status = :confirmed', {
+            confirmed: ReservationStatus.CONFIRMED,
+          }).orWhere(
             new Brackets((qb2) => {
               qb2
-                .where('r.status = :hold', { hold: 'hold' })
+                .where('r.status = :hold', { hold: ReservationStatus.HOLD })
                 .andWhere('r.expiresAt IS NOT NULL')
                 .andWhere('r.expiresAt > NOW()');
             }),
@@ -228,7 +237,8 @@ export class AgendaService {
 
     const ent = this.overrideRepo.create({
       court,
-      fecha: date as any,
+      // ✅ guardamos YYYY-MM-DD para matchear tus queries/slots
+      fecha: dateISO as any,
       horaInicio: input.startTime as any,
       horaFin: input.endTime as any,
       bloqueado: input.blocked,
@@ -253,17 +263,12 @@ export class AgendaService {
     if (!override) throw new NotFoundException('Override not found');
 
     const courtClubId = (override as any).court?.club?.id;
-    if (!courtClubId) {
+    if (!courtClubId)
       throw new BadRequestException('Override has no club context');
-    }
 
     if (courtClubId !== input.clubId) {
       throw new BadRequestException('Override does not belong to this club');
     }
-
-    // Optional: also prevent "updating" a block into an overlapping window,
-    // but since updateBlock only toggles blocked/reason (no time range change),
-    // there is no new overlap to validate here.
 
     override.bloqueado = input.blocked;
     if (input.reason !== undefined) {
@@ -281,7 +286,6 @@ export class AgendaService {
   private viewStatusOf(status: string): AgendaViewStatus {
     if (status === 'blocked') return 'blocked';
     if (status === 'free') return 'free';
-    // confirmed or hold => occupied
     return 'occupied';
   }
 
@@ -298,14 +302,12 @@ export class AgendaService {
     const simpleStatus: AgendaSlotStatus =
       view === 'occupied' ? 'occupied' : view;
 
-    return {
-      ...slot,
-      status: simpleStatus,
-    };
+    return { ...slot, status: simpleStatus };
   }
 
   private parseStatuses(raw?: string): Set<AgendaViewStatus> | null {
     if (!raw) return null;
+
     const parts = raw
       .split(',')
       .map((s) => s.trim().toLowerCase())
@@ -322,6 +324,7 @@ export class AgendaService {
       }
       out.add(p as AgendaViewStatus);
     }
+
     return out.size ? out : null;
   }
 
@@ -344,8 +347,8 @@ export class AgendaService {
 
     if (blocking) {
       return {
-        startAt: slotStart.toISO()!,
-        endAt: slotEnd.toISO()!,
+        startAt: slotStart.toISO(),
+        endAt: slotEnd.toISO(),
         status: 'blocked' as const,
         blockReason: blocking.motivo ?? undefined,
       };
@@ -360,8 +363,8 @@ export class AgendaService {
 
     if (confirmed) {
       return {
-        startAt: slotStart.toISO()!,
-        endAt: slotEnd.toISO()!,
+        startAt: slotStart.toISO(),
+        endAt: slotEnd.toISO(),
         status: 'confirmed' as const,
         reservationId: confirmed.id,
         customerName: confirmed.clienteNombre ?? undefined,
@@ -379,8 +382,8 @@ export class AgendaService {
 
     if (hold) {
       return {
-        startAt: slotStart.toISO()!,
-        endAt: slotEnd.toISO()!,
+        startAt: slotStart.toISO(),
+        endAt: slotEnd.toISO(),
         status: 'hold' as const,
         reservationId: hold.id,
         customerName: hold.clienteNombre ?? undefined,
@@ -389,8 +392,8 @@ export class AgendaService {
     }
 
     return {
-      startAt: slotStart.toISO()!,
-      endAt: slotEnd.toISO()!,
+      startAt: slotStart.toISO(),
+      endAt: slotEnd.toISO(),
       status: 'free' as const,
     };
   }
