@@ -15,8 +15,12 @@ import { PaymentsService } from './payments.service';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { SimulatePaymentDto } from './dto/simulate-payment.dto';
 import { MockPaymentWebhookDto } from './dto/mock-webhook.dto';
+import { AdminListPaymentIntentsDto } from './dto/admin-list-payment-intents.dto';
 
 import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
+import { RolesGuard } from '../modules/auth/roles.guard';
+import { Roles } from '../modules/auth/roles.decorator';
+import { UserRole } from '../modules/users/user-role.enum';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -81,8 +85,15 @@ export class PaymentsController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get('intents')
+  listIntents(@Query() query: AdminListPaymentIntentsDto) {
+    return this.paymentsService.listAdminIntents(query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('intents/by-reference')
   findByReference(
     @Req() req: Request,
     @Query('referenceType') referenceType?: string,

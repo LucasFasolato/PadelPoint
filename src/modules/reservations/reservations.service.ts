@@ -566,7 +566,10 @@ export class ReservationsService {
     }
     if (res.status === ReservationStatus.CONFIRMED) return res;
 
-    if (res.status === ReservationStatus.HOLD && (await this.isHoldExpired(res)))
+    if (
+      res.status === ReservationStatus.HOLD &&
+      (await this.isHoldExpired(res))
+    )
       throw new ConflictException('El hold expiró');
 
     res.status = ReservationStatus.CONFIRMED;

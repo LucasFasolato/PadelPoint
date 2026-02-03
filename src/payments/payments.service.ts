@@ -6,7 +6,13 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import {
+  DataSource,
+  Repository,
+  Between,
+  MoreThanOrEqual,
+  LessThanOrEqual,
+} from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 
@@ -224,6 +230,91 @@ export class PaymentsService {
     if (intent.userId !== input.userId)
       throw new ForbiddenException('Not allowed');
     return [intent];
+  }
+
+  async listAdminIntents(input: {
+    from?: string;
+    to?: string;
+    status?: PaymentIntentStatus;
+    reservationId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const limit = Math.max(1, Math.min(200, input.limit ?? 50));
+    const offset = Math.max(0, input.offset ?? 0);
+
+    const where: Record<string, unknown> = {};
+
+    if (input.status) {
+      where.status = input.status;
+    }
+    if (input.reservationId) {
+      where.referenceType = PaymentReferenceType.RESERVATION;
+      where.referenceId = input.reservationId;
+    }
+
+    if (input.from || input.to) {
+      const fromDate = input.from
+        ? new Date(`${input.from}T00:00:00.000Z`)
+        : null;
+      const toDate = input.to
+        ? new Date(`${input.to}T23:59:59.999Z`)
+        : null;
+
+      if (fromDate && Number.isNaN(fromDate.getTime())) {
+        throw new BadRequestException('Invalid from date');
+      }
+      if (toDate && Number.isNaN(toDate.getTime())) {
+        throw new BadRequestException('Invalid to date');
+      }
+
+      if (fromDate && toDate) {
+        where.createdAt = Between(fromDate, toDate);
+      } else if (fromDate) {
+        where.createdAt = MoreThanOrEqual(fromDate);
+      } else if (toDate) {
+        where.createdAt = LessThanOrEqual(toDate);
+      }
+    }
+
+    const [items, total] = await this.intentRepo.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
+    });
+
+    const ids = items.map((i) => i.id);
+    const latestProviderByIntent = new Map<string, string | null>();
+
+    if (ids.length > 0) {
+      const events = await this.eventRepo
+        .createQueryBuilder('e')
+        .select(['e.paymentIntentId', 'e.providerEventId', 'e.createdAt'])
+        .where('e.paymentIntentId IN (:...ids)', { ids })
+        .andWhere('e.providerEventId IS NOT NULL')
+        .orderBy('e.createdAt', 'DESC')
+        .getMany();
+
+      for (const e of events) {
+        if (!latestProviderByIntent.has(e.paymentIntentId)) {
+          latestProviderByIntent.set(e.paymentIntentId, e.providerEventId);
+        }
+      }
+    }
+
+    return {
+      items: items.map((i) => ({
+        id: i.id,
+        createdAt: i.createdAt.toISOString(),
+        reservationId: i.referenceId,
+        status: i.status,
+        amount: Number(i.amount),
+        currency: i.currency,
+        providerEventId: latestProviderByIntent.get(i.id) ?? null,
+      })),
+      total,
+    };
   }
 
   async simulateSuccess(input: {
