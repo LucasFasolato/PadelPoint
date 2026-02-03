@@ -2,11 +2,17 @@ import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaymentReferenceType } from '../enums/payment-reference-type.enum';
 
 export class CreatePaymentIntentDto {
+  @IsOptional()
   @IsEnum(PaymentReferenceType)
-  referenceType!: PaymentReferenceType;
+  referenceType?: PaymentReferenceType;
 
+  @IsOptional()
   @IsUUID()
-  referenceId!: string;
+  referenceId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  reservationId?: string;
 
   @IsOptional()
   @IsString()

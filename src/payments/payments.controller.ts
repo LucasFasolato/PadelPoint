@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { SimulatePaymentDto } from './dto/simulate-payment.dto';
+import { MockPaymentWebhookDto } from './dto/mock-webhook.dto';
 
 import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
 
@@ -34,6 +35,7 @@ export class PaymentsController {
       userId: user.userId,
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
+      reservationId: dto.reservationId,
       currency: dto.currency,
       checkoutToken: dto.checkoutToken, // opcional
     });
@@ -105,9 +107,22 @@ export class PaymentsController {
       userId: 'public',
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
+      reservationId: dto.reservationId,
       currency: dto.currency,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
+    });
+  }
+
+  // ---------------------------
+  // Webhook mock (idempotente)
+  // ---------------------------
+  @Post('webhook/mock')
+  webhookMock(@Body() dto: MockPaymentWebhookDto) {
+    return this.paymentsService.handleMockWebhook({
+      providerEventId: dto.providerEventId,
+      intentId: dto.intentId,
+      status: dto.status,
     });
   }
 

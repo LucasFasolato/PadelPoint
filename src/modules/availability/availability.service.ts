@@ -231,8 +231,12 @@ export class AvailabilityService {
           EXISTS (
             SELECT 1 FROM "reservations" r
             WHERE r."courtId" = s."courtId"
-              AND r.status IN ('hold','confirmed')
-              AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+              AND r.status IN ('hold','confirmed','payment_pending')
+              AND (
+                r.status = 'confirmed'
+                OR r.status = 'payment_pending'
+                OR (r.status = 'hold' AND r."expiresAt" > now())
+              )
               AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
               AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
           )
@@ -249,8 +253,12 @@ export class AvailabilityService {
         (
           SELECT r.id FROM "reservations" r
           WHERE r."courtId" = s."courtId"
-            AND r.status IN ('hold','confirmed')
-            AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+            AND r.status IN ('hold','confirmed','payment_pending')
+            AND (
+              r.status = 'confirmed'
+              OR r.status = 'payment_pending'
+              OR (r.status = 'hold' AND r."expiresAt" > now())
+            )
             AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
             AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
           ORDER BY r."createdAt" DESC LIMIT 1

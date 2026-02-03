@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { PaymentIntent } from './payment-intent.entity';
 import { PaymentTransaction } from './payment-transaction.entity';
 import { PaymentEvent } from './payment-event.entity';
+import { EventLog, type EventLogPayload } from '@/common/event-log.entity';
 
 import { PaymentIntentStatus } from './enums/payment-intent-status.enum';
 import { PaymentProvider } from './enums/payment-provider.enum';
@@ -42,12 +44,27 @@ export class PaymentsService {
     @InjectRepository(PaymentEvent)
     private readonly eventRepo: Repository<PaymentEvent>,
 
+    @InjectRepository(EventLog)
+    private readonly eventLogRepo: Repository<EventLog>,
+
     @InjectRepository(Reservation)
     private readonly reservationRepo: Repository<Reservation>,
   ) {}
 
   private computeExpiresAt(minutes = 15): Date {
     return new Date(Date.now() + minutes * 60 * 1000);
+  }
+
+  private async logEvent(
+    type: string,
+    payload: EventLogPayload | null,
+    manager?: { getRepository: DataSource['getRepository'] },
+  ) {
+    const repo = manager
+      ? manager.getRepository(EventLog)
+      : this.eventLogRepo;
+    const entry = repo.create({ type, payload });
+    await repo.save(entry);
   }
 
   private validateReservationOwnershipOrToken(args: {
@@ -69,92 +86,115 @@ export class PaymentsService {
 
   async createIntent(input: {
     userId: string;
-    referenceType: PaymentReferenceType;
-    referenceId: string;
+    referenceType?: PaymentReferenceType;
+    referenceId?: string;
+    reservationId?: string;
     currency?: string;
     checkoutToken?: string;
     publicCheckout?: boolean;
   }) {
     const currency = (input.currency ?? 'ARS').toUpperCase();
+    const referenceType =
+      input.referenceType ?? PaymentReferenceType.RESERVATION;
+    const referenceId = input.referenceId ?? input.reservationId;
 
-    // Idempotencia
-    const existing = await this.intentRepo.findOne({
-      where: {
-        referenceType: input.referenceType,
-        referenceId: input.referenceId,
-      },
-    });
-    if (existing) {
-      if (!input.publicCheckout && existing.userId !== input.userId)
-        throw new ForbiddenException('Not allowed');
-      return existing;
+    if (!referenceId) {
+      throw new BadRequestException('reservationId is required');
     }
-
-    if (input.referenceType !== PaymentReferenceType.RESERVATION) {
+    if (referenceType !== PaymentReferenceType.RESERVATION) {
       throw new BadRequestException(
-        `Unsupported referenceType: ${input.referenceType}`,
+        `Unsupported referenceType: ${referenceType}`,
       );
     }
 
-    const reservation = await this.reservationRepo.findOne({
-      where: { id: input.referenceId },
-    });
-    if (!reservation) throw new NotFoundException('Reservation not found');
+    return this.dataSource.transaction(async (manager) => {
+      const intentRepo = manager.getRepository(PaymentIntent);
+      const reservationRepo = manager.getRepository(Reservation);
 
-    this.validateReservationOwnershipOrToken({
-      reservation,
-      userId: input.userId,
-      checkoutToken: input.checkoutToken,
-      publicCheckout: input.publicCheckout,
-    });
+      const reservation = await reservationRepo.findOne({
+        where: { id: referenceId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reservation) throw new NotFoundException('Reservation not found');
 
-    if (reservation.status === ReservationStatus.HOLD) {
-      // Usar getTime() para seguridad en comparaciones
-      if (
-        !reservation.expiresAt ||
-        new Date(reservation.expiresAt).getTime() <= Date.now()
-      ) {
-        throw new BadRequestException('Reservation hold expired');
+      this.validateReservationOwnershipOrToken({
+        reservation,
+        userId: input.userId,
+        checkoutToken: input.checkoutToken,
+        publicCheckout: input.publicCheckout,
+      });
+
+      if (reservation.status === ReservationStatus.CONFIRMED) {
+        throw new ConflictException('Reservation is already confirmed');
       }
-    }
+      if (reservation.status === ReservationStatus.CANCELLED) {
+        throw new ConflictException('Reservation is cancelled');
+      }
+      if (reservation.status === ReservationStatus.EXPIRED) {
+        throw new ConflictException('Reservation is expired');
+      }
 
-    if (reservation.status === ReservationStatus.CONFIRMED) {
-      throw new BadRequestException('Reservation is already confirmed');
-    }
-    if (reservation.status === ReservationStatus.CANCELLED) {
-      throw new BadRequestException('Reservation is cancelled');
-    }
+      if (reservation.status === ReservationStatus.HOLD) {
+        if (
+          !reservation.expiresAt ||
+          new Date(reservation.expiresAt).getTime() <= Date.now()
+        ) {
+          throw new ConflictException('Reservation hold expired');
+        }
+      }
 
-    // Convertir precio a string con 2 decimales para la DB (numeric/money type)
-    const amount = Number(reservation.precio).toFixed(2);
+      const existing = await intentRepo.findOne({
+        where: { referenceType, referenceId },
+      });
+      if (existing) {
+        if (reservation.status === ReservationStatus.HOLD) {
+          reservation.status = ReservationStatus.PAYMENT_PENDING;
+          reservation.expiresAt = null;
+          await reservationRepo.save(reservation);
+        }
+        return existing;
+      }
 
-    const intent = this.intentRepo.create({
-      userId: input.publicCheckout ? 'public' : input.userId,
-      amount,
-      currency,
-      status: PaymentIntentStatus.PENDING,
-      referenceType: PaymentReferenceType.RESERVATION,
-      referenceId: reservation.id,
-      expiresAt: this.computeExpiresAt(15),
-      paidAt: null,
+      const amount = Number(reservation.precio).toFixed(2);
+
+      const intent = intentRepo.create({
+        userId: input.publicCheckout ? 'public' : input.userId,
+        amount,
+        currency,
+        status: PaymentIntentStatus.PENDING,
+        referenceType,
+        referenceId: reservation.id,
+        expiresAt: this.computeExpiresAt(15),
+        paidAt: null,
+      });
+
+      const saved = await intentRepo.save(intent);
+
+      reservation.status = ReservationStatus.PAYMENT_PENDING;
+      reservation.expiresAt = null;
+      await reservationRepo.save(reservation);
+
+      await this.eventRepo.save(
+        this.eventRepo.create({
+          paymentIntentId: saved.id,
+          type: 'CREATED',
+          payload: {
+            referenceType: saved.referenceType,
+            referenceId: saved.referenceId,
+            amount: saved.amount,
+            currency: saved.currency,
+          } satisfies JsonObject,
+        }),
+      );
+
+      await this.logEvent(
+        'payment.intent.created',
+        { paymentIntentId: saved.id, reservationId: reservation.id },
+        manager,
+      );
+
+      return saved;
     });
-
-    const saved = await this.intentRepo.save(intent);
-
-    await this.eventRepo.save(
-      this.eventRepo.create({
-        paymentIntentId: saved.id,
-        type: 'CREATED',
-        payload: {
-          referenceType: saved.referenceType,
-          referenceId: saved.referenceId,
-          amount: saved.amount,
-          currency: saved.currency,
-        } satisfies JsonObject,
-      }),
-    );
-
-    return saved;
   }
 
   async getIntent(input: { userId: string; intentId: string }) {
@@ -207,7 +247,10 @@ export class PaymentsService {
       if (!input.publicCheckout && intent.userId !== input.userId)
         throw new ForbiddenException('Not allowed');
 
-      if (intent.status === PaymentIntentStatus.SUCCEEDED) {
+      if (
+        intent.status === PaymentIntentStatus.APPROVED ||
+        intent.status === PaymentIntentStatus.SUCCEEDED
+      ) {
         return { ok: true, intent };
       }
 
@@ -250,7 +293,7 @@ export class PaymentsService {
       await txRepo.save(tx);
 
       // Intent SUCCEEDED
-      intent.status = PaymentIntentStatus.SUCCEEDED;
+      intent.status = PaymentIntentStatus.APPROVED;
       intent.paidAt = new Date();
       intent.expiresAt = null;
       await intentRepo.save(intent);
@@ -294,7 +337,10 @@ export class PaymentsService {
           );
         }
 
-        if (reservation.status === ReservationStatus.HOLD) {
+        if (
+          reservation.status === ReservationStatus.HOLD ||
+          reservation.status === ReservationStatus.PAYMENT_PENDING
+        ) {
           reservation.status = ReservationStatus.CONFIRMED;
           reservation.expiresAt = null;
           reservation.checkoutTokenExpiresAt = null;
@@ -307,6 +353,10 @@ export class PaymentsService {
               type: 'RESERVATION_CONFIRMED',
               payload: { reservationId: reservation.id } satisfies JsonObject,
             }),
+          );
+        } else {
+          throw new BadRequestException(
+            `Reservation status ${reservation.status} cannot be confirmed`,
           );
         }
       }
@@ -335,7 +385,10 @@ export class PaymentsService {
       if (!input.publicCheckout && intent.userId !== input.userId)
         throw new ForbiddenException('Not allowed');
 
-      if (intent.status === PaymentIntentStatus.SUCCEEDED) {
+      if (
+        intent.status === PaymentIntentStatus.APPROVED ||
+        intent.status === PaymentIntentStatus.SUCCEEDED
+      ) {
         throw new BadRequestException('Intent already paid');
       }
 
@@ -374,7 +427,7 @@ export class PaymentsService {
       });
       await txRepo.save(tx);
 
-      intent.status = PaymentIntentStatus.CANCELLED;
+      intent.status = PaymentIntentStatus.FAILED;
       await intentRepo.save(intent);
 
       await eventRepo.save(
@@ -385,7 +438,158 @@ export class PaymentsService {
         }),
       );
 
+      if (intent.referenceType === PaymentReferenceType.RESERVATION) {
+        const reservationRepo = manager.getRepository(Reservation);
+        const reservation = await reservationRepo.findOne({
+          where: { id: intent.referenceId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!reservation) throw new NotFoundException('Reservation not found');
+
+        if (reservation.status === ReservationStatus.PAYMENT_PENDING) {
+          reservation.status = ReservationStatus.CANCELLED;
+          reservation.expiresAt = null;
+          reservation.checkoutTokenExpiresAt = null;
+          reservation.cancelledAt = new Date();
+          await reservationRepo.save(reservation);
+        }
+      }
+
       return { ok: true, intent };
+    });
+  }
+
+  async handleMockWebhook(input: {
+    providerEventId: string;
+    intentId: string;
+    status: 'approved' | 'failed';
+  }) {
+    return this.dataSource.transaction(async (manager) => {
+      const intentRepo = manager.getRepository(PaymentIntent);
+      const txRepo = manager.getRepository(PaymentTransaction);
+      const eventRepo = manager.getRepository(PaymentEvent);
+      const reservationRepo = manager.getRepository(Reservation);
+
+      const existingEvent = await eventRepo.findOne({
+        where: { providerEventId: input.providerEventId },
+      });
+      if (existingEvent) {
+        const intent = await intentRepo.findOne({
+          where: { id: existingEvent.paymentIntentId },
+        });
+        const reservation = intent
+          ? await reservationRepo.findOne({
+              where: { id: intent.referenceId },
+            })
+          : null;
+        return {
+          ok: true,
+          idempotent: true,
+          paymentIntentId: intent?.id ?? existingEvent.paymentIntentId,
+          paymentStatus: intent?.status ?? null,
+          reservationStatus: reservation?.status ?? null,
+        };
+      }
+
+      const intent = await intentRepo.findOne({
+        where: { id: input.intentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!intent) throw new NotFoundException('PaymentIntent not found');
+      if (intent.referenceType !== PaymentReferenceType.RESERVATION) {
+        throw new BadRequestException('Unsupported reference type');
+      }
+
+      const reservation = await reservationRepo.findOne({
+        where: { id: intent.referenceId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reservation) throw new NotFoundException('Reservation not found');
+
+      await eventRepo.save(
+        eventRepo.create({
+          paymentIntentId: intent.id,
+          providerEventId: input.providerEventId,
+          type: input.status === 'approved' ? 'APPROVED' : 'FAILED',
+          payload: {
+            status: input.status,
+          } satisfies JsonObject,
+        }),
+      );
+
+      if (input.status === 'approved') {
+        if (reservation.status !== ReservationStatus.PAYMENT_PENDING) {
+          throw new ConflictException('Invalid reservation state for approval');
+        }
+
+        intent.status = PaymentIntentStatus.APPROVED;
+        intent.paidAt = new Date();
+        await intentRepo.save(intent);
+
+        await txRepo.save(
+          txRepo.create({
+            paymentIntentId: intent.id,
+            provider: PaymentProvider.SIMULATED,
+            providerRef: input.providerEventId,
+            status: PaymentTransactionStatus.SUCCESS,
+            rawResponse: { status: input.status } satisfies JsonObject,
+          }),
+        );
+
+        reservation.status = ReservationStatus.CONFIRMED;
+        reservation.confirmedAt = new Date();
+        reservation.checkoutTokenExpiresAt = null;
+        await reservationRepo.save(reservation);
+
+        await this.logEvent(
+          'payment.approved',
+          { paymentIntentId: intent.id, reservationId: reservation.id },
+          manager,
+        );
+        await this.logEvent(
+          'reservation.confirmed',
+          { reservationId: reservation.id },
+          manager,
+        );
+      } else {
+        if (reservation.status !== ReservationStatus.PAYMENT_PENDING) {
+          throw new ConflictException('Invalid reservation state for failure');
+        }
+
+        intent.status = PaymentIntentStatus.FAILED;
+        intent.paidAt = null;
+        await intentRepo.save(intent);
+
+        await txRepo.save(
+          txRepo.create({
+            paymentIntentId: intent.id,
+            provider: PaymentProvider.SIMULATED,
+            providerRef: input.providerEventId,
+            status: PaymentTransactionStatus.FAILED,
+            rawResponse: { status: input.status } satisfies JsonObject,
+          }),
+        );
+
+        reservation.status = ReservationStatus.CANCELLED;
+        reservation.checkoutTokenExpiresAt = null;
+        reservation.expiresAt = null;
+        reservation.cancelledAt = new Date();
+        await reservationRepo.save(reservation);
+
+        await this.logEvent(
+          'payment.failed',
+          { paymentIntentId: intent.id, reservationId: reservation.id },
+          manager,
+        );
+      }
+
+      return {
+        ok: true,
+        idempotent: false,
+        paymentIntentId: intent.id,
+        paymentStatus: intent.status,
+        reservationStatus: reservation.status,
+      };
     });
   }
 
@@ -440,9 +644,10 @@ export class PaymentsService {
           });
           if (!reservation) continue;
 
-          if (reservation.status === ReservationStatus.HOLD) {
-            reservation.status = ReservationStatus.CANCELLED;
+          if (reservation.status === ReservationStatus.PAYMENT_PENDING) {
+            reservation.status = ReservationStatus.EXPIRED;
             reservation.expiresAt = null;
+            reservation.checkoutTokenExpiresAt = null;
             await reservationRepo.save(reservation);
             releasedReservations++;
           }

@@ -18,7 +18,13 @@ import { ReservationsRangeQueryDto } from './dto/reservations-range-query.dto';
 import { ReservationStatus } from './reservation.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-const RES_STATUS_VALUES = new Set<string>(['hold', 'confirmed', 'cancelled']);
+const RES_STATUS_VALUES = new Set<string>([
+  'hold',
+  'payment_pending',
+  'confirmed',
+  'cancelled',
+  'expired',
+]);
 
 function parseReservationStatus(raw?: string): ReservationStatus | undefined {
   if (!raw) return undefined;

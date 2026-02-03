@@ -207,7 +207,8 @@ export class CourtsService {
         return (
           resStart === currentTime.getTime() &&
           (res.status === ReservationStatus.CONFIRMED ||
-            res.status === ReservationStatus.HOLD)
+            res.status === ReservationStatus.HOLD ||
+            res.status === ReservationStatus.PAYMENT_PENDING)
         );
       });
 

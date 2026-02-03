@@ -204,9 +204,11 @@ export class ReportsService {
             r.status = 'confirmed'
             OR (
               $4::boolean = true
-              AND r.status = 'hold'
-              AND r."expiresAt" IS NOT NULL
-              AND r."expiresAt" > now()
+              AND (
+                r.status = 'hold'
+                OR r.status = 'payment_pending'
+              )
+              AND (r.status <> 'hold' OR (r."expiresAt" IS NOT NULL AND r."expiresAt" > now()))
             )
           )
       ),
@@ -333,9 +335,11 @@ export class ReportsService {
             r.status = 'confirmed'
             OR (
               $4::boolean = true
-              AND r.status = 'hold'
-              AND r."expiresAt" IS NOT NULL
-              AND r."expiresAt" > now()
+              AND (
+                r.status = 'hold'
+                OR r.status = 'payment_pending'
+              )
+              AND (r.status <> 'hold' OR (r."expiresAt" IS NOT NULL AND r."expiresAt" > now()))
             )
           )
       )

@@ -117,9 +117,10 @@ export class AgendaService {
       .andWhere('r."startAt" < :dayEnd', { dayEnd: dayEnd.toJSDate() })
       .andWhere('r."endAt" > :dayStart', { dayStart: dayStart.toJSDate() })
       .andWhere(
-        `(r.status = :confirmed OR (r.status = :hold AND r."expiresAt" IS NOT NULL AND r."expiresAt" > :now))`,
+        `(r.status = :confirmed OR r.status = :paymentPending OR (r.status = :hold AND r."expiresAt" IS NOT NULL AND r."expiresAt" > :now))`,
         {
           confirmed: ReservationStatus.CONFIRMED,
+          paymentPending: ReservationStatus.PAYMENT_PENDING,
           hold: ReservationStatus.HOLD,
           now,
         },
@@ -217,14 +218,18 @@ export class AgendaService {
         new Brackets((qb) => {
           qb.where('r.status = :confirmed', {
             confirmed: ReservationStatus.CONFIRMED,
-          }).orWhere(
-            new Brackets((qb2) => {
-              qb2
-                .where('r.status = :hold', { hold: ReservationStatus.HOLD })
-                .andWhere('r.expiresAt IS NOT NULL')
-                .andWhere('r.expiresAt > NOW()');
-            }),
-          );
+          })
+            .orWhere('r.status = :paymentPending', {
+              paymentPending: ReservationStatus.PAYMENT_PENDING,
+            })
+            .orWhere(
+              new Brackets((qb2) => {
+                qb2
+                  .where('r.status = :hold', { hold: ReservationStatus.HOLD })
+                  .andWhere('r.expiresAt IS NOT NULL')
+                  .andWhere('r.expiresAt > NOW()');
+              }),
+            );
         }),
       )
       .getOne();
@@ -373,8 +378,15 @@ export class AgendaService {
     }
 
     const hold = reservations.find((r) => {
-      if (r.status !== ReservationStatus.HOLD) return false;
-      if (!r.expiresAt || r.expiresAt.getTime() <= Date.now()) return false;
+      if (
+        r.status !== ReservationStatus.HOLD &&
+        r.status !== ReservationStatus.PAYMENT_PENDING
+      ) {
+        return false;
+      }
+      if (r.status === ReservationStatus.HOLD) {
+        if (!r.expiresAt || r.expiresAt.getTime() <= Date.now()) return false;
+      }
       const rStart = DateTime.fromJSDate(r.startAt).setZone(TZ);
       const rEnd = DateTime.fromJSDate(r.endAt).setZone(TZ);
       return slotStart < rEnd && slotEnd > rStart;

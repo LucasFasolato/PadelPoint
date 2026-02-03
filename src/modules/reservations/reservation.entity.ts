@@ -11,8 +11,10 @@ import { Court } from '../courts/court.entity';
 
 export enum ReservationStatus {
   HOLD = 'hold',
+  PAYMENT_PENDING = 'payment_pending',
   CONFIRMED = 'confirmed',
   CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
 }
 
 @Entity({ name: 'reservations' })

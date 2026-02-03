@@ -172,8 +172,12 @@ export class ReservationsService {
       const overlapSql = `
         SELECT 1 FROM "reservations" r
         WHERE r."courtId" = $1::uuid
-          AND r.status IN ('hold','confirmed')
-          AND (r.status = 'confirmed' OR (r.status = 'hold' AND r."expiresAt" > now()))
+          AND r.status IN ('hold','confirmed','payment_pending')
+          AND (
+            r.status = 'confirmed'
+            OR r.status = 'payment_pending'
+            OR (r.status = 'hold' AND r."expiresAt" > now())
+          )
           AND r."startAt" < $3::timestamptz
           AND r."endAt" > $2::timestamptz
         LIMIT 1;
@@ -281,8 +285,14 @@ export class ReservationsService {
     });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
-    // HOLD / CANCELLED => checkout token
+    // HOLD / PAYMENT_PENDING => checkout token
     if (res.status !== ReservationStatus.CONFIRMED) {
+      if (
+        res.status === ReservationStatus.CANCELLED ||
+        res.status === ReservationStatus.EXPIRED
+      ) {
+        throw new ConflictException('Reserva no disponible');
+      }
       if (!token) throw new ForbiddenException('Checkout token required');
       await this.assertCheckoutToken(res, token);
       return this.toPublicCheckout(res);
@@ -370,6 +380,9 @@ export class ReservationsService {
       if (res.status === ReservationStatus.CONFIRMED) {
         // ya no aceptamos checkout token (se invalida al confirmar)
         throw new ForbiddenException('Use receipt endpoint');
+      }
+      if (res.status === ReservationStatus.PAYMENT_PENDING) {
+        throw new ConflictException('Pago en proceso');
       }
 
       // status == hold: puede ser expirado o token inválido
@@ -545,11 +558,15 @@ export class ReservationsService {
     });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
-    if (res.status === ReservationStatus.CANCELLED)
-      throw new BadRequestException('Reserva cancelada');
+    if (res.status === ReservationStatus.CANCELLED) {
+      throw new ConflictException('Reserva cancelada');
+    }
+    if (res.status === ReservationStatus.EXPIRED) {
+      throw new ConflictException('Reserva expirada');
+    }
     if (res.status === ReservationStatus.CONFIRMED) return res;
 
-    if (await this.isHoldExpired(res))
+    if (res.status === ReservationStatus.HOLD && (await this.isHoldExpired(res)))
       throw new ConflictException('El hold expiró');
 
     res.status = ReservationStatus.CONFIRMED;
@@ -574,6 +591,10 @@ export class ReservationsService {
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
     if (res.status === ReservationStatus.CANCELLED) return res;
+    if (res.status === ReservationStatus.EXPIRED)
+      throw new ConflictException('Reserva expirada');
+    if (res.status === ReservationStatus.CONFIRMED)
+      throw new ConflictException('Reserva ya confirmada');
 
     res.status = ReservationStatus.CANCELLED;
     res.expiresAt = null;
@@ -605,6 +626,10 @@ export class ReservationsService {
     await this.assertCheckoutToken(res, token);
 
     if (res.status === ReservationStatus.CANCELLED) return res;
+    if (res.status === ReservationStatus.EXPIRED)
+      throw new ConflictException('Reserva expirada');
+    if (res.status === ReservationStatus.CONFIRMED)
+      throw new ConflictException('Reserva ya confirmada');
 
     res.status = ReservationStatus.CANCELLED;
     res.expiresAt = null;
@@ -651,9 +676,10 @@ export class ReservationsService {
       qb.andWhere('r.status = :status', { status });
     } else {
       qb.andWhere(
-        `(r.status = :confirmed OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
+        `(r.status = :confirmed OR r.status = :paymentPending OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
         {
           confirmed: ReservationStatus.CONFIRMED,
+          paymentPending: ReservationStatus.PAYMENT_PENDING,
           hold: ReservationStatus.HOLD,
           includeExpired: includeExpiredHolds ?? false,
         },
@@ -685,9 +711,10 @@ export class ReservationsService {
       qb.andWhere('r.status = :status', { status });
     } else {
       qb.andWhere(
-        `(r.status = :confirmed OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
+        `(r.status = :confirmed OR r.status = :paymentPending OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
         {
           confirmed: ReservationStatus.CONFIRMED,
+          paymentPending: ReservationStatus.PAYMENT_PENDING,
           hold: ReservationStatus.HOLD,
           includeExpired: includeExpiredHolds ?? false,
         },
@@ -728,9 +755,10 @@ export class ReservationsService {
       qb.andWhere('r.status = :status', { status });
     } else {
       qb.andWhere(
-        `(r.status = :confirmed OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
+        `(r.status = :confirmed OR r.status = :paymentPending OR (r.status = :hold AND ( :includeExpired = true OR r."expiresAt" > now() )))`,
         {
           confirmed: ReservationStatus.CONFIRMED,
+          paymentPending: ReservationStatus.PAYMENT_PENDING,
           hold: ReservationStatus.HOLD,
           includeExpired: includeExpiredHolds ?? false,
         },
@@ -745,7 +773,7 @@ export class ReservationsService {
   async expireHoldsNow(limit = 500) {
     const sql = `
       UPDATE "reservations"
-      SET status = 'cancelled',
+      SET status = 'expired',
           "expiresAt" = NULL,
           "checkoutTokenExpiresAt" = NULL,
           "cancelledAt" = now()

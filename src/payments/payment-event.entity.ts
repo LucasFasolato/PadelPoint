@@ -8,12 +8,16 @@ import {
 
 @Entity('payment_events')
 @Index(['paymentIntentId', 'createdAt'])
+@Index(['providerEventId'], { unique: true })
 export class PaymentEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ type: 'uuid' })
   paymentIntentId!: string;
+
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  providerEventId!: string | null;
 
   @Column({ type: 'varchar', length: 64 })
   type!: string; // CREATED | SUCCESS | FAILED | EXPIRED | CANCELLED

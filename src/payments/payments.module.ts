@@ -7,6 +7,7 @@ import { PaymentsService } from './payments.service';
 import { PaymentIntent } from './payment-intent.entity';
 import { PaymentTransaction } from './payment-transaction.entity';
 import { PaymentEvent } from './payment-event.entity';
+import { EventLog } from '@/common/event-log.entity';
 
 import { Reservation } from '../modules/reservations/reservation.entity';
 import { PaymentsCron } from './payments.cron';
@@ -19,6 +20,7 @@ import { ConfigModule } from '@nestjs/config';
       PaymentIntent,
       PaymentTransaction,
       PaymentEvent,
+      EventLog,
       Reservation,
     ]),
   ],

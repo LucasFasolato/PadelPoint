@@ -12,7 +12,7 @@ export class ReservationsRangeQueryDto {
 
   @IsOptional()
   @IsString()
-  status?: 'hold' | 'confirmed' | 'cancelled';
+  status?: 'hold' | 'payment_pending' | 'confirmed' | 'cancelled' | 'expired';
 
   @IsOptional()
   includeExpiredHolds?: 'true' | 'false';
