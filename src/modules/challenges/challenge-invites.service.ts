@@ -44,7 +44,7 @@ export class ChallengeInvitesService {
   private assertNotAlreadyInChallenge(ch: Challenge, userId: string) {
     const ids = [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id].filter(
       Boolean,
-    ) as string[];
+    );
 
     if (ids.includes(userId)) {
       throw new BadRequestException('User already in this challenge');

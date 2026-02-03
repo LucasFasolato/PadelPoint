@@ -113,8 +113,8 @@ export class ReportsService {
 
     return {
       clubId: q.clubId,
-      from: from.toISODate()!,
-      to: to.toISODate()!,
+      from: from.toISODate(),
+      to: to.toISODate(),
       totalRevenue: byCourt.reduce((acc, x) => acc + x.revenue, 0),
       confirmedCount: byCourt.reduce((acc, x) => acc + x.count, 0),
       byCourt,
@@ -243,8 +243,8 @@ export class ReportsService {
       ORDER BY c."courtName";
     `;
 
-    const monthStartISODate = monthStart.toISODate()!;
-    const monthEndISODate = monthEnd.toISODate()!;
+    const monthStartISODate = monthStart.toISODate();
+    const monthEndISODate = monthEnd.toISODate();
 
     const rows = await this.courtRepo.manager.query(sql, [
       monthStartISODate,
@@ -394,8 +394,8 @@ export class ReportsService {
     const includeHolds = (q.includeHolds ?? 'false') === 'true';
 
     const m = this.parseMonth(q.month);
-    const from = m.startOf('month').toISODate()!;
-    const to = m.endOf('month').toISODate()!;
+    const from = m.startOf('month').toISODate();
+    const to = m.endOf('month').toISODate();
 
     const revenue = await this.revenueReport({
       clubId: q.clubId,

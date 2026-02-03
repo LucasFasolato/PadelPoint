@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -14,11 +15,20 @@ import { Reservation, ReservationStatus } from './reservation.entity';
 import { Court } from '../courts/court.entity';
 import { CreateHoldDto } from './dto/create-hold.dto';
 import { NotificationsService } from '@/notifications/notifications.service';
+import {
+  NotificationEventChannel,
+  NotificationEventPayload,
+  NotificationEventType,
+  NotificationEvent,
+} from '@/notifications/notification-event.entity';
+import { NotificationEventsService } from '@/notifications/notification-events.service';
+import { PublicNotificationEventDto } from './dto/public-notifications.dto';
 
 // Configuration
 const TZ = 'America/Argentina/Cordoba';
 const HOLD_MINUTES = 10;
 const CHECKOUT_TOKEN_MINUTES = 30;
+const RESEND_WINDOW_MINUTES = 5;
 // const RECEIPT_TOKEN_MINUTES = 60 * 24 * 14; // 14 días
 
 // Helpers
@@ -46,6 +56,7 @@ export class ReservationsService {
     @InjectRepository(Court)
     private readonly courtRepo: Repository<Court>,
     private readonly notifications: NotificationsService,
+    private readonly notificationEvents: NotificationEventsService,
   ) {}
 
   // ---------------------------
@@ -97,6 +108,19 @@ export class ReservationsService {
     if (!safeEq(res.checkoutToken, token)) {
       throw new ForbiddenException('Invalid token');
     }
+  }
+
+  private buildEventPayload(res: Reservation): NotificationEventPayload {
+    return {
+      reservationId: res.id,
+      courtId: res.court.id,
+      clubId: res.court.club.id,
+      startAt: res.startAt.toISOString(),
+      endAt: res.endAt.toISOString(),
+      precio: res.precio,
+      status: res.status,
+      confirmedAt: res.confirmedAt ? res.confirmedAt.toISOString() : null,
+    };
   }
 
   // ---------------------------
@@ -186,6 +210,17 @@ export class ReservationsService {
       });
 
       const saved = await trx.getRepository(Reservation).save(ent);
+
+      await this.notificationEvents.recordEvent(
+        {
+          type: NotificationEventType.HOLD_CREATED,
+          reservationId: saved.id,
+          userId: null,
+          channel: NotificationEventChannel.MOCK,
+          payload: this.buildEventPayload(saved),
+        },
+        trx,
+      );
 
       return {
         id: saved.id,
@@ -307,6 +342,17 @@ export class ReservationsService {
         // (si todavía no lo conectaste, lo dejamos comentado)
         // await this.notifications.onReservationConfirmed(res);
 
+        await this.notificationEvents.recordEventIfMissing(
+          {
+            type: NotificationEventType.RESERVATION_CONFIRMED,
+            reservationId: res.id,
+            userId: null,
+            channel: NotificationEventChannel.MOCK,
+            payload: this.buildEventPayload(res),
+          },
+          trx,
+        );
+
         return this.toPublicCheckout(res, trx);
       }
 
@@ -341,22 +387,64 @@ export class ReservationsService {
   }
 
   // ---------------------------
-  // RECEIPT ENDPOINT
+  // RECEIPT TOKEN VALIDATION
   // ---------------------------
-  private assertReceiptToken(res: Reservation, token: string): void {
-    if (!token) throw new ForbiddenException('Receipt token required');
-    if (!res.receiptToken)
-      throw new ForbiddenException('Receipt token missing');
+  private async assertReceiptTokenForReservation(
+    res: Reservation,
+    token: string,
+    trx?: any,
+  ): Promise<void> {
+    if (!token) throw new UnauthorizedException('Receipt token required');
 
-    if (res.receiptTokenExpiresAt) {
-      const exp = DateTime.fromJSDate(res.receiptTokenExpiresAt).toMillis();
-      if (exp <= Date.now())
-        throw new ForbiddenException('Receipt token expired');
+    if (res.checkoutToken && safeEq(res.checkoutToken, token)) {
+      throw new ForbiddenException('Checkout token not allowed');
     }
 
-    if (!safeEq(res.receiptToken, token)) {
-      throw new ForbiddenException('Invalid receipt token');
+    if (!res.receiptToken) {
+      throw new UnauthorizedException('Receipt token missing');
     }
+
+    const dbNow = await this.getDbNow(trx);
+    if (
+      res.receiptTokenExpiresAt &&
+      res.receiptTokenExpiresAt.getTime() <= dbNow.getTime()
+    ) {
+      throw new UnauthorizedException('Receipt token expired');
+    }
+
+    if (safeEq(res.receiptToken, token)) return;
+
+    const repository = trx ? trx.getRepository(Reservation) : this.reservaRepo;
+    const other = await repository
+      .createQueryBuilder('r')
+      .select(['r.id'])
+      .where('r.receiptToken = :token', { token })
+      .andWhere(
+        '(r."receiptTokenExpiresAt" IS NULL OR r."receiptTokenExpiresAt" > :dbNow)',
+        { dbNow },
+      )
+      .andWhere('r.status = :status', {
+        status: ReservationStatus.CONFIRMED,
+      })
+      .getOne();
+
+    if (other) {
+      throw new ForbiddenException('Receipt token does not match reservation');
+    }
+
+    throw new UnauthorizedException('Invalid receipt token');
+  }
+
+  private toPublicNotificationEvent(
+    event: NotificationEvent,
+  ): PublicNotificationEventDto {
+    return {
+      id: event.id,
+      type: event.type,
+      reservationId: event.reservationId,
+      channel: event.channel,
+      createdAt: event.createdAt.toISOString(),
+    };
   }
 
   async getReceiptById(id: string, receiptToken: string | null) {
@@ -370,10 +458,81 @@ export class ReservationsService {
       throw new ForbiddenException('Receipt available only for confirmed');
     }
 
-    if (!receiptToken) throw new ForbiddenException('Receipt token required');
-    this.assertReceiptToken(res, receiptToken);
+    await this.assertReceiptTokenForReservation(res, receiptToken ?? '');
 
     return this.toPublicCheckout(res);
+  }
+
+  // ---------------------------
+  // PUBLIC NOTIFICATIONS (receipt)
+  // ---------------------------
+  async getPublicNotifications(id: string, receiptToken: string) {
+    const res = await this.reservaRepo.findOne({ where: { id } });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      throw new ConflictException('Reserva no confirmada');
+    }
+
+    await this.assertReceiptTokenForReservation(res, receiptToken);
+
+    const event = await this.notificationEvents.findLatestForReservation(
+      res.id,
+      [
+        NotificationEventType.RESERVATION_CONFIRMED,
+        NotificationEventType.NOTIFICATION_RESEND_REQUESTED,
+      ],
+    );
+
+    if (!event) throw new NotFoundException('Evento no encontrado');
+
+    return this.toPublicNotificationEvent(event);
+  }
+
+  async resendPublicNotification(id: string, receiptToken: string) {
+    const res = await this.reservaRepo.findOne({
+      where: { id },
+      relations: ['court', 'court.club'],
+    });
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      throw new ConflictException('Reserva no confirmada');
+    }
+
+    await this.assertReceiptTokenForReservation(res, receiptToken);
+
+    const dbNow = await this.getDbNow();
+    const from = DateTime.fromJSDate(dbNow)
+      .minus({ minutes: RESEND_WINDOW_MINUTES })
+      .toJSDate();
+
+    const existing = await this.notificationEvents.findLatestResendAfter(
+      res.id,
+      from,
+    );
+
+    if (existing) {
+      return {
+        idempotent: true,
+        eventId: existing.id,
+        event: this.toPublicNotificationEvent(existing),
+      };
+    }
+
+    const created = await this.notificationEvents.recordEvent({
+      type: NotificationEventType.NOTIFICATION_RESEND_REQUESTED,
+      reservationId: res.id,
+      userId: null,
+      channel: NotificationEventChannel.MOCK,
+      payload: this.buildEventPayload(res),
+    });
+
+    return {
+      idempotent: false,
+      eventId: created.id,
+      event: this.toPublicNotificationEvent(created),
+    };
   }
 
   // ---------------------------
@@ -382,7 +541,7 @@ export class ReservationsService {
   async confirm(id: string) {
     const res = await this.reservaRepo.findOne({
       where: { id },
-      relations: ['court'],
+      relations: ['court', 'court.club'],
     });
     if (!res) throw new NotFoundException('Reserva no encontrada');
 
@@ -397,7 +556,17 @@ export class ReservationsService {
     res.expiresAt = null;
     res.checkoutTokenExpiresAt = null;
     res.confirmedAt = new Date();
-    return this.reservaRepo.save(res);
+    const saved = await this.reservaRepo.save(res);
+
+    await this.notificationEvents.recordEventIfMissing({
+      type: NotificationEventType.RESERVATION_CONFIRMED,
+      reservationId: saved.id,
+      userId: null,
+      channel: NotificationEventChannel.MOCK,
+      payload: this.buildEventPayload(saved),
+    });
+
+    return saved;
   }
 
   async cancel(id: string) {

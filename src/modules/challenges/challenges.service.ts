@@ -490,7 +490,7 @@ export class ChallengesService {
   }) {
     const ids = [args.teamA1, args.teamA2, args.teamB1, args.teamB2].filter(
       Boolean,
-    ) as string[];
+    );
     if (ids.includes(args.candidate))
       throw new BadRequestException('User already in this match');
   }

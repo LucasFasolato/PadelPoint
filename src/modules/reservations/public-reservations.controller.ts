@@ -1,5 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@/common/swagger-tags.decorator';
 import { ReservationsService } from '../reservations/reservations.service';
+import {
+  PublicNotificationsQueryDto,
+  PublicNotificationsResendDto,
+} from './dto/public-notifications.dto';
 
 @Controller('public/reservations')
 export class PublicReservationsController {
@@ -15,6 +20,26 @@ export class PublicReservationsController {
   @Get(':id/receipt')
   getReceipt(@Param('id') id: string, @Query('token') token: string) {
     return this.service.getReceiptById(id, token ?? null);
+  }
+
+  // Notifications (confirmed) - requiere receiptToken
+  @Get(':id/notifications')
+  @ApiTags('Public', 'Notifications')
+  getNotifications(
+    @Param('id') id: string,
+    @Query() query: PublicNotificationsQueryDto,
+  ) {
+    return this.service.getPublicNotifications(id, query.token);
+  }
+
+  // Resend notifications (confirmed) - requiere receiptToken
+  @Post(':id/notifications/resend')
+  @ApiTags('Public', 'Notifications')
+  resendNotifications(
+    @Param('id') id: string,
+    @Body() body: PublicNotificationsResendDto,
+  ) {
+    return this.service.resendPublicNotification(id, body.token);
   }
 
   // Confirm (hold -> confirmed) - token preferentemente por query, fallback por body

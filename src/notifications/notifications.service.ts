@@ -116,7 +116,7 @@ export class NotificationsService {
         await this.repo.save(n);
 
         // opcional: log útil para dev
-        // eslint-disable-next-line no-console
+
         console.log(
           `[MOCK EMAIL SENT] to=${res.clienteEmail} reservation=${res.id}`,
         );
@@ -151,7 +151,6 @@ export class NotificationsService {
       });
       await this.repo.save(n);
 
-      // eslint-disable-next-line no-console
       console.log(
         `[MOCK WHATSAPP READY] to=${phone || '(no phone)'} reservation=${res.id}`,
       );

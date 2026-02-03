@@ -43,14 +43,14 @@ export default tseslint.config(
     },
   },
 
-  // ✅ DTOs: decorators de class-validator generan falsos positivos
   {
-    files: ['**/*.dto.ts'],
+    files: ['**/*.dto.ts', "**/*.spec.ts", "**/*.test.ts", "**/__tests__/**/*.ts"],
     rules: {
-      '@typescript-eslint/no-unsafe-call': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-call": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off",
+        "@typescript-eslint/no-unsafe-return": "off",
+        "@typescript-eslint/require-await": "off"
     },
   },
 
