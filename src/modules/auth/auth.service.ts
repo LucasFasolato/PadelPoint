@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -38,6 +39,26 @@ export class AuthService {
   }
 
   async login(input: { email: string; password: string }) {
+    const user = await this.validateCredentials(input);
+    return this.issueToken(user.id, user.email, user.role);
+  }
+
+  async loginPlayer(input: { email: string; password: string }) {
+    const user = await this.validateCredentials(input);
+    if (user.role !== UserRole.PLAYER) {
+      throw new ForbiddenException('Only player accounts allowed');
+    }
+
+    return {
+      accessToken: this.issueToken(user.id, user.email, user.role).accessToken,
+      user: { userId: user.id, email: user.email, role: user.role },
+    };
+  }
+
+  private async validateCredentials(input: {
+    email: string;
+    password: string;
+  }) {
     const email = input.email.toLowerCase().trim();
 
     const user = await this.users.findByEmail(email);
@@ -47,7 +68,7 @@ export class AuthService {
     const ok = await bcrypt.compare(input.password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
-    return this.issueToken(user.id, user.email, user.role);
+    return user;
   }
 
   private issueToken(userId: string, email: string, role: string) {
