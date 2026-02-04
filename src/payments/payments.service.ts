@@ -192,7 +192,19 @@ export class PaymentsService {
         publicCheckout: input.publicCheckout,
       });
 
+      // (solo si existe receiptToken + intent existente)
       if (reservation.status === ReservationStatus.CONFIRMED) {
+        const existing = await intentRepo.findOne({
+          where: { referenceType, referenceId },
+        });
+
+        if (existing && reservation.receiptToken) {
+          // “hack” controlado: agregamos receiptToken al response sin tocar schema
+          Object.assign(existing as any, { receiptToken: reservation.receiptToken });
+          return { intent: existing, isNew: false };
+        }
+
+        // Caso raro/inconsistente: confirmada pero sin receiptToken o sin intent
         throw new ConflictException('Reservation is already confirmed');
       }
       if (reservation.status === ReservationStatus.CANCELLED) {
