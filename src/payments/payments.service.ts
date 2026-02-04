@@ -30,6 +30,7 @@ import {
   Reservation,
   ReservationStatus,
 } from '../modules/reservations/reservation.entity';
+import { randomBytes } from 'crypto';
 
 type JsonObject = Record<string, any>;
 
@@ -72,6 +73,19 @@ export class PaymentsService {
       this.logger.warn(
         `AUTO_APPROVE_PAYMENTS enabled - payments will auto-approve after ${this.autoApproveDelayMs}ms`,
       );
+    }
+  }
+
+  private computeReceiptTokenExpiresAt(days = 14): Date {
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  }
+
+  private ensureReceiptToken(reservation: Reservation) {
+    if (!reservation.receiptToken) {
+      reservation.receiptToken = randomBytes(24).toString('hex'); // 48 chars < 64
+    }
+    if (!reservation.receiptTokenExpiresAt) {
+      reservation.receiptTokenExpiresAt = this.computeReceiptTokenExpiresAt(14);
     }
   }
 
@@ -398,7 +412,11 @@ export class PaymentsService {
     intentId: string;
     checkoutToken?: string;
     publicCheckout?: boolean;
-  }) {
+  }): Promise<{
+    ok: true;
+    intent: PaymentIntent;
+    receiptToken: string | null;
+  }> {
     return this.dataSource.transaction(async (manager) => {
       const intentRepo = manager.getRepository(PaymentIntent);
       const txRepo = manager.getRepository(PaymentTransaction);
@@ -411,14 +429,27 @@ export class PaymentsService {
       });
       if (!intent) throw new NotFoundException('PaymentIntent not found');
 
-      if (!input.publicCheckout && intent.userId !== input.userId)
+      if (!input.publicCheckout && intent.userId !== input.userId) {
         throw new ForbiddenException('Not allowed');
+      }
 
+      // helper: si es reserva, traemos receiptToken actual
+      const getReceiptTokenIfAny = async (): Promise<string | null> => {
+        if (intent.referenceType !== PaymentReferenceType.RESERVATION)
+          return null;
+        const reservation = await reservationRepo.findOne({
+          where: { id: intent.referenceId },
+        });
+        return reservation?.receiptToken ?? null;
+      };
+
+      // Ya pagado -> devolvemos receiptToken si existe
       if (
         intent.status === PaymentIntentStatus.APPROVED ||
         intent.status === PaymentIntentStatus.SUCCEEDED
       ) {
-        return { ok: true, intent };
+        const receiptToken = await getReceiptTokenIfAny();
+        return { ok: true, intent, receiptToken };
       }
 
       if (
@@ -460,7 +491,7 @@ export class PaymentsService {
       });
       await txRepo.save(tx);
 
-      // Intent SUCCEEDED
+      // Intent APPROVED
       intent.status = PaymentIntentStatus.APPROVED;
       intent.paidAt = new Date();
       intent.expiresAt = null;
@@ -473,6 +504,8 @@ export class PaymentsService {
           payload: { transactionId: tx.id } satisfies JsonObject,
         }),
       );
+
+      let receiptToken: string | null = null;
 
       // Lógica de negocio (Reservas)
       if (intent.referenceType === PaymentReferenceType.RESERVATION) {
@@ -493,9 +526,9 @@ export class PaymentsService {
         }
 
         if (reservation.status === ReservationStatus.CANCELLED) {
-          // Revertir intent
           intent.status = PaymentIntentStatus.CANCELLED;
           await intentRepo.save(intent);
+
           await eventRepo.save(
             eventRepo.create({
               paymentIntentId: intent.id,
@@ -503,6 +536,7 @@ export class PaymentsService {
               payload: { reservationId: reservation.id } satisfies JsonObject,
             }),
           );
+
           throw new BadRequestException(
             'Reservation is cancelled; cannot confirm',
           );
@@ -516,7 +550,13 @@ export class PaymentsService {
           reservation.expiresAt = null;
           reservation.checkoutTokenExpiresAt = null;
           reservation.confirmedAt = new Date();
+
+          // ✅ generar receiptToken (para comprobante)
+          this.ensureReceiptToken(reservation);
+
           await reservationRepo.save(reservation);
+
+          receiptToken = reservation.receiptToken ?? null;
 
           await eventRepo.save(
             eventRepo.create({
@@ -532,7 +572,7 @@ export class PaymentsService {
         }
       }
 
-      return { ok: true, intent };
+      return { ok: true, intent, receiptToken };
     });
   }
 
@@ -626,7 +666,7 @@ export class PaymentsService {
         }
       }
 
-      return { ok: true, intent };
+      return { ok: true, intent, receiptToken: null };
     });
   }
 

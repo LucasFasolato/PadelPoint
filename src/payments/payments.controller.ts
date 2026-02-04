@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -25,29 +24,58 @@ import { UserRole } from '../modules/users/user-role.enum';
 
 type AuthUser = { userId: string; email: string; role: string };
 
+type PaymentIntentPublicResponse = {
+  id: string;
+  userId: string | null;
+  amount: string;
+  currency: string;
+  status: string; // lower-case
+  referenceType: string;
+  referenceId: string;
+  expiresAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  receiptToken: string | null;
+};
+
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
-  private serializeIntent(intent: PaymentIntent) {
+  private serializeIntent(
+    intent: PaymentIntent & { receiptToken?: string | null },
+  ): PaymentIntentPublicResponse {
     return {
-      ...intent,
-      status: intent.status.toLowerCase(),
+      id: intent.id,
+      userId: intent.userId ?? null,
+      amount: intent.amount,
+      currency: intent.currency,
+      status: String(intent.status).toLowerCase(),
+      referenceType: String(intent.referenceType),
+      referenceId: intent.referenceId,
+      expiresAt: intent.expiresAt ? intent.expiresAt.toISOString() : null,
+      paidAt: intent.paidAt ? intent.paidAt.toISOString() : null,
+      createdAt: intent.createdAt.toISOString(),
+      updatedAt: intent.updatedAt.toISOString(),
+      receiptToken: intent.receiptToken ?? null,
     };
   }
 
-  private serializeIntentResult<T extends { intent: PaymentIntent }>(
-    result: T,
-  ) {
+  private serializeIntentResult(result: {
+    ok: boolean;
+    intent: PaymentIntent;
+    receiptToken?: string | null;
+  }) {
     return {
-      ...result,
-      intent: this.serializeIntent(result.intent),
+      ok: result.ok,
+      intent: {
+        ...this.serializeIntent(result.intent),
+        receiptToken: result.receiptToken ?? null,
+      },
     };
   }
 
-  // ---------------------------
-  // MODO A: con JWT (admins/users)
-  // ---------------------------
   @UseGuards(JwtAuthGuard)
   @Post('intents')
   async createIntent(@Req() req: Request, @Body() dto: CreatePaymentIntentDto) {
@@ -58,7 +86,7 @@ export class PaymentsController {
       referenceId: dto.referenceId,
       reservationId: dto.reservationId,
       currency: dto.currency,
-      checkoutToken: dto.checkoutToken, // opcional
+      checkoutToken: dto.checkoutToken,
     });
     return this.serializeIntent(intent);
   }
@@ -129,16 +157,11 @@ export class PaymentsController {
     return intents.map((intent) => this.serializeIntent(intent));
   }
 
-  // ---------------------------
-  // MODO B (PRO): Checkout público (sin login)
-  // ---------------------------
-
-  // Crear intent con checkoutToken (para RESERVATION)
+  // Public: create intent
   @Post('public/intents')
   async createIntentPublic(@Body() dto: CreatePaymentIntentDto) {
     const intent = await this.paymentsService.createIntent({
-      // ✅ public checkout => userId null (guest)
-      userId: null,
+      userId: 'public',
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
       reservationId: dto.reservationId,
@@ -149,27 +172,6 @@ export class PaymentsController {
     return this.serializeIntent(intent);
   }
 
-  // FIX: endpoint faltante para polling público desde el front
-  @Get('public/intents/:id')
-  async getIntentPublic(
-    @Param('id') id: string,
-    @Query('checkoutToken') checkoutToken?: string,
-  ) {
-    if (!checkoutToken) {
-      throw new BadRequestException('checkoutToken is required');
-    }
-
-    const intent = await this.paymentsService.getIntentPublic({
-      intentId: id,
-      checkoutToken,
-    });
-
-    return this.serializeIntent(intent);
-  }
-
-  // ---------------------------
-  // Webhook mock (idempotente)
-  // ---------------------------
   @Post('webhook/mock')
   webhookMock(@Body() dto: MockPaymentWebhookDto) {
     return this.paymentsService.handleMockWebhook({
@@ -185,8 +187,7 @@ export class PaymentsController {
     @Body() dto: SimulatePaymentDto,
   ) {
     const result = await this.paymentsService.simulateSuccess({
-      // ✅ public checkout => userId null (guest)
-      userId: null,
+      userId: 'public',
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
@@ -200,8 +201,7 @@ export class PaymentsController {
     @Body() dto: SimulatePaymentDto,
   ) {
     const result = await this.paymentsService.simulateFailure({
-      // ✅ public checkout => userId null (guest)
-      userId: null,
+      userId: 'public',
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
