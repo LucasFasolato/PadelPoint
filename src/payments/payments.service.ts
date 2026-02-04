@@ -118,7 +118,7 @@ export class PaymentsService {
           this.logger.log(`[AUTO-APPROVE] Processing intent ${intentId}`);
 
           await this.simulateSuccess({
-            userId: null,
+            userId: 'public',
             intentId,
             checkoutToken,
             publicCheckout: true,
