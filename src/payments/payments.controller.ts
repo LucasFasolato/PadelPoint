@@ -35,9 +35,7 @@ export class PaymentsController {
     };
   }
 
-  private serializeIntentResult<T extends { intent: PaymentIntent }>(
-    result: T,
-  ) {
+  private serializeIntentResult<T extends { intent: PaymentIntent }>(result: T) {
     return {
       ...result,
       intent: this.serializeIntent(result.intent),
@@ -131,18 +129,32 @@ export class PaymentsController {
   // ---------------------------
   // MODO B (PRO): Checkout público (sin login)
   // ---------------------------
+
   // Crear intent con checkoutToken (para RESERVATION)
   @Post('public/intents')
   async createIntentPublic(@Body() dto: CreatePaymentIntentDto) {
-    // userId = 'public' (no se usa para reservas guest)
     const intent = await this.paymentsService.createIntent({
-      userId: 'public',
+      // ✅ public checkout => userId null (guest)
+      userId: null,
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
       reservationId: dto.reservationId,
       currency: dto.currency,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
+    });
+    return this.serializeIntent(intent);
+  }
+
+  // ✅ FIX: endpoint faltante para polling público desde el front
+  @Get('public/intents/:id')
+  async getIntentPublic(
+    @Param('id') id: string,
+    @Query('checkoutToken') checkoutToken?: string,
+  ) {
+    const intent = await this.paymentsService.getIntentPublic({
+      intentId: id,
+      checkoutToken,
     });
     return this.serializeIntent(intent);
   }
@@ -165,7 +177,8 @@ export class PaymentsController {
     @Body() dto: SimulatePaymentDto,
   ) {
     const result = await this.paymentsService.simulateSuccess({
-      userId: 'public',
+      // ✅ public checkout => userId null (guest)
+      userId: null,
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
@@ -179,7 +192,8 @@ export class PaymentsController {
     @Body() dto: SimulatePaymentDto,
   ) {
     const result = await this.paymentsService.simulateFailure({
-      userId: 'public',
+      // ✅ public checkout => userId null (guest)
+      userId: null,
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
