@@ -31,6 +31,7 @@ export class NotificationService {
   private readonly resendApiKey: string | null;
   private readonly fromEmail: string;
   private readonly appUrl: string;
+  private readonly emailEnabled: boolean;
 
   constructor(
     private readonly config: ConfigService,
@@ -43,10 +44,16 @@ export class NotificationService {
       'PadelPoint <noreply@padelpoint.app>';
     this.appUrl = this.config.get<string>('APP_URL') || 'http://localhost:3000';
 
+    // Controla si se envían emails o no (default: true si hay API key)
+    const enableEnv = this.config.get<string>('ENABLE_EMAIL_NOTIFICATIONS');
+    this.emailEnabled = enableEnv !== 'false' && !!this.resendApiKey;
+
     if (!this.resendApiKey) {
       this.logger.warn(
         'RESEND_API_KEY not configured - emails will be logged but not sent',
       );
+    } else if (!this.emailEnabled) {
+      this.logger.warn('ENABLE_EMAIL_NOTIFICATIONS=false - emails disabled');
     }
   }
 
@@ -140,7 +147,7 @@ export class NotificationService {
     });
 
     try {
-      if (this.resendApiKey) {
+      if (this.emailEnabled) {
         // Enviar con Resend
         const result = await this.sendWithResend({
           from: this.fromEmail,
@@ -162,12 +169,12 @@ export class NotificationService {
           );
         }
       } else {
-        // Mock mode - log pero marcar como enviado
+        // Disabled or no API key - log but mark as sent (mock mode)
         notification.status = NotificationStatus.SENT;
+        notification.provider = 'MOCK';
         this.logger.log(
           `[MOCK EMAIL] to=${to} subject="${subject}" reservationId=${data.reservationId}`,
         );
-        this.logger.debug(`[MOCK EMAIL HTML]\n${html}`);
       }
     } catch (err: unknown) {
       notification.status = NotificationStatus.FAILED;
