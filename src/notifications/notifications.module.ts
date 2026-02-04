@@ -16,6 +16,10 @@ import { NotificationsAdminController } from './notifications-admin.controller';
     NotificationService,
     NotificationEventsService,
   ],
-  exports: [NotificationsService, NotificationEventsService],
+  exports: [
+    NotificationsService,
+    NotificationEventsService,
+    NotificationService,
+  ],
 })
 export class NotificationsModule {}
