@@ -212,7 +212,7 @@ export class PaymentsService {
       const amount = Number(reservation.precio).toFixed(2);
 
       const intent = intentRepo.create({
-        userId: input.publicCheckout ? 'public' : input.userId,
+        userId: input.publicCheckout ? null : input.userId,
         amount,
         currency,
         status: PaymentIntentStatus.PENDING,
