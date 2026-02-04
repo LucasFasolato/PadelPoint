@@ -10,6 +10,7 @@ describe('AuthController', () => {
     const authService = {
       register: jest.fn(),
       login: jest.fn(),
+      loginPlayer: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
