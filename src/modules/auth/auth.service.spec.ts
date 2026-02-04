@@ -56,11 +56,6 @@ describe('AuthService', () => {
 
     expect(result).toEqual({
       accessToken: 'token-123',
-      user: {
-        userId: 'player-id',
-        email: 'player@test.com',
-        role: UserRole.PLAYER,
-      },
     });
   });
 
