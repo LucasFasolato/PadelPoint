@@ -25,6 +25,11 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Auth endpoints
+
+- `POST /auth/login` for admin login (existing behavior)
+- `POST /auth/login-player` for player-facing login UI (PLAYER role only)
+
 ## Project setup
 
 ```bash
