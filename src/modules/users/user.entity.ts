@@ -26,6 +26,9 @@ export class User {
   @Column({ type: 'varchar', length: 80, nullable: true })
   displayName!: string | null;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  phone!: string | null;
+
   @Column({ type: 'boolean', default: true })
   active!: boolean;
 
