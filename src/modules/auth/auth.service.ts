@@ -48,11 +48,7 @@ export class AuthService {
     if (user.role !== UserRole.PLAYER) {
       throw new ForbiddenException('Only player accounts allowed');
     }
-
-    return {
-      accessToken: this.issueToken(user.id, user.email, user.role).accessToken,
-      user: { userId: user.id, email: user.email, role: user.role },
-    };
+    return this.issueToken(user.id, user.email, user.role);
   }
 
   private async validateCredentials(input: {

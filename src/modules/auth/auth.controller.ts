@@ -26,6 +26,11 @@ export class AuthController {
     return this.auth.loginPlayer(dto);
   }
 
+  @Post('login-user')
+  loginUser(@Body() dto: LoginDto) {
+    return this.auth.loginPlayer(dto);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() req: Request) {
