@@ -118,7 +118,7 @@ export class PaymentsService {
           this.logger.log(`[AUTO-APPROVE] Processing intent ${intentId}`);
 
           await this.simulateSuccess({
-            userId: 'public',
+            userId: null,
             intentId,
             checkoutToken,
             publicCheckout: true,
@@ -265,6 +265,29 @@ export class PaymentsService {
     if (!intent) throw new NotFoundException('PaymentIntent not found');
     if (intent.userId !== input.userId)
       throw new ForbiddenException('Not allowed');
+    return intent;
+  }
+
+  async getIntentPublic(input: { intentId: string; checkoutToken: string }) {
+    const intent = await this.intentRepo.findOne({
+      where: { id: input.intentId },
+    });
+    if (!intent) throw new NotFoundException('PaymentIntent not found');
+
+    if (intent.referenceType === PaymentReferenceType.RESERVATION) {
+      const reservation = await this.reservationRepo.findOne({
+        where: { id: intent.referenceId },
+      });
+      if (!reservation) throw new NotFoundException('Reservation not found');
+
+      if (
+        !reservation.checkoutToken ||
+        reservation.checkoutToken !== input.checkoutToken
+      ) {
+        throw new ForbiddenException('Invalid checkoutToken');
+      }
+    }
+
     return intent;
   }
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -35,7 +36,9 @@ export class PaymentsController {
     };
   }
 
-  private serializeIntentResult<T extends { intent: PaymentIntent }>(result: T) {
+  private serializeIntentResult<T extends { intent: PaymentIntent }>(
+    result: T,
+  ) {
     return {
       ...result,
       intent: this.serializeIntent(result.intent),
@@ -146,16 +149,21 @@ export class PaymentsController {
     return this.serializeIntent(intent);
   }
 
-  // ✅ FIX: endpoint faltante para polling público desde el front
+  // FIX: endpoint faltante para polling público desde el front
   @Get('public/intents/:id')
   async getIntentPublic(
     @Param('id') id: string,
     @Query('checkoutToken') checkoutToken?: string,
   ) {
+    if (!checkoutToken) {
+      throw new BadRequestException('checkoutToken is required');
+    }
+
     const intent = await this.paymentsService.getIntentPublic({
       intentId: id,
       checkoutToken,
     });
+
     return this.serializeIntent(intent);
   }
 
