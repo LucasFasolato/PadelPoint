@@ -36,6 +36,8 @@ type JsonObject = Record<string, any>;
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+  private readonly autoApprovePayments: boolean;
+  private readonly autoApproveDelayMs: number;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -55,7 +57,23 @@ export class PaymentsService {
 
     @InjectRepository(Reservation)
     private readonly reservationRepo: Repository<Reservation>,
-  ) {}
+  ) {
+    // Auto-approve payments in dev/staging (default: false)
+    this.autoApprovePayments =
+      this.configService.get<string>('AUTO_APPROVE_PAYMENTS') === 'true';
+
+    // Delay antes de auto-aprobar (default: 2 segundos para simular "procesamiento")
+    this.autoApproveDelayMs = parseInt(
+      this.configService.get<string>('AUTO_APPROVE_DELAY_MS') || '2000',
+      10,
+    );
+
+    if (this.autoApprovePayments) {
+      this.logger.warn(
+        `AUTO_APPROVE_PAYMENTS enabled - payments will auto-approve after ${this.autoApproveDelayMs}ms`,
+      );
+    }
+  }
 
   private computeExpiresAt(minutes = 15): Date {
     return new Date(Date.now() + minutes * 60 * 1000);
@@ -66,9 +84,7 @@ export class PaymentsService {
     payload: EventLogPayload | null,
     manager?: { getRepository: DataSource['getRepository'] },
   ) {
-    const repo = manager
-      ? manager.getRepository(EventLog)
-      : this.eventLogRepo;
+    const repo = manager ? manager.getRepository(EventLog) : this.eventLogRepo;
     const entry = repo.create({ type, payload });
     await repo.save(entry);
   }
@@ -88,6 +104,38 @@ export class PaymentsService {
         throw new ForbiddenException('Invalid checkoutToken');
       }
     }
+  }
+
+  /**
+   * Programa auto-aprobación del pago (fire-and-forget)
+   */
+  private scheduleAutoApprove(intentId: string, checkoutToken?: string) {
+    if (!this.autoApprovePayments) return;
+
+    setTimeout(() => {
+      void (async () => {
+        try {
+          this.logger.log(`[AUTO-APPROVE] Processing intent ${intentId}`);
+
+          await this.simulateSuccess({
+            userId: 'public',
+            intentId,
+            checkoutToken,
+            publicCheckout: true,
+          });
+
+          this.logger.log(
+            `[AUTO-APPROVE] Intent ${intentId} approved successfully`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `[AUTO-APPROVE] Failed for intent ${intentId}: ${
+              err instanceof Error ? err.message : 'Unknown error'
+            }`,
+          );
+        }
+      })();
+    }, this.autoApproveDelayMs);
   }
 
   async createIntent(input: {
@@ -113,7 +161,7 @@ export class PaymentsService {
       );
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const intentRepo = manager.getRepository(PaymentIntent);
       const reservationRepo = manager.getRepository(Reservation);
 
@@ -158,7 +206,7 @@ export class PaymentsService {
           reservation.expiresAt = null;
           await reservationRepo.save(reservation);
         }
-        return existing;
+        return { intent: existing, isNew: false };
       }
 
       const amount = Number(reservation.precio).toFixed(2);
@@ -199,8 +247,15 @@ export class PaymentsService {
         manager,
       );
 
-      return saved;
+      return { intent: saved, isNew: true, checkoutToken: input.checkoutToken };
     });
+
+    // Si es un intent nuevo y auto-approve está habilitado, programar aprobación
+    if (result.isNew && this.autoApprovePayments) {
+      this.scheduleAutoApprove(result.intent.id, input.checkoutToken);
+    }
+
+    return result.intent;
   }
 
   async getIntent(input: { userId: string; intentId: string }) {
@@ -257,9 +312,7 @@ export class PaymentsService {
       const fromDate = input.from
         ? new Date(`${input.from}T00:00:00.000Z`)
         : null;
-      const toDate = input.to
-        ? new Date(`${input.to}T23:59:59.999Z`)
-        : null;
+      const toDate = input.to ? new Date(`${input.to}T23:59:59.999Z`) : null;
 
       if (fromDate && Number.isNaN(fromDate.getTime())) {
         throw new BadRequestException('Invalid from date');
@@ -379,6 +432,7 @@ export class PaymentsService {
         rawResponse: {
           simulated: true,
           result: 'success',
+          autoApproved: this.autoApprovePayments,
         } satisfies JsonObject,
       });
       await txRepo.save(tx);
@@ -405,12 +459,15 @@ export class PaymentsService {
         });
         if (!reservation) throw new NotFoundException('Reservation not found');
 
-        this.validateReservationOwnershipOrToken({
-          reservation,
-          userId: input.userId,
-          checkoutToken: input.checkoutToken,
-          publicCheckout: input.publicCheckout,
-        });
+        // En auto-approve mode, no validamos checkoutToken porque ya lo validamos al crear
+        if (!this.autoApprovePayments) {
+          this.validateReservationOwnershipOrToken({
+            reservation,
+            userId: input.userId,
+            checkoutToken: input.checkoutToken,
+            publicCheckout: input.publicCheckout,
+          });
+        }
 
         if (reservation.status === ReservationStatus.CANCELLED) {
           // Revertir intent
