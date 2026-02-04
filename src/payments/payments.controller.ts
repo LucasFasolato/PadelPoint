@@ -1,4 +1,3 @@
-// src/payments/payments.controller.ts
 import {
   Body,
   Controller,
@@ -16,6 +15,7 @@ import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { SimulatePaymentDto } from './dto/simulate-payment.dto';
 import { MockPaymentWebhookDto } from './dto/mock-webhook.dto';
 import { AdminListPaymentIntentsDto } from './dto/admin-list-payment-intents.dto';
+import { PaymentIntent } from './payment-intent.entity';
 
 import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
 import { RolesGuard } from '../modules/auth/roles.guard';
@@ -28,14 +28,30 @@ type AuthUser = { userId: string; email: string; role: string };
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  private serializeIntent(intent: PaymentIntent) {
+    return {
+      ...intent,
+      status: intent.status.toLowerCase(),
+    };
+  }
+
+  private serializeIntentResult<T extends { intent: PaymentIntent }>(
+    result: T,
+  ) {
+    return {
+      ...result,
+      intent: this.serializeIntent(result.intent),
+    };
+  }
+
   // ---------------------------
   // MODO A: con JWT (admins/users)
   // ---------------------------
   @UseGuards(JwtAuthGuard)
   @Post('intents')
-  createIntent(@Req() req: Request, @Body() dto: CreatePaymentIntentDto) {
+  async createIntent(@Req() req: Request, @Body() dto: CreatePaymentIntentDto) {
     const user = req.user as AuthUser;
-    return this.paymentsService.createIntent({
+    const intent = await this.paymentsService.createIntent({
       userId: user.userId,
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
@@ -43,46 +59,50 @@ export class PaymentsController {
       currency: dto.currency,
       checkoutToken: dto.checkoutToken, // opcional
     });
+    return this.serializeIntent(intent);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('intents/:id/simulate-success')
-  simulateSuccess(
+  async simulateSuccess(
     @Req() req: Request,
     @Param('id') id: string,
     @Body() dto: SimulatePaymentDto,
   ) {
     const user = req.user as AuthUser;
-    return this.paymentsService.simulateSuccess({
+    const result = await this.paymentsService.simulateSuccess({
       userId: user.userId,
       intentId: id,
       checkoutToken: dto.checkoutToken,
     });
+    return this.serializeIntentResult(result);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('intents/:id/simulate-failure')
-  simulateFailure(
+  async simulateFailure(
     @Req() req: Request,
     @Param('id') id: string,
     @Body() dto: SimulatePaymentDto,
   ) {
     const user = req.user as AuthUser;
-    return this.paymentsService.simulateFailure({
+    const result = await this.paymentsService.simulateFailure({
       userId: user.userId,
       intentId: id,
       checkoutToken: dto.checkoutToken,
     });
+    return this.serializeIntentResult(result);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('intents/:id')
-  getIntent(@Req() req: Request, @Param('id') id: string) {
+  async getIntent(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
-    return this.paymentsService.getIntent({
+    const intent = await this.paymentsService.getIntent({
       userId: user.userId,
       intentId: id,
     });
+    return this.serializeIntent(intent);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -94,17 +114,18 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('intents/by-reference')
-  findByReference(
+  async findByReference(
     @Req() req: Request,
     @Query('referenceType') referenceType?: string,
     @Query('referenceId') referenceId?: string,
   ) {
     const user = req.user as AuthUser;
-    return this.paymentsService.findByReference({
+    const intents = await this.paymentsService.findByReference({
       userId: user.userId,
       referenceType,
       referenceId,
     });
+    return intents.map((intent) => this.serializeIntent(intent));
   }
 
   // ---------------------------
@@ -112,9 +133,9 @@ export class PaymentsController {
   // ---------------------------
   // Crear intent con checkoutToken (para RESERVATION)
   @Post('public/intents')
-  createIntentPublic(@Body() dto: CreatePaymentIntentDto) {
+  async createIntentPublic(@Body() dto: CreatePaymentIntentDto) {
     // userId = 'public' (no se usa para reservas guest)
-    return this.paymentsService.createIntent({
+    const intent = await this.paymentsService.createIntent({
       userId: 'public',
       referenceType: dto.referenceType,
       referenceId: dto.referenceId,
@@ -123,6 +144,7 @@ export class PaymentsController {
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
     });
+    return this.serializeIntent(intent);
   }
 
   // ---------------------------
@@ -138,28 +160,30 @@ export class PaymentsController {
   }
 
   @Post('public/intents/:id/simulate-success')
-  simulateSuccessPublic(
+  async simulateSuccessPublic(
     @Param('id') id: string,
     @Body() dto: SimulatePaymentDto,
   ) {
-    return this.paymentsService.simulateSuccess({
+    const result = await this.paymentsService.simulateSuccess({
       userId: 'public',
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
     });
+    return this.serializeIntentResult(result);
   }
 
   @Post('public/intents/:id/simulate-failure')
-  simulateFailurePublic(
+  async simulateFailurePublic(
     @Param('id') id: string,
     @Body() dto: SimulatePaymentDto,
   ) {
-    return this.paymentsService.simulateFailure({
+    const result = await this.paymentsService.simulateFailure({
       userId: 'public',
       intentId: id,
       checkoutToken: dto.checkoutToken,
       publicCheckout: true,
     });
+    return this.serializeIntentResult(result);
   }
 }
