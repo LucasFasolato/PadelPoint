@@ -29,6 +29,13 @@ const TZ = 'America/Argentina/Cordoba';
 const HOLD_MINUTES = 10;
 const CHECKOUT_TOKEN_MINUTES = 30;
 const RESEND_WINDOW_MINUTES = 5;
+
+type ReservationStatusContract =
+  | 'HOLD'
+  | 'PAYMENT_PENDING'
+  | 'CONFIRMED'
+  | 'CANCELLED'
+  | 'EXPIRED';
 // const RECEIPT_TOKEN_MINUTES = 60 * 24 * 14; // 14 días
 
 // Helpers
@@ -45,6 +52,47 @@ function safeEq(a: string, b: string): boolean {
   const bb = Buffer.from(b);
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
+}
+
+function normalizeReservationStatus(
+  input: string,
+): ReservationStatusContract {
+  const raw = String(input ?? '').trim();
+  if (!raw) return 'HOLD';
+
+  if (
+    raw === 'HOLD' ||
+    raw === 'PAYMENT_PENDING' ||
+    raw === 'CONFIRMED' ||
+    raw === 'CANCELLED' ||
+    raw === 'EXPIRED'
+  ) {
+    return raw;
+  }
+
+  switch (raw.toLowerCase()) {
+    case 'hold':
+      return 'HOLD';
+    case 'payment_pending':
+    case 'pending_payment':
+      return 'PAYMENT_PENDING';
+    case 'confirmed':
+      return 'CONFIRMED';
+    case 'cancelled':
+    case 'canceled':
+      return 'CANCELLED';
+    case 'expired':
+      return 'EXPIRED';
+    default:
+      // Safe fallback for unknown/legacy values.
+      return 'HOLD';
+  }
+}
+
+function isReceiptTokenValid(res: Reservation, now: Date): boolean {
+  if (!res.receiptToken) return false;
+  if (!res.receiptTokenExpiresAt) return true;
+  return res.receiptTokenExpiresAt.getTime() > now.getTime();
 }
 
 @Injectable()
@@ -650,6 +698,71 @@ export class ReservationsService {
       take: 50,
     });
   }
+
+  async listMyReservations(input: { email: string; page: number; limit: number }) {
+    // NOTE: We rely on clienteEmail association until Reservation has userId.
+    const normalizedEmail = input.email.trim().toLowerCase();
+    const page = Math.max(1, input.page);
+    const limit = Math.min(50, Math.max(1, input.limit));
+    const skip = (page - 1) * limit;
+
+    const [rows, total] = await this.reservaRepo.findAndCount({
+      where: { clienteEmail: normalizedEmail },
+      relations: ['court', 'court.club'],
+      order: { startAt: 'DESC' },
+      take: limit,
+      skip,
+    });
+
+    const items = rows.map((res) => ({
+      reservationId: res.id,
+      status: normalizeReservationStatus(res.status),
+      startAt: res.startAt ? res.startAt.toISOString() : null,
+      endAt: res.endAt ? res.endAt.toISOString() : null,
+      courtId: res.court?.id ?? null,
+      courtName: res.court?.nombre ?? null,
+      clubId: res.court?.club?.id ?? null,
+      clubName: res.court?.club?.nombre ?? null,
+      amount: typeof res.precio === 'number' ? res.precio : null,
+    }));
+
+    return { items, total, page, limit };
+  }
+
+  async createReceiptLinkForUser(input: {
+    reservationId: string;
+    email: string;
+  }) {
+    const normalizedEmail = input.email.trim().toLowerCase();
+
+    const res = await this.reservaRepo.findOne({
+      where: { id: input.reservationId, clienteEmail: normalizedEmail },
+    });
+
+    if (!res) throw new NotFoundException('Reserva no encontrada');
+
+    if (res.status !== ReservationStatus.CONFIRMED) {
+      throw new ConflictException('El comprobante todavía no está disponible.');
+    }
+
+    const dbNow = await this.getDbNow();
+    if (!isReceiptTokenValid(res, dbNow)) {
+      const nextToken = makeToken();
+      const expiresAt = DateTime.fromJSDate(dbNow)
+        .toUTC()
+        .plus({ days: 14 })
+        .toJSDate();
+
+      res.receiptToken = nextToken;
+      res.receiptTokenExpiresAt = expiresAt;
+      await this.reservaRepo.save(res);
+    }
+
+    return {
+      url: `/checkout/success/${res.id}?receiptToken=${res.receiptToken}`,
+    };
+  }
+
 
   // ---------------------------
   // QUERY HELPERS

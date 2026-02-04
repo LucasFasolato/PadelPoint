@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, type Repository } from 'typeorm';
 
 import { ReservationsService } from './reservations.service';
-import { Reservation } from './reservation.entity';
+import { Reservation, ReservationStatus } from './reservation.entity';
 import { Court } from '../courts/court.entity';
 
 import { NotificationEventsService } from '@/notifications/notification-events.service';
@@ -15,6 +15,7 @@ import {
 
 type RepoMock<T> = {
   findOne: jest.Mock<Promise<T | null>, any>;
+  findAndCount: jest.Mock<Promise<[T[], number]>, any>;
   // firma simple (la que usa tu servicio): save(entity) -> Promise<entity>
   save: jest.Mock<Promise<T>, [Partial<T>]>;
 };
@@ -60,6 +61,7 @@ describe('ReservationsService', () => {
       create: (input: Partial<Reservation>) => Reservation;
     } = {
       findOne: jest.fn(),
+      findAndCount: jest.fn(),
       save: jest.fn((input) => Promise.resolve(input as Reservation)),
       create: (input) =>
         ({ ...(input as object), id: 'res-id' }) as Reservation,
@@ -109,6 +111,7 @@ describe('ReservationsService', () => {
       create: (input: Partial<Reservation>) => Reservation;
     } = {
       findOne: jest.fn(),
+      findAndCount: jest.fn(),
       save: jest.fn((input) =>
         Promise.resolve(input as unknown as Reservation),
       ),
@@ -303,5 +306,120 @@ describe('ReservationsService', () => {
     await expect(
       service.getPublicNotifications('res-id', 'receipt-123'),
     ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('paginates my reservations by email', async () => {
+    const reservaRepo = moduleRef.get<RepoMock<Reservation>>(
+      getRepositoryToken(Reservation),
+    );
+
+    reservaRepo.findAndCount.mockResolvedValue([
+      [
+        {
+          id: 'res-1',
+          status: 'confirmed',
+          startAt: new Date('2026-02-03T10:00:00.000Z'),
+          endAt: new Date('2026-02-03T11:00:00.000Z'),
+          precio: 120,
+          court: {
+            id: 'court-1',
+            nombre: 'Court 1',
+            club: { id: 'club-1', nombre: 'Club 1' },
+          },
+        } as unknown as Reservation,
+      ],
+      12,
+    ]);
+
+    const result = await service.listMyReservations({
+      email: 'player@test.com',
+      page: 2,
+      limit: 5,
+    });
+
+    expect(reservaRepo.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { clienteEmail: 'player@test.com' },
+        take: 5,
+        skip: 5,
+        order: { startAt: 'DESC' },
+      }),
+    );
+
+    expect(result).toEqual({
+      items: [
+        {
+          reservationId: 'res-1',
+          status: 'CONFIRMED',
+          startAt: '2026-02-03T10:00:00.000Z',
+          endAt: '2026-02-03T11:00:00.000Z',
+          courtId: 'court-1',
+          courtName: 'Court 1',
+          clubId: 'club-1',
+          clubName: 'Club 1',
+          amount: 120,
+        },
+      ],
+      total: 12,
+      page: 2,
+      limit: 5,
+    });
+  });
+
+  it('creates receipt link for confirmed reservation', async () => {
+    const reservaRepo = moduleRef.get<RepoMock<Reservation>>(
+      getRepositoryToken(Reservation),
+    );
+    const dataSource = moduleRef.get<DataSourceMock>(DataSource);
+
+    dataSource.query.mockResolvedValue([{ now: new Date('2026-02-03T10:00:00.000Z') }]);
+
+    reservaRepo.findOne.mockResolvedValue({
+      id: 'res-1',
+      status: ReservationStatus.CONFIRMED,
+      receiptToken: null,
+      receiptTokenExpiresAt: null,
+      clienteEmail: 'player@test.com',
+    } as unknown as Reservation);
+
+    const result = await service.createReceiptLinkForUser({
+      reservationId: 'res-1',
+      email: 'player@test.com',
+    });
+
+    expect(result.url).toContain('/checkout/success/res-1?receiptToken=');
+  });
+
+  it('returns 404 when reservation does not belong to player', async () => {
+    const reservaRepo = moduleRef.get<RepoMock<Reservation>>(
+      getRepositoryToken(Reservation),
+    );
+    reservaRepo.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.createReceiptLinkForUser({
+        reservationId: 'res-404',
+        email: 'player@test.com',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('returns 409 when reservation is not confirmed', async () => {
+    const reservaRepo = moduleRef.get<RepoMock<Reservation>>(
+      getRepositoryToken(Reservation),
+    );
+
+    reservaRepo.findOne.mockResolvedValue({
+      id: 'res-2',
+      status: ReservationStatus.HOLD,
+      clienteEmail: 'player@test.com',
+    } as unknown as Reservation);
+
+    await expect(
+      service.createReceiptLinkForUser({
+        reservationId: 'res-2',
+        email: 'player@test.com',
+      }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });

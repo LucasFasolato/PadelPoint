@@ -27,8 +27,9 @@
 
 ## Auth endpoints
 
-- `POST /auth/login` for admin login (existing behavior)
-- `POST /auth/login-player` for player-facing login UI (PLAYER role only)
+- `POST /auth/login` for admin login (unchanged)
+- `POST /auth/login-player` is the canonical player login (PLAYER only)
+- `POST /auth/login-user` is a compatibility alias for player login
 
 ## Project setup
 

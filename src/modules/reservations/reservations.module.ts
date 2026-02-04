@@ -6,6 +6,7 @@ import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 import { Court } from '../courts/court.entity';
 import { PublicReservationsController } from './public-reservations.controller';
+import { MeReservationsController } from './me-reservations.controller';
 import { ExpireHoldsCron } from './expire-holds.cron';
 import { ClubMembersModule } from '../club-members/club-members.module';
 import { ClubMember } from '../club-members/club-member.entity';
@@ -17,7 +18,11 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     ClubMembersModule,
     NotificationsModule,
   ],
-  controllers: [ReservationsController, PublicReservationsController],
+  controllers: [
+    ReservationsController,
+    PublicReservationsController,
+    MeReservationsController,
+  ],
   providers: [ReservationsService, ExpireHoldsCron],
   exports: [ReservationsService],
 })
