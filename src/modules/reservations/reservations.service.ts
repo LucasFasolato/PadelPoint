@@ -23,6 +23,7 @@ import {
 } from '@/notifications/notification-event.entity';
 import { NotificationEventsService } from '@/notifications/notification-events.service';
 import { PublicNotificationEventDto } from './dto/public-notifications.dto';
+import { NotificationService } from '@/notifications/notification.service';
 
 // Configuration
 const TZ = 'America/Argentina/Cordoba';
@@ -54,9 +55,7 @@ function safeEq(a: string, b: string): boolean {
   return timingSafeEqual(ba, bb);
 }
 
-function normalizeReservationStatus(
-  input: string,
-): ReservationStatusContract {
+function normalizeReservationStatus(input: string): ReservationStatusContract {
   const raw = String(input ?? '').trim();
   if (!raw) return 'HOLD';
 
@@ -105,7 +104,29 @@ export class ReservationsService {
     private readonly courtRepo: Repository<Court>,
     private readonly notifications: NotificationsService,
     private readonly notificationEvents: NotificationEventsService,
+    private readonly notificationService: NotificationService,
   ) {}
+
+  private sendConfirmationNotification(res: Reservation) {
+    // Fire and forget - no esperamos ni propagamos errores
+    this.notificationService
+      .sendReservationConfirmedEmail({
+        reservationId: res.id,
+        clienteEmail: res.clienteEmail,
+        clienteNombre: res.clienteNombre,
+        courtName: res.court.nombre,
+        clubName: res.court.club.nombre,
+        clubDireccion: res.court.club.direccion,
+        startAt: res.startAt,
+        endAt: res.endAt,
+        precio: res.precio,
+        receiptToken: res.receiptToken,
+      })
+      .catch((err) => {
+        // Log pero no falla el flujo principal
+        console.error('[NOTIFICATION ERROR]', err);
+      });
+  }
 
   // ---------------------------
   // TIME (single source of truth)
@@ -410,7 +431,7 @@ export class ReservationsService {
           },
           trx,
         );
-
+        this.sendConfirmationNotification(res);
         return this.toPublicCheckout(res, trx);
       }
 
@@ -633,7 +654,7 @@ export class ReservationsService {
       channel: NotificationEventChannel.MOCK,
       payload: this.buildEventPayload(saved),
     });
-
+    this.sendConfirmationNotification(saved);
     return saved;
   }
 
@@ -699,7 +720,11 @@ export class ReservationsService {
     });
   }
 
-  async listMyReservations(input: { email: string; page: number; limit: number }) {
+  async listMyReservations(input: {
+    email: string;
+    page: number;
+    limit: number;
+  }) {
     // NOTE: We rely on clienteEmail association until Reservation has userId.
     const normalizedEmail = input.email.trim().toLowerCase();
     const page = Math.max(1, input.page);
@@ -762,7 +787,6 @@ export class ReservationsService {
       url: `/checkout/success/${res.id}?receiptToken=${res.receiptToken}`,
     };
   }
-
 
   // ---------------------------
   // QUERY HELPERS
