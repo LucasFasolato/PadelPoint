@@ -15,8 +15,9 @@ export class PaymentIntent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid' })
-  userId!: string;
+  // ✅ nullable para checkout público (guest)
+  @Column({ type: 'uuid', nullable: true })
+  userId!: string | null;
 
   // numeric => usar string en TS para no perder precisión
   @Column({ type: 'numeric', precision: 12, scale: 2 })
