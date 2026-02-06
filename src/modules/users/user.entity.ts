@@ -5,8 +5,10 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   Index,
+  OneToOne,
 } from 'typeorm';
 import { UserRole } from './user-role.enum';
+import { CompetitiveProfile } from '../competitive/competitive-profile.entity';
 
 @Entity('users')
 export class User {
@@ -37,4 +39,9 @@ export class User {
 
   @UpdateDateColumn()
   updatedAt!: Date;
+
+  @OneToOne(() => CompetitiveProfile, (profile) => profile.user, {
+    nullable: true,
+  })
+  competitiveProfile?: CompetitiveProfile;
 }
