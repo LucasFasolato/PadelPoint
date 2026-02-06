@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
 
 import {
@@ -201,6 +201,32 @@ export class MatchesService {
 
       return matchRepo.save(ent);
     });
+  }
+
+  async getMyMatches(userId: string) {
+    // Obtener challenges donde participo
+    const challenges = await this.challengeRepo.find({
+      where: [
+        { teamA1Id: userId },
+        { teamA2Id: userId },
+        { teamB1Id: userId },
+        { teamB2Id: userId },
+      ],
+      relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2'],
+    });
+
+    const challengeIds = challenges.map((ch) => ch.id);
+
+    if (challengeIds.length === 0) return [];
+
+    // Obtener matches de estos challenges
+    const matches = await this.matchRepo.find({
+      where: { challengeId: In(challengeIds) },
+      relations: ['challenge'],
+      order: { playedAt: 'DESC' },
+    });
+
+    return matches;
   }
 
   // ------------------------

@@ -21,6 +21,12 @@ type AuthUser = { userId: string; email: string; role: string };
 export class MatchesController {
   constructor(private readonly service: MatchesService) {}
 
+  @Get('me')
+  async getMyMatches(@Req() req: Request) {
+    const user = req.user as AuthUser;
+    return this.service.getMyMatches(user.userId);
+  }
+
   @Post()
   report(@Req() req: Request, @Body() dto: ReportMatchDto) {
     const user = req.user as AuthUser;
