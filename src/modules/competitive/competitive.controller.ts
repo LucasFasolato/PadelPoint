@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -12,6 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 import { CompetitiveService } from './competitive.service';
 import { InitCompetitiveProfileDto } from './dto/init-profile.dto';
+import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
 import { RankingQueryDto } from './dto/ranking-query.dto';
 import { HistoryQueryDto } from './dto/history-query.dto';
 
@@ -38,6 +40,18 @@ export class CompetitiveController {
   history(@Req() req: Request, @Query() q: HistoryQueryDto) {
     const user = req.user as AuthUser;
     return this.competitive.eloHistory(user.userId, q.limit ?? 50);
+  }
+
+  @Get('onboarding')
+  getOnboarding(@Req() req: Request) {
+    const user = req.user as AuthUser;
+    return this.competitive.getOnboarding(user.userId);
+  }
+
+  @Put('onboarding')
+  upsertOnboarding(@Req() req: Request, @Body() dto: UpsertOnboardingDto) {
+    const user = req.user as AuthUser;
+    return this.competitive.upsertOnboarding(user.userId, dto);
   }
 
   @Get('ranking')

@@ -9,6 +9,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
+import { CompetitiveGoal } from './competitive-goal.enum';
+import { PlayingFrequency } from './playing-frequency.enum';
 
 @Entity('competitive_profiles')
 export class CompetitiveProfile {
@@ -45,6 +47,18 @@ export class CompetitiveProfile {
 
   @Column({ type: 'int', default: 0 })
   draws!: number;
+
+  @Column({ type: 'enum', enum: CompetitiveGoal, nullable: true })
+  primaryGoal!: CompetitiveGoal | null;
+
+  @Column({ type: 'enum', enum: PlayingFrequency, nullable: true })
+  playingFrequency!: PlayingFrequency | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  preferences!: Record<string, unknown> | null;
+
+  @Column({ type: 'boolean', default: false })
+  onboardingComplete!: boolean;
 
   @CreateDateColumn()
   createdAt!: Date;

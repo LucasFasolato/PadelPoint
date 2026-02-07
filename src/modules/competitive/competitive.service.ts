@@ -14,6 +14,7 @@ import {
   categoryFromElo,
   getStartEloForCategory,
 } from './competitive.constants';
+import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
 
 @Injectable()
 export class CompetitiveService {
@@ -160,6 +161,74 @@ export class CompetitiveService {
     });
 
     return this.profileRepo.save(created);
+  }
+
+  async getOnboarding(userId: string) {
+    const profile = await this.getOrCreateProfileEntity(userId);
+    return this.toOnboardingView(profile);
+  }
+
+  async upsertOnboarding(userId: string, dto: UpsertOnboardingDto) {
+    const profile = await this.getOrCreateProfileEntity(userId);
+
+    if (dto.category !== undefined) {
+      if (profile.matchesPlayed > 0 || profile.categoryLocked) {
+        throw new BadRequestException(
+          'Category cannot be changed after playing matches',
+        );
+      }
+
+      const startElo = getStartEloForCategory(dto.category);
+      const before = profile.elo;
+
+      profile.elo = startElo;
+      profile.initialCategory = dto.category;
+
+      await this.historyRepo.save(
+        this.historyRepo.create({
+          profileId: profile.id,
+          profile,
+          eloBefore: before,
+          eloAfter: startElo,
+          delta: startElo - before,
+          reason: EloHistoryReason.INIT_CATEGORY,
+          refId: null,
+        }),
+      );
+    }
+
+    if (dto.primaryGoal !== undefined) {
+      profile.primaryGoal = dto.primaryGoal;
+    }
+
+    if (dto.playingFrequency !== undefined) {
+      profile.playingFrequency = dto.playingFrequency;
+    }
+
+    if (dto.preferences !== undefined) {
+      profile.preferences = dto.preferences;
+    }
+
+    if (dto.onboardingComplete !== undefined) {
+      profile.onboardingComplete = dto.onboardingComplete;
+    }
+
+    const saved = await this.profileRepo.save(profile);
+    return this.toOnboardingView(saved);
+  }
+
+  private toOnboardingView(p: CompetitiveProfile) {
+    return {
+      userId: p.userId,
+      category: categoryFromElo(p.elo),
+      initialCategory: p.initialCategory,
+      primaryGoal: p.primaryGoal,
+      playingFrequency: p.playingFrequency,
+      preferences: p.preferences,
+      onboardingComplete: p.onboardingComplete,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
   }
 
   private toProfileView(p: CompetitiveProfile) {
