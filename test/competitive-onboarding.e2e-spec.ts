@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { CompetitiveController } from '../src/modules/competitive/competitive.controller';
@@ -60,6 +60,8 @@ describe('Competitive Onboarding (e2e)', () => {
     await app.close();
   });
 
+  // ── GET /competitive/onboarding ─────────────────────────────────
+
   describe('GET /competitive/onboarding', () => {
     it('should return the onboarding state', async () => {
       const onboarding = {
@@ -85,7 +87,30 @@ describe('Competitive Onboarding (e2e)', () => {
         FAKE_USER.userId,
       );
     });
+
+    it('should reflect onboardingComplete=true when server computed', async () => {
+      const onboarding = {
+        userId: FAKE_USER.userId,
+        category: 3,
+        initialCategory: 3,
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: PlayingFrequency.WEEKLY,
+        preferences: null,
+        onboardingComplete: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      competitiveService.getOnboarding!.mockResolvedValue(onboarding);
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/onboarding')
+        .expect(200);
+
+      expect(res.body.onboardingComplete).toBe(true);
+    });
   });
+
+  // ── PUT /competitive/onboarding ─────────────────────────────────
 
   describe('PUT /competitive/onboarding', () => {
     it('should accept valid onboarding data', async () => {
@@ -109,7 +134,6 @@ describe('Competitive Onboarding (e2e)', () => {
           primaryGoal: CompetitiveGoal.COMPETE,
           playingFrequency: PlayingFrequency.WEEKLY,
           preferences: { hand: 'right' },
-          onboardingComplete: true,
         })
         .expect(200);
 
@@ -135,6 +159,13 @@ describe('Competitive Onboarding (e2e)', () => {
       await request(app.getHttpServer())
         .put('/competitive/onboarding')
         .send({ unknownField: 'value' })
+        .expect(400);
+    });
+
+    it('should reject onboardingComplete in body (server-owned field)', async () => {
+      await request(app.getHttpServer())
+        .put('/competitive/onboarding')
+        .send({ onboardingComplete: true })
         .expect(400);
     });
 
@@ -178,6 +209,25 @@ describe('Competitive Onboarding (e2e)', () => {
         .put('/competitive/onboarding')
         .send({})
         .expect(200);
+    });
+
+    // ── Category guard e2e ────────────────────────────────────────
+
+    it('should return CATEGORY_LOCKED error code when category is locked', async () => {
+      competitiveService.upsertOnboarding!.mockRejectedValue(
+        new BadRequestException({
+          statusCode: 400,
+          code: 'CATEGORY_LOCKED',
+          message: 'Category cannot be changed after playing matches',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .put('/competitive/onboarding')
+        .send({ category: 2 })
+        .expect(400);
+
+      expect(res.body.code).toBe('CATEGORY_LOCKED');
     });
   });
 });

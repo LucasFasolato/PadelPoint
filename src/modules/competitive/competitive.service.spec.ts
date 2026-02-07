@@ -65,11 +65,15 @@ describe('CompetitiveService', () => {
     expect(service).toBeDefined();
   });
 
+  // ── getOnboarding ────────────────────────────────────────────────
+
   describe('getOnboarding', () => {
     it('should return onboarding view for existing profile', async () => {
       const profile = fakeProfile({
         primaryGoal: CompetitiveGoal.COMPETE,
         playingFrequency: PlayingFrequency.WEEKLY,
+        initialCategory: 3,
+        elo: 1600,
         onboardingComplete: true,
       });
       profileRepo.findOne.mockResolvedValue(profile);
@@ -78,8 +82,8 @@ describe('CompetitiveService', () => {
 
       expect(result).toEqual({
         userId: FAKE_USER_ID,
-        category: 6,
-        initialCategory: null,
+        category: 3,
+        initialCategory: 3,
         primaryGoal: CompetitiveGoal.COMPETE,
         playingFrequency: PlayingFrequency.WEEKLY,
         preferences: null,
@@ -91,7 +95,11 @@ describe('CompetitiveService', () => {
 
     it('should create profile if none exists', async () => {
       profileRepo.findOne.mockResolvedValue(null);
-      const user = { id: FAKE_USER_ID, email: 'a@b.com', displayName: 'Test' };
+      const user = {
+        id: FAKE_USER_ID,
+        email: 'a@b.com',
+        displayName: 'Test',
+      };
       usersService.findById.mockResolvedValue(user);
 
       const created = fakeProfile();
@@ -105,9 +113,11 @@ describe('CompetitiveService', () => {
     });
   });
 
+  // ── upsertOnboarding ────────────────────────────────────────────
+
   describe('upsertOnboarding', () => {
     it('should update goal and frequency', async () => {
-      const profile = fakeProfile();
+      const profile = fakeProfile({ initialCategory: 5, elo: 1300 });
       profileRepo.findOne.mockResolvedValue(profile);
       profileRepo.save.mockImplementation(async (p: any) => p);
 
@@ -135,6 +145,86 @@ describe('CompetitiveService', () => {
       expect(historyRepo.save).toHaveBeenCalledTimes(1);
     });
 
+    // ── Idempotency ──────────────────────────────────────────────
+
+    it('should skip elo history when category is unchanged', async () => {
+      const profile = fakeProfile({ initialCategory: 3, elo: 1600 });
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      await service.upsertOnboarding(FAKE_USER_ID, { category: 3 });
+
+      expect(historyRepo.save).not.toHaveBeenCalled();
+      expect(profileRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not create duplicate history on repeated identical category updates', async () => {
+      const profile = fakeProfile({ initialCategory: 5, elo: 1300 });
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      await service.upsertOnboarding(FAKE_USER_ID, { category: 5 });
+      await service.upsertOnboarding(FAKE_USER_ID, { category: 5 });
+
+      expect(historyRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should be idempotent when called with same non-category data', async () => {
+      const profile = fakeProfile({
+        initialCategory: 3,
+        elo: 1600,
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: PlayingFrequency.WEEKLY,
+        onboardingComplete: true,
+      });
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      const result = await service.upsertOnboarding(FAKE_USER_ID, {
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: PlayingFrequency.WEEKLY,
+      });
+
+      expect(result.primaryGoal).toBe(CompetitiveGoal.COMPETE);
+      expect(result.playingFrequency).toBe(PlayingFrequency.WEEKLY);
+      expect(historyRepo.save).not.toHaveBeenCalled();
+    });
+
+    // ── Partial updates ──────────────────────────────────────────
+
+    it('should handle partial updates without touching other fields', async () => {
+      const profile = fakeProfile({
+        initialCategory: 3,
+        elo: 1600,
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: PlayingFrequency.WEEKLY,
+      });
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      const result = await service.upsertOnboarding(FAKE_USER_ID, {
+        playingFrequency: PlayingFrequency.DAILY,
+      });
+
+      expect(result.primaryGoal).toBe(CompetitiveGoal.COMPETE);
+      expect(result.playingFrequency).toBe(PlayingFrequency.DAILY);
+    });
+
+    it('should update preferences with jsonb data', async () => {
+      const profile = fakeProfile();
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      const prefs = { hand: 'right', position: 'drive' };
+      const result = await service.upsertOnboarding(FAKE_USER_ID, {
+        preferences: prefs,
+      });
+
+      expect(result.preferences).toEqual(prefs);
+    });
+
+    // ── Category guard ───────────────────────────────────────────
+
     it('should reject category change when matches played', async () => {
       const profile = fakeProfile({ matchesPlayed: 5 });
       profileRepo.findOne.mockResolvedValue(profile);
@@ -153,65 +243,135 @@ describe('CompetitiveService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should update preferences with jsonb data', async () => {
-      const profile = fakeProfile();
+    it('should include CATEGORY_LOCKED error code when category is locked', async () => {
+      const profile = fakeProfile({ categoryLocked: true });
       profileRepo.findOne.mockResolvedValue(profile);
-      profileRepo.save.mockImplementation(async (p: any) => p);
 
-      const prefs = { hand: 'right', position: 'drive' };
-      const result = await service.upsertOnboarding(FAKE_USER_ID, {
-        preferences: prefs,
-      });
-
-      expect(result.preferences).toEqual(prefs);
+      try {
+        await service.upsertOnboarding(FAKE_USER_ID, { category: 2 });
+        fail('Expected BadRequestException');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        const response = err.getResponse();
+        expect(response.code).toBe('CATEGORY_LOCKED');
+      }
     });
 
-    it('should mark onboarding complete', async () => {
-      const profile = fakeProfile();
+    it('should allow updating other fields when category is locked', async () => {
+      const profile = fakeProfile({
+        categoryLocked: true,
+        initialCategory: 5,
+        elo: 1300,
+      });
       profileRepo.findOne.mockResolvedValue(profile);
       profileRepo.save.mockImplementation(async (p: any) => p);
 
       const result = await service.upsertOnboarding(FAKE_USER_ID, {
-        onboardingComplete: true,
+        primaryGoal: CompetitiveGoal.SOCIALIZE,
+        playingFrequency: PlayingFrequency.MONTHLY,
+        preferences: { hand: 'left' },
+      });
+
+      expect(result.primaryGoal).toBe(CompetitiveGoal.SOCIALIZE);
+      expect(result.playingFrequency).toBe(PlayingFrequency.MONTHLY);
+      expect(result.preferences).toEqual({ hand: 'left' });
+    });
+
+    // ── onboardingComplete server-side computation ───────────────
+
+    it('should compute onboardingComplete=true when all required fields present', async () => {
+      const profile = fakeProfile();
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+      historyRepo.create.mockImplementation((data: any) => data);
+      historyRepo.save.mockImplementation(async (data: any) => data);
+
+      const result = await service.upsertOnboarding(FAKE_USER_ID, {
+        category: 4,
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: PlayingFrequency.WEEKLY,
       });
 
       expect(result.onboardingComplete).toBe(true);
     });
 
-    it('should be idempotent when called with same data', async () => {
-      const profile = fakeProfile({
-        primaryGoal: CompetitiveGoal.COMPETE,
-        playingFrequency: PlayingFrequency.WEEKLY,
-        onboardingComplete: true,
-      });
+    it('should keep onboardingComplete=false when category is missing', async () => {
+      const profile = fakeProfile();
       profileRepo.findOne.mockResolvedValue(profile);
       profileRepo.save.mockImplementation(async (p: any) => p);
 
       const result = await service.upsertOnboarding(FAKE_USER_ID, {
         primaryGoal: CompetitiveGoal.COMPETE,
         playingFrequency: PlayingFrequency.WEEKLY,
-        onboardingComplete: true,
       });
 
-      expect(result.primaryGoal).toBe(CompetitiveGoal.COMPETE);
-      expect(result.playingFrequency).toBe(PlayingFrequency.WEEKLY);
-      expect(historyRepo.save).not.toHaveBeenCalled();
+      expect(result.onboardingComplete).toBe(false);
     });
 
-    it('should handle partial updates without touching other fields', async () => {
-      const profile = fakeProfile({
-        primaryGoal: CompetitiveGoal.COMPETE,
-        playingFrequency: PlayingFrequency.WEEKLY,
-      });
+    it('should keep onboardingComplete=false when primaryGoal is missing', async () => {
+      const profile = fakeProfile({ initialCategory: 3, elo: 1600 });
       profileRepo.findOne.mockResolvedValue(profile);
       profileRepo.save.mockImplementation(async (p: any) => p);
 
       const result = await service.upsertOnboarding(FAKE_USER_ID, {
-        playingFrequency: PlayingFrequency.DAILY,
+        playingFrequency: PlayingFrequency.WEEKLY,
       });
 
-      expect(result.primaryGoal).toBe(CompetitiveGoal.COMPETE);
-      expect(result.playingFrequency).toBe(PlayingFrequency.DAILY);
+      expect(result.onboardingComplete).toBe(false);
+    });
+
+    it('should keep onboardingComplete=false when playingFrequency is missing', async () => {
+      const profile = fakeProfile({ initialCategory: 3, elo: 1600 });
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+
+      const result = await service.upsertOnboarding(FAKE_USER_ID, {
+        primaryGoal: CompetitiveGoal.IMPROVE,
+      });
+
+      expect(result.onboardingComplete).toBe(false);
+    });
+
+    it('should transition onboardingComplete to true across incremental updates', async () => {
+      // Step 1: set category only
+      const profile = fakeProfile();
+      profileRepo.findOne.mockResolvedValue(profile);
+      profileRepo.save.mockImplementation(async (p: any) => p);
+      historyRepo.create.mockImplementation((data: any) => data);
+      historyRepo.save.mockImplementation(async (data: any) => data);
+
+      const step1 = await service.upsertOnboarding(FAKE_USER_ID, {
+        category: 4,
+      });
+      expect(step1.onboardingComplete).toBe(false);
+
+      // Step 2: add goal — profile now has category + goal from step 1
+      const afterStep1 = fakeProfile({
+        initialCategory: 4,
+        elo: 1450,
+        primaryGoal: null,
+        playingFrequency: null,
+      });
+      profileRepo.findOne.mockResolvedValue(afterStep1);
+
+      const step2 = await service.upsertOnboarding(FAKE_USER_ID, {
+        primaryGoal: CompetitiveGoal.COMPETE,
+      });
+      expect(step2.onboardingComplete).toBe(false);
+
+      // Step 3: add frequency — all required fields present
+      const afterStep2 = fakeProfile({
+        initialCategory: 4,
+        elo: 1450,
+        primaryGoal: CompetitiveGoal.COMPETE,
+        playingFrequency: null,
+      });
+      profileRepo.findOne.mockResolvedValue(afterStep2);
+
+      const step3 = await service.upsertOnboarding(FAKE_USER_ID, {
+        playingFrequency: PlayingFrequency.WEEKLY,
+      });
+      expect(step3.onboardingComplete).toBe(true);
     });
   });
 });

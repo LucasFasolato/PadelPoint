@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
@@ -28,8 +27,4 @@ export class UpsertOnboardingDto {
   @IsOptional()
   @IsObject()
   preferences?: Record<string, unknown>;
-
-  @IsOptional()
-  @IsBoolean()
-  onboardingComplete?: boolean;
 }

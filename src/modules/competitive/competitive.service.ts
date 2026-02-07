@@ -173,28 +173,33 @@ export class CompetitiveService {
 
     if (dto.category !== undefined) {
       if (profile.matchesPlayed > 0 || profile.categoryLocked) {
-        throw new BadRequestException(
-          'Category cannot be changed after playing matches',
-        );
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'CATEGORY_LOCKED',
+          message: 'Category cannot be changed after playing matches',
+        });
       }
 
-      const startElo = getStartEloForCategory(dto.category);
-      const before = profile.elo;
+      const categoryChanged = dto.category !== profile.initialCategory;
+      if (categoryChanged) {
+        const startElo = getStartEloForCategory(dto.category);
+        const before = profile.elo;
 
-      profile.elo = startElo;
-      profile.initialCategory = dto.category;
+        profile.elo = startElo;
+        profile.initialCategory = dto.category;
 
-      await this.historyRepo.save(
-        this.historyRepo.create({
-          profileId: profile.id,
-          profile,
-          eloBefore: before,
-          eloAfter: startElo,
-          delta: startElo - before,
-          reason: EloHistoryReason.INIT_CATEGORY,
-          refId: null,
-        }),
-      );
+        await this.historyRepo.save(
+          this.historyRepo.create({
+            profileId: profile.id,
+            profile,
+            eloBefore: before,
+            eloAfter: startElo,
+            delta: startElo - before,
+            reason: EloHistoryReason.INIT_CATEGORY,
+            refId: null,
+          }),
+        );
+      }
     }
 
     if (dto.primaryGoal !== undefined) {
@@ -209,9 +214,10 @@ export class CompetitiveService {
       profile.preferences = dto.preferences;
     }
 
-    if (dto.onboardingComplete !== undefined) {
-      profile.onboardingComplete = dto.onboardingComplete;
-    }
+    profile.onboardingComplete =
+      profile.initialCategory != null &&
+      profile.primaryGoal != null &&
+      profile.playingFrequency != null;
 
     const saved = await this.profileRepo.save(profile);
     return this.toOnboardingView(saved);
