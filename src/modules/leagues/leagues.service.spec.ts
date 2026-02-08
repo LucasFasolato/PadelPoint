@@ -34,6 +34,7 @@ function fakeMember(overrides: Partial<LeagueMember> = {}): LeagueMember {
     id: 'member-1',
     leagueId: 'league-1',
     userId: FAKE_USER_ID,
+    user: { displayName: 'Test Player' },
     points: 0,
     wins: 0,
     losses: 0,
@@ -182,15 +183,19 @@ describe('LeaguesService', () => {
     it('should accept a valid invite and create a member', async () => {
       const invite = fakeInvite();
       inviteRepo.findOne.mockResolvedValue(invite);
-      memberRepo.findOne.mockResolvedValue(null);
 
       const member = fakeMember({ userId: FAKE_USER_ID_2 });
       memberRepo.create.mockReturnValue(member);
+      // First call: check existing member (null), second call: reload after save
+      memberRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(member);
 
       const result = await service.acceptInvite(FAKE_USER_ID_2, 'abc123token');
 
       expect(result.alreadyMember).toBe(false);
       expect(result.member.userId).toBe(FAKE_USER_ID_2);
+      expect(result.member.displayName).toBe('Test Player');
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
     });
 

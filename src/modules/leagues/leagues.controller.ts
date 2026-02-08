@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Req,
@@ -31,6 +32,8 @@ export class LeaguesController {
   }
 
   @Get()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
   list(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.leaguesService.listMyLeagues(user.userId);
@@ -55,6 +58,8 @@ export class LeaguesController {
   }
 
   @Get(':id')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
   detail(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.leaguesService.getLeagueDetail(user.userId, id);

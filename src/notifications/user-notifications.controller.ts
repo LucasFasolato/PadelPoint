@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
@@ -29,6 +30,8 @@ export class UserNotificationsController {
   }
 
   @Get('unread-count')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
   async unreadCount(@Req() req: Request) {
     const user = req.user as AuthUser;
     const count = await this.service.getUnreadCount(user.userId);

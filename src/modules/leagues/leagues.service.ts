@@ -19,6 +19,12 @@ import { CreateInvitesDto } from './dto/create-invites.dto';
 
 const INVITE_EXPIRY_DAYS = 7;
 
+/** Map internal status to frontend-compatible values: draft -> upcoming */
+function toApiStatus(status: LeagueStatus): string {
+  if (status === LeagueStatus.DRAFT) return 'upcoming';
+  return status; // 'active' | 'finished' stay the same
+}
+
 @Injectable()
 export class LeaguesService {
   private readonly logger = new Logger(LeaguesService.name);
@@ -86,7 +92,7 @@ export class LeaguesService {
     return leagues.map((l) => ({
       id: l.id,
       name: l.name,
-      status: l.status,
+      status: toApiStatus(l.status),
       startDate: l.startDate,
       endDate: l.endDate,
       creatorId: l.creatorId,
@@ -111,6 +117,7 @@ export class LeaguesService {
 
     const members = await this.memberRepo.find({
       where: { leagueId },
+      relations: ['user'],
       order: { position: 'ASC' },
     });
 
@@ -233,7 +240,7 @@ export class LeaguesService {
       league: {
         id: invite.league.id,
         name: invite.league.name,
-        status: invite.league.status,
+        status: toApiStatus(invite.league.status),
         startDate: invite.league.startDate,
         endDate: invite.league.endDate,
       },
@@ -258,6 +265,7 @@ export class LeaguesService {
     if (invite.status === InviteStatus.ACCEPTED) {
       const existing = await this.memberRepo.findOne({
         where: { leagueId: invite.leagueId, userId },
+        relations: ['user'],
       });
       if (existing) {
         return { member: this.toMemberView(existing), alreadyMember: true };
@@ -285,6 +293,7 @@ export class LeaguesService {
     // Idempotency: already a member via another invite
     const existingMember = await this.memberRepo.findOne({
       where: { leagueId: invite.leagueId, userId },
+      relations: ['user'],
     });
 
     if (existingMember) {
@@ -306,7 +315,13 @@ export class LeaguesService {
       await manager.save(invite);
     });
 
-    return { member: this.toMemberView(member), alreadyMember: false };
+    // Reload with user relation for displayName
+    const saved = await this.memberRepo.findOne({
+      where: { leagueId: invite.leagueId, userId },
+      relations: ['user'],
+    });
+
+    return { member: this.toMemberView(saved!), alreadyMember: false };
   }
 
   async declineInvite(userId: string, token: string) {
@@ -354,7 +369,7 @@ export class LeaguesService {
       creatorId: league.creatorId,
       startDate: league.startDate,
       endDate: league.endDate,
-      status: league.status,
+      status: toApiStatus(league.status),
       createdAt: league.createdAt.toISOString(),
       members: members.map((m) => this.toMemberView(m)),
     };
@@ -363,6 +378,7 @@ export class LeaguesService {
   private toMemberView(m: LeagueMember) {
     return {
       userId: m.userId,
+      displayName: m.user?.displayName ?? null,
       points: m.points,
       wins: m.wins,
       losses: m.losses,

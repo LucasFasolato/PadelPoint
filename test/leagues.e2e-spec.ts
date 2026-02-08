@@ -8,7 +8,7 @@ import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
 import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { LeagueStatus } from '../src/modules/leagues/league-status.enum';
+
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',
@@ -57,11 +57,12 @@ describe('Leagues (e2e)', () => {
     creatorId: FAKE_CREATOR.userId,
     startDate: '2025-06-01',
     endDate: '2025-06-30',
-    status: LeagueStatus.DRAFT,
+    status: 'upcoming',
     createdAt: '2025-01-01T12:00:00.000Z',
     members: [
       {
         userId: FAKE_CREATOR.userId,
+        displayName: 'Creator Player',
         points: 0,
         wins: 0,
         losses: 0,
@@ -198,7 +199,7 @@ describe('Leagues (e2e)', () => {
         league: {
           id: 'league-1',
           name: 'Summer League',
-          status: LeagueStatus.DRAFT,
+          status: 'upcoming',
           startDate: '2025-06-01',
           endDate: '2025-06-30',
         },
@@ -220,6 +221,7 @@ describe('Leagues (e2e)', () => {
       leaguesService.acceptInvite!.mockResolvedValue({
         member: {
           userId: FAKE_INVITEE.userId,
+          displayName: 'Invitee Player',
           points: 0,
           wins: 0,
           losses: 0,
@@ -243,6 +245,7 @@ describe('Leagues (e2e)', () => {
       leaguesService.acceptInvite!.mockResolvedValue({
         member: {
           userId: FAKE_INVITEE.userId,
+          displayName: 'Invitee Player',
           points: 0,
           wins: 0,
           losses: 0,
@@ -272,6 +275,7 @@ describe('Leagues (e2e)', () => {
           ...leagueView.members,
           {
             userId: FAKE_INVITEE.userId,
+            displayName: 'Invitee Player',
             points: 3,
             wins: 1,
             losses: 0,
@@ -317,7 +321,7 @@ describe('Leagues (e2e)', () => {
         {
           id: 'league-1',
           name: 'Summer League',
-          status: LeagueStatus.DRAFT,
+          status: 'upcoming',
           startDate: '2025-06-01',
           endDate: '2025-06-30',
           creatorId: FAKE_CREATOR.userId,
@@ -331,6 +335,33 @@ describe('Leagues (e2e)', () => {
 
       expect(res.body).toHaveLength(1);
       expect(res.body[0].name).toBe('Summer League');
+      expect(res.headers['cache-control']).toContain('no-store');
+    });
+  });
+
+  // ── Cache-Control headers ────────────────────────────────────
+
+  describe('Cache-Control headers', () => {
+    it('GET /leagues should include no-cache headers', async () => {
+      leaguesService.listMyLeagues!.mockResolvedValue([]);
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues')
+        .expect(200);
+
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.headers['pragma']).toBe('no-cache');
+    });
+
+    it('GET /leagues/:id should include no-cache headers', async () => {
+      leaguesService.getLeagueDetail!.mockResolvedValue(leagueView);
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues/league-1')
+        .expect(200);
+
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.headers['pragma']).toBe('no-cache');
     });
   });
 });
