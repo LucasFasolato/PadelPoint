@@ -8,6 +8,9 @@ import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 import { LeagueStatus } from './league-status.enum';
 import { InviteStatus } from './invite-status.enum';
+import { User } from '../users/user.entity';
+import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -65,12 +68,16 @@ describe('LeaguesService', () => {
   let leagueRepo: MockRepo<League>;
   let memberRepo: MockRepo<LeagueMember>;
   let inviteRepo: MockRepo<LeagueInvite>;
+  let userRepo: MockRepo<User>;
+  let userNotifications: { create: jest.Mock };
   let dataSource: { transaction: jest.Mock; manager: any };
 
   beforeEach(async () => {
     leagueRepo = createMockRepo<League>();
     memberRepo = createMockRepo<LeagueMember>();
     inviteRepo = createMockRepo<LeagueInvite>();
+    userRepo = createMockRepo<User>();
+    userNotifications = { create: jest.fn().mockResolvedValue({}) };
     dataSource = {
       transaction: jest.fn().mockImplementation(async (cb: any) => cb({
         save: jest.fn().mockImplementation(async (entity: any) => entity),
@@ -78,12 +85,17 @@ describe('LeaguesService', () => {
       manager: {},
     };
 
+    // Default: userRepo returns a user with a displayName
+    userRepo.findOne.mockResolvedValue({ id: FAKE_USER_ID, displayName: 'Creator Player' });
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeaguesService,
         { provide: getRepositoryToken(League), useValue: leagueRepo },
         { provide: getRepositoryToken(LeagueMember), useValue: memberRepo },
         { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: UserNotificationsService, useValue: userNotifications },
         { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
@@ -251,6 +263,156 @@ describe('LeaguesService', () => {
         expect(e).toBeInstanceOf(BadRequestException);
         expect(e.response.code).toBe('INVITE_ALREADY_USED');
       }
+    });
+  });
+
+  // ── invite notifications ────────────────────────────────────────
+
+  describe('invite notifications', () => {
+    it('createInvites should persist LEAGUE_INVITE_RECEIVED for each invited userId', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.find.mockResolvedValue([]); // no existing members to skip
+
+      const savedInvites = [
+        fakeInvite({ invitedUserId: FAKE_USER_ID_2, token: 'tok1' }),
+      ];
+      inviteRepo.create.mockReturnValue(savedInvites[0]);
+      inviteRepo.save.mockResolvedValue(savedInvites);
+
+      await service.createInvites(FAKE_USER_ID, 'league-1', {
+        userIds: [FAKE_USER_ID_2],
+      });
+
+      // Wait for the fire-and-forget promise
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(userNotifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: FAKE_USER_ID_2,
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          data: expect.objectContaining({
+            leagueId: 'league-1',
+            leagueName: 'Test League',
+            inviteToken: 'tok1',
+            link: '/leagues/invite?token=tok1',
+          }),
+        }),
+      );
+    });
+
+    it('createInvites should include inviterDisplayName in notification data', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.find.mockResolvedValue([]);
+      userRepo.findOne.mockResolvedValue({ id: FAKE_USER_ID, displayName: 'John Doe' });
+
+      const savedInvites = [
+        fakeInvite({ invitedUserId: FAKE_USER_ID_2, token: 'tok1' }),
+      ];
+      inviteRepo.create.mockReturnValue(savedInvites[0]);
+      inviteRepo.save.mockResolvedValue(savedInvites);
+
+      await service.createInvites(FAKE_USER_ID, 'league-1', {
+        userIds: [FAKE_USER_ID_2],
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(userNotifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            inviterDisplayName: 'John Doe',
+          }),
+        }),
+      );
+    });
+
+    it('acceptInvite should persist LEAGUE_INVITE_ACCEPTED for the creator', async () => {
+      const invite = fakeInvite();
+      inviteRepo.findOne.mockResolvedValue(invite);
+
+      const member = fakeMember({ userId: FAKE_USER_ID_2, user: { displayName: 'Invitee Player' } as any });
+      memberRepo.create.mockReturnValue(member);
+      memberRepo.findOne
+        .mockResolvedValueOnce(null) // no existing member
+        .mockResolvedValueOnce(member); // reload after save
+
+      const result = await service.acceptInvite(FAKE_USER_ID_2, 'abc123token');
+
+      // Wait for the fire-and-forget promise
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(result.alreadyMember).toBe(false);
+      expect(userNotifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: FAKE_USER_ID, // league creator
+          type: UserNotificationType.LEAGUE_INVITE_ACCEPTED,
+          data: expect.objectContaining({
+            leagueId: 'league-1',
+            leagueName: 'Test League',
+            invitedUserId: FAKE_USER_ID_2,
+            invitedDisplayName: 'Invitee Player',
+            link: '/leagues/league-1',
+          }),
+        }),
+      );
+    });
+
+    it('idempotent acceptInvite should NOT send duplicate ACCEPTED notification', async () => {
+      const invite = fakeInvite({ status: InviteStatus.ACCEPTED });
+      inviteRepo.findOne.mockResolvedValue(invite);
+
+      const existingMember = fakeMember({ userId: FAKE_USER_ID_2 });
+      memberRepo.findOne.mockResolvedValue(existingMember);
+
+      const result = await service.acceptInvite(FAKE_USER_ID_2, 'abc123token');
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(result.alreadyMember).toBe(true);
+      expect(userNotifications.create).not.toHaveBeenCalled();
+    });
+
+    it('declineInvite should persist LEAGUE_INVITE_DECLINED for the creator', async () => {
+      const invite = fakeInvite();
+      inviteRepo.findOne.mockResolvedValue(invite);
+      inviteRepo.save.mockResolvedValue(invite);
+      userRepo.findOne.mockResolvedValue({ id: FAKE_USER_ID_2, displayName: 'Declining Player' });
+
+      await service.declineInvite(FAKE_USER_ID_2, 'abc123token');
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(userNotifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: FAKE_USER_ID, // league creator
+          type: UserNotificationType.LEAGUE_INVITE_DECLINED,
+          data: expect.objectContaining({
+            leagueId: 'league-1',
+            leagueName: 'Test League',
+            invitedDisplayName: 'Declining Player',
+          }),
+        }),
+      );
+    });
+
+    it('notification payload should include a stable deep link', async () => {
+      const invite = fakeInvite();
+      inviteRepo.findOne.mockResolvedValue(invite);
+
+      const member = fakeMember({ userId: FAKE_USER_ID_2 });
+      memberRepo.create.mockReturnValue(member);
+      memberRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(member);
+
+      await service.acceptInvite(FAKE_USER_ID_2, 'abc123token');
+      await new Promise((r) => setTimeout(r, 10));
+
+      const call = userNotifications.create.mock.calls[0][0];
+      expect(call.data.link).toBe('/leagues/league-1');
+      expect(call.data.link).toMatch(/^\/leagues\/[a-z0-9-]+$/);
     });
   });
 });

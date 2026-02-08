@@ -5,5 +5,8 @@ export enum UserNotificationType {
   MATCH_REPORTED = 'match.reported',
   MATCH_CONFIRMED = 'match.confirmed',
   RESERVATION_CONFIRMED = 'reservation.confirmed',
+  LEAGUE_INVITE_RECEIVED = 'league.invite_received',
+  LEAGUE_INVITE_ACCEPTED = 'league.invite_accepted',
+  LEAGUE_INVITE_DECLINED = 'league.invite_declined',
   SYSTEM = 'system',
 }

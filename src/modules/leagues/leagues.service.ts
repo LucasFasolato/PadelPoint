@@ -16,6 +16,9 @@ import { LeagueStatus } from './league-status.enum';
 import { InviteStatus } from './invite-status.enum';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
+import { User } from '../users/user.entity';
+import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 
 const INVITE_EXPIRY_DAYS = 7;
 
@@ -37,6 +40,9 @@ export class LeaguesService {
     private readonly memberRepo: Repository<LeagueMember>,
     @InjectRepository(LeagueInvite)
     private readonly inviteRepo: Repository<LeagueInvite>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    private readonly userNotifications: UserNotificationsService,
   ) {}
 
   // ── create ───────────────────────────────────────────────────────
@@ -197,6 +203,12 @@ export class LeaguesService {
     if (invites.length === 0) return [];
 
     const saved = await this.inviteRepo.save(invites);
+
+    // Fire-and-forget: notify each invited user
+    this.sendInviteReceivedNotifications(saved, league, userId).catch((err) => {
+      this.logger.error(`failed to send invite notifications: ${err.message}`);
+    });
+
     return saved.map((i) => this.toInviteView(i));
   }
 
@@ -321,12 +333,18 @@ export class LeaguesService {
       relations: ['user'],
     });
 
+    // Notify league creator (fire-and-forget, non-blocking)
+    this.sendInviteAcceptedNotification(invite.league, saved!).catch((err) => {
+      this.logger.error(`failed to send invite-accepted notification: ${err.message}`);
+    });
+
     return { member: this.toMemberView(saved!), alreadyMember: false };
   }
 
   async declineInvite(userId: string, token: string) {
     const invite = await this.inviteRepo.findOne({
       where: { token },
+      relations: ['league'],
     });
 
     if (!invite) {
@@ -357,7 +375,94 @@ export class LeaguesService {
 
     invite.status = InviteStatus.DECLINED;
     await this.inviteRepo.save(invite);
+
+    // Notify league creator (fire-and-forget)
+    this.sendInviteDeclinedNotification(invite, userId).catch((err) => {
+      this.logger.error(`failed to send invite-declined notification: ${err.message}`);
+    });
+
     return { ok: true };
+  }
+
+  // ── notification helpers ─────────────────────────────────────────
+
+  private async sendInviteReceivedNotifications(
+    invites: LeagueInvite[],
+    league: League,
+    inviterUserId: string,
+  ): Promise<void> {
+    const inviter = await this.userRepo.findOne({
+      where: { id: inviterUserId },
+      select: ['id', 'displayName'],
+    });
+    const inviterName = inviter?.displayName ?? null;
+
+    for (const invite of invites) {
+      if (!invite.invitedUserId) continue; // email-only invites — no in-app user to notify
+
+      await this.userNotifications.create({
+        userId: invite.invitedUserId,
+        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+        title: `You've been invited to ${league.name}`,
+        body: inviterName
+          ? `${inviterName} invited you to join their league.`
+          : 'You have been invited to join a league.',
+        data: {
+          leagueId: league.id,
+          leagueName: league.name,
+          inviteToken: invite.token,
+          inviterDisplayName: inviterName,
+          startDate: league.startDate,
+          endDate: league.endDate,
+          link: `/leagues/invite?token=${invite.token}`,
+        },
+      });
+    }
+  }
+
+  private async sendInviteAcceptedNotification(
+    league: League,
+    member: LeagueMember,
+  ): Promise<void> {
+    const displayName = member.user?.displayName ?? 'A player';
+
+    await this.userNotifications.create({
+      userId: league.creatorId,
+      type: UserNotificationType.LEAGUE_INVITE_ACCEPTED,
+      title: `${displayName} joined ${league.name}`,
+      body: `${displayName} accepted your league invite.`,
+      data: {
+        leagueId: league.id,
+        leagueName: league.name,
+        invitedUserId: member.userId,
+        invitedDisplayName: displayName,
+        link: `/leagues/${league.id}`,
+      },
+    });
+  }
+
+  private async sendInviteDeclinedNotification(
+    invite: LeagueInvite,
+    declinedByUserId: string,
+  ): Promise<void> {
+    const user = await this.userRepo.findOne({
+      where: { id: declinedByUserId },
+      select: ['id', 'displayName'],
+    });
+    const displayName = user?.displayName ?? 'A player';
+
+    await this.userNotifications.create({
+      userId: invite.league.creatorId,
+      type: UserNotificationType.LEAGUE_INVITE_DECLINED,
+      title: `${displayName} declined your invite`,
+      body: `${displayName} declined the invite to ${invite.league.name}.`,
+      data: {
+        leagueId: invite.league.id,
+        leagueName: invite.league.name,
+        invitedDisplayName: displayName,
+        link: `/leagues/${invite.league.id}`,
+      },
+    });
   }
 
   // ── views ────────────────────────────────────────────────────────
