@@ -19,6 +19,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { ClubMembersModule } from './modules/club-members/club-members.module';
 import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { LeaguesModule } from './modules/leagues/leagues.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ClubMembersModule,
     MediaModule,
     NotificationsModule,
+    LeaguesModule,
   ],
 })
 export class AppModule {}

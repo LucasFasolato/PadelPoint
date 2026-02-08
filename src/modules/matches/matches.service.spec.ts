@@ -5,6 +5,7 @@ import { MatchesService } from './matches.service';
 import { MatchResult } from './match-result.entity';
 import { Challenge } from '../challenges/challenge.entity';
 import { EloService } from '../competitive/elo.service';
+import { LeagueStandingsService } from '../leagues/league-standings.service';
 import { createMockRepo } from '@/test-utils/mock-repo';
 import { createMockDataSource } from '@/test-utils/mock-datasource';
 
@@ -24,6 +25,7 @@ describe('MatchesService', () => {
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
         { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
         { provide: EloService, useValue: eloService },
+        { provide: LeagueStandingsService, useValue: { recomputeForMatch: jest.fn() } },
       ],
     }).compile();
 

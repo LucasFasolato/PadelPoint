@@ -17,6 +17,7 @@ import {
 import { Challenge } from '../challenges/challenge.entity';
 import { ChallengeStatus } from '../challenges/challenge-status.enum';
 import { EloService } from '../competitive/elo.service';
+import { LeagueStandingsService } from '../leagues/league-standings.service';
 
 const TZ = 'America/Argentina/Cordoba';
 
@@ -36,6 +37,7 @@ export class MatchesService {
     @InjectRepository(Challenge)
     private readonly challengeRepo: Repository<Challenge>,
     private readonly eloService: EloService,
+    private readonly leagueStandingsService: LeagueStandingsService,
   ) {}
 
   // ------------------------
@@ -282,6 +284,9 @@ export class MatchesService {
 
       // ✅ aplica ELO dentro de la misma tx
       await this.eloService.applyForMatchTx(manager, match.id);
+
+      // Update league standings for any leagues this match affects
+      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
 
       // ✅ devolvé el estado final (con eloApplied actualizado)
       return repo.findOne({ where: { id: match.id } });
