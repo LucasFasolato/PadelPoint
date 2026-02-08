@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, In, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
 
@@ -18,6 +21,15 @@ import { Challenge } from '../challenges/challenge.entity';
 import { ChallengeStatus } from '../challenges/challenge-status.enum';
 import { EloService } from '../competitive/elo.service';
 import { LeagueStandingsService } from '../leagues/league-standings.service';
+import { MatchDispute } from './match-dispute.entity';
+import { MatchAuditLog } from './match-audit-log.entity';
+import { DisputeStatus } from './dispute-status.enum';
+import { DisputeReasonCode } from './dispute-reason.enum';
+import { MatchAuditAction } from './match-audit-action.enum';
+import { DisputeResolution } from './dto/resolve-dispute.dto';
+import { User } from '../users/user.entity';
+import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 
 const TZ = 'America/Argentina/Cordoba';
 
@@ -30,15 +42,28 @@ type ParticipantIds = {
 
 @Injectable()
 export class MatchesService {
+  private readonly logger = new Logger(MatchesService.name);
+  private readonly disputeWindowHours: number;
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(Challenge)
     private readonly challengeRepo: Repository<Challenge>,
+    @InjectRepository(MatchDispute)
+    private readonly disputeRepo: Repository<MatchDispute>,
+    @InjectRepository(MatchAuditLog)
+    private readonly auditRepo: Repository<MatchAuditLog>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly eloService: EloService,
     private readonly leagueStandingsService: LeagueStandingsService,
-  ) {}
+    private readonly userNotifications: UserNotificationsService,
+    config: ConfigService,
+  ) {
+    this.disputeWindowHours = config.get<number>('DISPUTE_WINDOW_HOURS') ?? 48;
+  }
 
   // ------------------------
   // helpers
@@ -340,6 +365,282 @@ export class MatchesService {
 
       return matchRepo.save(match);
     });
+  }
+
+  // ------------------------
+  // dispute
+  // ------------------------
+
+  async disputeMatch(
+    userId: string,
+    matchId: string,
+    dto: { reasonCode: DisputeReasonCode; message?: string },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const matchRepo = manager.getRepository(MatchResult);
+      const disputeRepo = manager.getRepository(MatchDispute);
+      const auditRepo = manager.getRepository(MatchAuditLog);
+      const chRepo = manager.getRepository(Challenge);
+
+      const match = await matchRepo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.id = :id', { id: matchId })
+        .getOne();
+
+      if (!match) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'MATCH_NOT_FOUND',
+          message: 'Match result not found',
+        });
+      }
+
+      if (match.status !== MatchResultStatus.CONFIRMED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_NOT_CONFIRMED',
+          message: 'Only confirmed matches can be disputed',
+        });
+      }
+
+      // Check dispute window
+      const confirmedAt = match.updatedAt;
+      const hoursElapsed =
+        (Date.now() - confirmedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursElapsed > this.disputeWindowHours) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'DISPUTE_WINDOW_EXPIRED',
+          message: `Dispute window of ${this.disputeWindowHours}h has expired`,
+        });
+      }
+
+      // Check participant
+      const challenge = await chRepo.findOne({
+        where: { id: match.challengeId },
+      });
+      if (!challenge) throw new NotFoundException('Challenge not found');
+
+      const participants = this.getParticipantsOrThrow(challenge);
+      if (!participants.all.includes(userId)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'MATCH_FORBIDDEN',
+          message: 'Only match participants can dispute',
+        });
+      }
+
+      // Check no open dispute
+      const existing = await disputeRepo.findOne({
+        where: { matchId, status: DisputeStatus.OPEN },
+      });
+      if (existing) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'DISPUTE_ALREADY_OPEN',
+          message: 'There is already an open dispute for this match',
+        });
+      }
+
+      // Create dispute
+      const dispute = disputeRepo.create({
+        matchId,
+        raisedByUserId: userId,
+        reasonCode: dto.reasonCode,
+        message: dto.message?.trim() || null,
+        status: DisputeStatus.OPEN,
+        resolvedAt: null,
+      });
+      await disputeRepo.save(dispute);
+
+      // Update match status
+      match.status = MatchResultStatus.DISPUTED;
+      await matchRepo.save(match);
+
+      // Audit log
+      const audit = auditRepo.create({
+        matchId,
+        actorUserId: userId,
+        action: MatchAuditAction.DISPUTE_RAISED,
+        payload: {
+          disputeId: dispute.id,
+          reasonCode: dto.reasonCode,
+          message: dto.message ?? null,
+        },
+      });
+      await auditRepo.save(audit);
+
+      // Notify other participants (fire-and-forget)
+      this.notifyDispute(match, challenge, userId, dto.reasonCode).catch(
+        (err) =>
+          this.logger.error(`failed to send dispute notifications: ${err.message}`),
+      );
+
+      return {
+        dispute: {
+          id: dispute.id,
+          matchId: dispute.matchId,
+          reasonCode: dispute.reasonCode,
+          message: dispute.message,
+          status: dispute.status,
+          createdAt: dispute.createdAt.toISOString(),
+        },
+        matchStatus: match.status,
+      };
+    });
+  }
+
+  // ------------------------
+  // resolve (admin only)
+  // ------------------------
+
+  async resolveDispute(
+    adminUserId: string,
+    matchId: string,
+    dto: { resolution: DisputeResolution; note?: string },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const matchRepo = manager.getRepository(MatchResult);
+      const disputeRepo = manager.getRepository(MatchDispute);
+      const auditRepo = manager.getRepository(MatchAuditLog);
+
+      const match = await matchRepo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.id = :id', { id: matchId })
+        .getOne();
+
+      if (!match) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'MATCH_NOT_FOUND',
+          message: 'Match result not found',
+        });
+      }
+
+      const dispute = await disputeRepo.findOne({
+        where: { matchId, status: DisputeStatus.OPEN },
+      });
+
+      if (!dispute) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'MATCH_NOT_FOUND',
+          message: 'No open dispute found for this match',
+        });
+      }
+
+      // Resolve dispute
+      dispute.status = DisputeStatus.RESOLVED;
+      dispute.resolvedAt = new Date();
+      await disputeRepo.save(dispute);
+
+      // Update match status based on resolution
+      if (dto.resolution === DisputeResolution.CONFIRM_AS_IS) {
+        match.status = MatchResultStatus.RESOLVED;
+      } else if (dto.resolution === DisputeResolution.VOID_MATCH) {
+        match.status = MatchResultStatus.RESOLVED;
+        // For MVP: mark as resolved but do not rollback ELO/standings
+        // The match is "voided" semantically — future standings recomputes
+        // should exclude RESOLVED matches if needed.
+      }
+      await matchRepo.save(match);
+
+      // Audit log
+      const audit = auditRepo.create({
+        matchId,
+        actorUserId: adminUserId,
+        action: MatchAuditAction.DISPUTE_RESOLVED,
+        payload: {
+          disputeId: dispute.id,
+          resolution: dto.resolution,
+          note: dto.note ?? null,
+        },
+      });
+      await auditRepo.save(audit);
+
+      // Notify participants (fire-and-forget)
+      this.notifyResolution(match, dto.resolution).catch((err) =>
+        this.logger.error(`failed to send resolve notifications: ${err.message}`),
+      );
+
+      return {
+        dispute: {
+          id: dispute.id,
+          matchId: dispute.matchId,
+          status: dispute.status,
+          resolvedAt: dispute.resolvedAt!.toISOString(),
+        },
+        matchStatus: match.status,
+        resolution: dto.resolution,
+      };
+    });
+  }
+
+  // ------------------------
+  // notification helpers
+  // ------------------------
+
+  private async notifyDispute(
+    match: MatchResult,
+    challenge: Challenge,
+    raisedByUserId: string,
+    reasonCode: DisputeReasonCode,
+  ): Promise<void> {
+    const raiser = await this.userRepo.findOne({
+      where: { id: raisedByUserId },
+      select: ['id', 'displayName'],
+    });
+    const raiserName = raiser?.displayName ?? 'A player';
+
+    const participants = this.getParticipantsOrThrow(challenge);
+    const othersToNotify = participants.all.filter((id) => id !== raisedByUserId);
+
+    for (const uid of othersToNotify) {
+      await this.userNotifications.create({
+        userId: uid,
+        type: UserNotificationType.MATCH_DISPUTED,
+        title: 'Match disputed',
+        body: `${raiserName} raised a dispute on your match (${reasonCode}).`,
+        data: {
+          matchId: match.id,
+          raisedByDisplayName: raiserName,
+          reasonCode,
+          link: `/matches/${match.id}`,
+        },
+      });
+    }
+  }
+
+  private async notifyResolution(
+    match: MatchResult,
+    resolution: DisputeResolution,
+  ): Promise<void> {
+    const challenge = await this.challengeRepo.findOne({
+      where: { id: match.challengeId },
+    });
+    if (!challenge) return;
+
+    const participants = this.getParticipantsOrThrow(challenge);
+    const resolutionLabel =
+      resolution === DisputeResolution.CONFIRM_AS_IS
+        ? 'confirmed as-is'
+        : 'voided';
+
+    for (const uid of participants.all) {
+      await this.userNotifications.create({
+        userId: uid,
+        type: UserNotificationType.MATCH_RESOLVED,
+        title: 'Dispute resolved',
+        body: `Your match dispute has been resolved: ${resolutionLabel}.`,
+        data: {
+          matchId: match.id,
+          resolution,
+          link: `/matches/${match.id}`,
+        },
+      });
+    }
   }
 
   // ------------------------

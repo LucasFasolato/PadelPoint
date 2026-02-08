@@ -44,6 +44,11 @@ export const envSchema = z.object({
   EMAIL_LOG_ONLY: z
     .preprocess((val) => val === 'true', z.boolean())
     .default(false),
+
+  // Disputes
+  DISPUTE_WINDOW_HOURS: z
+    .preprocess((val) => Number(val), z.number())
+    .default(48),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

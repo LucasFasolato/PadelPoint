@@ -16,6 +16,8 @@ export enum MatchResultStatus {
   PENDING_CONFIRM = 'pending_confirm',
   CONFIRMED = 'confirmed',
   REJECTED = 'rejected',
+  DISPUTED = 'disputed',
+  RESOLVED = 'resolved',
 }
 
 export enum WinnerTeam {
