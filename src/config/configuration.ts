@@ -29,5 +29,12 @@ export default () => {
       accessToken: env.MP_ACCESS_TOKEN,
       currency: env.MP_CURRENCY,
     },
+    email: {
+      resendApiKey: env.RESEND_API_KEY ?? null,
+      from: env.EMAIL_FROM,
+      appUrl: env.APP_URL,
+      enabled: env.EMAIL_ENABLED,
+      logOnly: env.EMAIL_LOG_ONLY,
+    },
   };
 };

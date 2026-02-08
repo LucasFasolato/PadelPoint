@@ -33,6 +33,17 @@ export const envSchema = z.object({
   // MercadoPago
   MP_ACCESS_TOKEN: z.string(),
   MP_CURRENCY: z.string().default('ARS'),
+
+  // Email (Resend)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('PadelPoint <noreply@padelpoint.app>'),
+  APP_URL: z.string().default('http://localhost:3000'),
+  EMAIL_ENABLED: z
+    .preprocess((val) => val !== 'false', z.boolean())
+    .default(true),
+  EMAIL_LOG_ONLY: z
+    .preprocess((val) => val === 'true', z.boolean())
+    .default(false),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

@@ -32,29 +32,44 @@ export class NotificationService {
   private readonly fromEmail: string;
   private readonly appUrl: string;
   private readonly emailEnabled: boolean;
+  private readonly emailLogOnly: boolean;
 
   constructor(
     private readonly config: ConfigService,
     @InjectRepository(Notification)
     private readonly notificationRepo: Repository<Notification>,
   ) {
-    this.resendApiKey = this.config.get<string>('RESEND_API_KEY') || null;
-    this.fromEmail =
-      this.config.get<string>('EMAIL_FROM') ||
-      'PadelPoint <noreply@padelpoint.app>';
-    this.appUrl = this.config.get<string>('APP_URL') || 'http://localhost:3000';
+    const emailCfg = this.config.get<Record<string, any>>('email');
+    this.resendApiKey =
+      emailCfg?.resendApiKey ??
+      this.config.get<string>('RESEND_API_KEY') ??
+      null;
+    this.fromEmail = emailCfg?.from ?? 'PadelPoint <noreply@padelpoint.app>';
+    this.appUrl = emailCfg?.appUrl ?? 'http://localhost:3000';
+    this.emailLogOnly = emailCfg?.logOnly ?? false;
 
-    // Controla si se envían emails o no (default: true si hay API key)
-    const enableEnv = this.config.get<string>('ENABLE_EMAIL_NOTIFICATIONS');
-    this.emailEnabled = enableEnv !== 'false' && !!this.resendApiKey;
+    const enabledFlag = emailCfg?.enabled ?? true;
+    this.emailEnabled =
+      enabledFlag && !!this.resendApiKey && !this.emailLogOnly;
 
+    // Startup diagnostics (no secrets logged)
     if (!this.resendApiKey) {
-      this.logger.warn(
-        'RESEND_API_KEY not configured - emails will be logged but not sent',
-      );
-    } else if (!this.emailEnabled) {
-      this.logger.warn('ENABLE_EMAIL_NOTIFICATIONS=false - emails disabled');
+      this.logger.warn('email status=disabled reason=RESEND_API_KEY_MISSING');
+    } else if (!enabledFlag) {
+      this.logger.warn('email status=disabled reason=EMAIL_ENABLED=false');
+    } else if (this.emailLogOnly) {
+      this.logger.log('email status=log_only provider=RESEND');
+    } else {
+      this.logger.log('email status=configured provider=RESEND');
     }
+  }
+
+  getEmailStatus(): { enabled: boolean; provider: string; logOnly: boolean } {
+    return {
+      enabled: this.emailEnabled || this.emailLogOnly,
+      provider: this.resendApiKey ? 'RESEND' : 'NONE',
+      logOnly: this.emailLogOnly,
+    };
   }
 
   dispatch(event: NotificationEvent) {
@@ -148,7 +163,6 @@ export class NotificationService {
 
     try {
       if (this.emailEnabled) {
-        // Enviar con Resend
         const result = await this.sendWithResend({
           from: this.fromEmail,
           to,
@@ -160,20 +174,30 @@ export class NotificationService {
           notification.status = NotificationStatus.FAILED;
           notification.errorMessage = result.error.message;
           this.logger.error(
-            `Email failed for reservation ${data.reservationId}: ${result.error.message}`,
+            `email send_failed: reservationId=${data.reservationId} to=${to} error=${result.error.message}`,
           );
         } else {
           notification.status = NotificationStatus.SENT;
           this.logger.log(
-            `Email sent for reservation ${data.reservationId} to ${to}`,
+            `email send_success: reservationId=${data.reservationId} to=${to}`,
           );
         }
+      } else if (this.emailLogOnly) {
+        // Log-only mode: log full email content without sending
+        notification.status = NotificationStatus.SENT;
+        notification.provider = 'LOG_ONLY';
+        this.logger.log(
+          `email log_only: to=${to} subject="${subject}" reservationId=${data.reservationId}`,
+        );
+        this.logger.debug(
+          `email log_only html_length=${html.length} reservationId=${data.reservationId}`,
+        );
       } else {
-        // Disabled or no API key - log but mark as sent (mock mode)
+        // Disabled or no API key
         notification.status = NotificationStatus.SENT;
         notification.provider = 'MOCK';
         this.logger.log(
-          `[MOCK EMAIL] to=${to} subject="${subject}" reservationId=${data.reservationId}`,
+          `email mock: to=${to} subject="${subject}" reservationId=${data.reservationId}`,
         );
       }
     } catch (err: unknown) {
@@ -181,7 +205,7 @@ export class NotificationService {
       notification.errorMessage =
         err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(
-        `Email exception for reservation ${data.reservationId}: ${notification.errorMessage}`,
+        `email exception: reservationId=${data.reservationId} error=${notification.errorMessage}`,
       );
     }
 

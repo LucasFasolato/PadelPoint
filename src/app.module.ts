@@ -18,6 +18,7 @@ import { MatchesModule } from './modules/matches/matches.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ClubMembersModule } from './modules/club-members/club-members.module';
 import { MediaModule } from './modules/media/media.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { MediaModule } from './modules/media/media.module';
     PaymentsModule,
     ClubMembersModule,
     MediaModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
