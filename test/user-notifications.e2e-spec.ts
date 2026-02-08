@@ -79,7 +79,7 @@ describe('User Notifications (e2e)', () => {
   // ── GET /notifications ──────────────────────────────────────────
 
   describe('GET /notifications', () => {
-    it('should return paginated notifications', async () => {
+    it('should return paginated notifications with no-cache headers', async () => {
       const result = {
         items: [
           {
@@ -101,7 +101,10 @@ describe('User Notifications (e2e)', () => {
         .expect(200);
 
       expect(res.body.items).toHaveLength(1);
+      expect(Array.isArray(res.body.items)).toBe(true);
       expect(res.body.nextCursor).toBeNull();
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.headers['pragma']).toBe('no-cache');
       expect(notificationsService.list).toHaveBeenCalledWith(
         FAKE_USER.userId,
         expect.any(Object),

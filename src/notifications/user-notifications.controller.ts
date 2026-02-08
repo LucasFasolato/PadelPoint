@@ -21,6 +21,8 @@ export class UserNotificationsController {
   constructor(private readonly service: UserNotificationsService) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
   list(@Req() req: Request, @Query() query: UserNotificationsQueryDto) {
     const user = req.user as AuthUser;
     return this.service.list(user.userId, {
