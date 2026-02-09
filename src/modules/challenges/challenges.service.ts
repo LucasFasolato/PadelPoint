@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +9,8 @@ import { Repository, In, DataSource } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
 import { CompetitiveService } from '../competitive/competitive.service';
+import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { Challenge } from './challenge.entity';
 import { ChallengeStatus } from './challenge-status.enum';
 import { ChallengeType } from './challenge-type.enum';
@@ -19,10 +22,13 @@ import {
 
 @Injectable()
 export class ChallengesService {
+  private readonly logger = new Logger(ChallengesService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly users: UsersService,
     private readonly competitive: CompetitiveService,
+    private readonly userNotifications: UserNotificationsService,
     @InjectRepository(Challenge)
     private readonly repo: Repository<Challenge>,
   ) {}
@@ -106,6 +112,26 @@ export class ChallengesService {
     });
 
     const saved = await this.repo.save(ent);
+
+    // Notify opponent (fire-and-forget)
+    this.userNotifications
+      .create({
+        userId: opp.id,
+        type: UserNotificationType.CHALLENGE_RECEIVED,
+        title: 'New challenge',
+        body: `${me.displayName ?? 'A player'} challenged you to a match.`,
+        data: {
+          challengeId: saved.id,
+          challengerDisplayName: me.displayName,
+          link: `/challenges/${saved.id}`,
+        },
+      })
+      .catch((err) =>
+        this.logger.error(
+          `failed to send challenge notification: ${err.message}`,
+        ),
+      );
+
     return this.toView(saved);
   }
 
@@ -261,6 +287,27 @@ export class ChallengesService {
 
     ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
     const saved = await this.repo.save(ch);
+
+    // Notify creator (fire-and-forget)
+    const acceptorName = ch.invitedOpponent?.displayName ?? 'Your opponent';
+    this.userNotifications
+      .create({
+        userId: ch.teamA1.id,
+        type: UserNotificationType.CHALLENGE_ACCEPTED,
+        title: 'Challenge accepted',
+        body: `${acceptorName} accepted your challenge.`,
+        data: {
+          challengeId: saved.id,
+          acceptedByDisplayName: acceptorName,
+          link: `/challenges/${saved.id}`,
+        },
+      })
+      .catch((err) =>
+        this.logger.error(
+          `failed to send challenge-accepted notification: ${err.message}`,
+        ),
+      );
+
     return this.toView(saved);
   }
 
@@ -278,6 +325,27 @@ export class ChallengesService {
 
     ch.status = ChallengeStatus.REJECTED;
     const saved = await this.repo.save(ch);
+
+    // Notify creator (fire-and-forget)
+    const rejecterName = ch.invitedOpponent?.displayName ?? 'Your opponent';
+    this.userNotifications
+      .create({
+        userId: ch.teamA1.id,
+        type: UserNotificationType.CHALLENGE_REJECTED,
+        title: 'Challenge declined',
+        body: `${rejecterName} declined your challenge.`,
+        data: {
+          challengeId: saved.id,
+          rejectedByDisplayName: rejecterName,
+          link: `/challenges/${saved.id}`,
+        },
+      })
+      .catch((err) =>
+        this.logger.error(
+          `failed to send challenge-rejected notification: ${err.message}`,
+        ),
+      );
+
     return this.toView(saved);
   }
 

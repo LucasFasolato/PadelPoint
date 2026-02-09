@@ -8,12 +8,14 @@ import { ChallengeInvitesController } from './challenge-invites.controller';
 import { ChallengeInvitesService } from './challenge-invites.service';
 import { UsersModule } from '../users/users.module';
 import { CompetitiveModule } from '../competitive/competitive.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Challenge, ChallengeInvite]),
     UsersModule,
     CompetitiveModule,
+    NotificationsModule,
   ],
   controllers: [ChallengesController, ChallengeInvitesController],
   providers: [ChallengesService, ChallengeInvitesService],

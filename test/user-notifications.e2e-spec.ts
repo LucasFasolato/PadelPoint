@@ -134,7 +134,7 @@ describe('User Notifications (e2e)', () => {
   // ── GET /notifications/unread-count ─────────────────────────────
 
   describe('GET /notifications/unread-count', () => {
-    it('should return the unread count', async () => {
+    it('should return the unread count with no-store headers', async () => {
       notificationsService.getUnreadCount!.mockResolvedValue(5);
 
       const res = await request(app.getHttpServer())
@@ -142,6 +142,111 @@ describe('User Notifications (e2e)', () => {
         .expect(200);
 
       expect(res.body).toEqual({ count: 5 });
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.headers['pragma']).toBe('no-cache');
+    });
+
+    it('should reflect incremented count after new notifications', async () => {
+      notificationsService.getUnreadCount!.mockResolvedValue(0);
+      const res1 = await request(app.getHttpServer())
+        .get('/notifications/unread-count')
+        .expect(200);
+      expect(res1.body.count).toBe(0);
+
+      // Simulate new notifications arriving
+      notificationsService.getUnreadCount!.mockResolvedValue(3);
+      const res2 = await request(app.getHttpServer())
+        .get('/notifications/unread-count')
+        .expect(200);
+      expect(res2.body.count).toBe(3);
+    });
+  });
+
+  // ── Notification types appear in list ──────────────────────────────
+
+  describe('Notification types in GET /notifications', () => {
+    it('should return league invite notification for invited user', async () => {
+      notificationsService.list!.mockResolvedValue({
+        items: [
+          {
+            id: 'n-league-1',
+            type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+            title: 'League invite',
+            body: 'You have been invited to Summer League',
+            data: { leagueId: 'league-1', leagueName: 'Summer League' },
+            readAt: null,
+            createdAt: '2025-06-01T12:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/notifications')
+        .expect(200);
+
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].type).toBe('league.invite_received');
+      expect(res.body.items[0].data.leagueId).toBe('league-1');
+    });
+
+    it('should return challenge received notification for opponent', async () => {
+      notificationsService.list!.mockResolvedValue({
+        items: [
+          {
+            id: 'n-ch-1',
+            type: UserNotificationType.CHALLENGE_RECEIVED,
+            title: 'New challenge',
+            body: 'Player A challenged you to a match.',
+            data: { challengeId: 'ch-1', challengerDisplayName: 'Player A' },
+            readAt: null,
+            createdAt: '2025-06-01T12:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/notifications')
+        .expect(200);
+
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].type).toBe('challenge.received');
+      expect(res.body.items[0].data.challengeId).toBe('ch-1');
+    });
+
+    it('should return newest first (sort order)', async () => {
+      notificationsService.list!.mockResolvedValue({
+        items: [
+          {
+            id: 'n2',
+            type: UserNotificationType.CHALLENGE_ACCEPTED,
+            title: 'Challenge accepted',
+            body: null,
+            data: null,
+            readAt: null,
+            createdAt: '2025-06-02T12:00:00.000Z',
+          },
+          {
+            id: 'n1',
+            type: UserNotificationType.CHALLENGE_RECEIVED,
+            title: 'New challenge',
+            body: null,
+            data: null,
+            readAt: null,
+            createdAt: '2025-06-01T12:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/notifications')
+        .expect(200);
+
+      expect(res.body.items[0].createdAt > res.body.items[1].createdAt).toBe(
+        true,
+      );
     });
   });
 

@@ -46,6 +46,15 @@ export class UserNotificationsService {
     });
 
     const saved = await this.repo.save(entity);
+
+    const entityId =
+      (input.data?.leagueId as string) ??
+      (input.data?.matchId as string) ??
+      (input.data?.challengeId as string) ??
+      null;
+    this.logger.debug(
+      `notification created | type=${saved.type} userId=${saved.userId} entityId=${entityId ?? 'n/a'} id=${saved.id}`,
+    );
     this.logger.log(
       `notification persisted: id=${saved.id} type=${saved.type} userId=${saved.userId}`,
     );
