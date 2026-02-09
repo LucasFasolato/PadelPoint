@@ -674,4 +674,62 @@ describe('MatchesService', () => {
       expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
   });
+
+  // ── getEligibleReservations ───────────────────────────────────────
+
+  describe('getEligibleReservations', () => {
+    const LEAGUE_ID = 'league-1';
+
+    it('should throw LEAGUE_FORBIDDEN if caller is not a member', async () => {
+      const dsLeagueRepo = createMockRepo<League>();
+      const dsMemberRepo = createMockRepo<LeagueMember>();
+      dsLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID });
+      dsMemberRepo.find.mockResolvedValue([]); // no members
+
+      dataSource.getRepository = jest.fn().mockImplementation((entity: any) => {
+        if (entity === League) return dsLeagueRepo;
+        if (entity === LeagueMember) return dsMemberRepo;
+        return createMockRepo();
+      });
+
+      try {
+        await service.getEligibleReservations(OUTSIDER, LEAGUE_ID);
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
+    });
+
+    it('should return empty array when no reservations match', async () => {
+      const dsLeagueRepo = createMockRepo<League>();
+      const dsMemberRepo = createMockRepo<LeagueMember>();
+      dsLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID });
+      dsMemberRepo.find.mockResolvedValue([{ userId: USER_A1, leagueId: LEAGUE_ID }]);
+      userRepo.find.mockResolvedValue([
+        { id: USER_A1, email: 'a1@test.com', displayName: 'Player A1' },
+      ]);
+
+      const dsResRepo = createMockRepo<Reservation>();
+      dsResRepo.createQueryBuilder.mockReturnValue({
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      });
+
+      dataSource.getRepository = jest.fn().mockImplementation((entity: any) => {
+        if (entity === League) return dsLeagueRepo;
+        if (entity === LeagueMember) return dsMemberRepo;
+        if (entity === Reservation) return dsResRepo;
+        return createMockRepo();
+      });
+
+      const result = await service.getEligibleReservations(USER_A1, LEAGUE_ID);
+      expect(result).toEqual([]);
+    });
+  });
 });

@@ -59,6 +59,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   beforeEach(async () => {
     matchesService = {
       reportFromReservation: jest.fn(),
+      getEligibleReservations: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -188,5 +189,77 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       .post(`/leagues/${LEAGUE_ID}/report-from-reservation`)
       .send({ ...validBody, extraField: 'bad' })
       .expect(400);
+  });
+
+  // ── GET /leagues/:leagueId/eligible-reservations ──────────────
+
+  describe('GET /leagues/:leagueId/eligible-reservations', () => {
+    const eligibleReservation = {
+      reservationId: RESERVATION_ID,
+      clubName: 'Club Padel Central',
+      courtName: 'Court 1',
+      startAt: '2025-06-10T10:00:00.000Z',
+      endAt: '2025-06-10T11:00:00.000Z',
+      participants: [
+        { userId: FAKE_MEMBER.userId, displayName: 'Member Player' },
+      ],
+    };
+
+    it('should return eligible reservations for league member', async () => {
+      matchesService.getEligibleReservations!.mockResolvedValue([eligibleReservation]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].reservationId).toBe(RESERVATION_ID);
+      expect(res.body[0].clubName).toBe('Club Padel Central');
+      expect(res.body[0].courtName).toBe('Court 1');
+      expect(res.body[0].participants).toHaveLength(1);
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(matchesService.getEligibleReservations).toHaveBeenCalledWith(
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+      );
+    });
+
+    it('should return 403 for non-member', async () => {
+      matchesService.getEligibleReservations!.mockRejectedValue(
+        new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You are not a member of this league',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
+        .set('x-test-user', 'outsider')
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_FORBIDDEN');
+    });
+
+    it('should return empty array when no eligible reservations exist', async () => {
+      matchesService.getEligibleReservations!.mockResolvedValue([]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
+        .expect(200);
+
+      expect(res.body).toEqual([]);
+    });
+
+    it('should exclude already-reported reservations (service filters them)', async () => {
+      // Service returns only non-reported reservations
+      matchesService.getEligibleReservations!.mockResolvedValue([]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
+        .expect(200);
+
+      expect(res.body).toEqual([]);
+    });
   });
 });

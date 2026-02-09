@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Get,
+  Header,
   Param,
   Post,
   Req,
@@ -17,6 +19,17 @@ type AuthUser = { userId: string; email: string; role: string };
 @UseGuards(JwtAuthGuard)
 export class LeagueMatchesController {
   constructor(private readonly matchesService: MatchesService) {}
+
+  @Get(':leagueId/eligible-reservations')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  getEligibleReservations(
+    @Req() req: Request,
+    @Param('leagueId') leagueId: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.matchesService.getEligibleReservations(user.userId, leagueId);
+  }
 
   @Post(':leagueId/report-from-reservation')
   reportFromReservation(

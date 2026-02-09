@@ -25,6 +25,7 @@ import { League } from '../leagues/league.entity';
 import { LeagueMember } from '../leagues/league-member.entity';
 import { LeagueStatus } from '../leagues/league-status.enum';
 import { Reservation, ReservationStatus } from '../reservations/reservation.entity';
+import { Court } from '../courts/court.entity';
 import { ChallengeType } from '../challenges/challenge-type.enum';
 import { MatchDispute } from './match-dispute.entity';
 import { MatchAuditLog } from './match-audit-log.entity';
@@ -930,5 +931,105 @@ export class MatchesService {
     });
     if (!m) throw new NotFoundException('Match result not found');
     return m;
+  }
+
+  // ------------------------
+  // eligible reservations
+  // ------------------------
+
+  async getEligibleReservations(userId: string, leagueId: string) {
+    // 1. Validate league exists
+    const league = await this.dataSource
+      .getRepository(League)
+      .findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    // 2. Caller must be a league member
+    const members = await this.dataSource
+      .getRepository(LeagueMember)
+      .find({ where: { leagueId } });
+    const callerMember = members.find((m) => m.userId === userId);
+    if (!callerMember) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      });
+    }
+
+    // 3. Get member user details (emails + display names)
+    const memberUserIds = members.map((m) => m.userId);
+    const users = await this.userRepo.find({
+      where: { id: In(memberUserIds) },
+      select: ['id', 'email', 'displayName'],
+    });
+    const memberEmails = users
+      .map((u) => u.email?.toLowerCase())
+      .filter(Boolean) as string[];
+    const userByEmail = new Map(
+      users.map((u) => [u.email?.toLowerCase(), u]),
+    );
+
+    if (memberEmails.length === 0) return [];
+
+    // 4. Find confirmed, past reservations booked by league member emails (last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const reservations = await this.dataSource
+      .getRepository(Reservation)
+      .createQueryBuilder('r')
+      .innerJoinAndSelect('r.court', 'court')
+      .innerJoin('court.club', 'club')
+      .addSelect(['club.id', 'club.nombre'])
+      .where('r.status = :status', { status: ReservationStatus.CONFIRMED })
+      .andWhere('r."startAt" < NOW()')
+      .andWhere('r."startAt" > :since', { since: thirtyDaysAgo })
+      .andWhere('LOWER(r."clienteEmail") IN (:...emails)', { emails: memberEmails })
+      .orderBy('r."startAt"', 'DESC')
+      .getMany();
+
+    if (reservations.length === 0) return [];
+
+    // 5. Exclude already-reported reservations for this league
+    const reservationIds = reservations.map((r) => r.id);
+
+    const reportedReservationIds = await this.matchRepo
+      .createQueryBuilder('mr')
+      .innerJoin('mr.challenge', 'c')
+      .select('c."reservationId"', 'reservationId')
+      .where('mr."leagueId" = :leagueId', { leagueId })
+      .andWhere('c."reservationId" IN (:...reservationIds)', { reservationIds })
+      .getRawMany()
+      .then((rows) => new Set(rows.map((r) => r.reservationId)));
+
+    const eligible = reservations.filter((r) => !reportedReservationIds.has(r.id));
+
+    // 6. Map to response shape
+    return eligible.map((r) => {
+      const court = r.court as Court & { club?: { id: string; nombre: string } };
+      const bookerUser = userByEmail.get(r.clienteEmail?.toLowerCase() ?? '');
+
+      const participants: Array<{ userId: string; displayName: string | null }> = [];
+      if (bookerUser) {
+        participants.push({
+          userId: bookerUser.id,
+          displayName: bookerUser.displayName,
+        });
+      }
+
+      return {
+        reservationId: r.id,
+        clubName: court.club?.nombre ?? null,
+        courtName: court.nombre,
+        startAt: r.startAt.toISOString(),
+        endAt: r.endAt.toISOString(),
+        participants,
+      };
+    });
   }
 }
