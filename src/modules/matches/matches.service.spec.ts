@@ -22,6 +22,10 @@ import { DisputeReasonCode } from './dispute-reason.enum';
 import { DisputeStatus } from './dispute-status.enum';
 import { DisputeResolution } from './dto/resolve-dispute.dto';
 import { MatchAuditAction } from './match-audit-action.enum';
+import { Reservation, ReservationStatus } from '../reservations/reservation.entity';
+import { League } from '../leagues/league.entity';
+import { LeagueMember } from '../leagues/league-member.entity';
+import { LeagueStatus } from '../leagues/league-status.enum';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { createMockDataSource, MockDataSource } from '@/test-utils/mock-datasource';
 
@@ -79,13 +83,18 @@ describe('MatchesService', () => {
   let disputeRepo: MockRepo<MatchDispute>;
   let auditRepo: MockRepo<MatchAuditLog>;
   let userRepo: MockRepo<User>;
+  let reservationRepo: MockRepo<Reservation>;
   let userNotifications: { create: jest.Mock };
+  let leagueStandingsService: { recomputeForMatch: jest.Mock };
 
   // Mock repos returned inside transactions
   let txMatchRepo: MockRepo<MatchResult>;
   let txDisputeRepo: MockRepo<MatchDispute>;
   let txAuditRepo: MockRepo<MatchAuditLog>;
   let txChallengeRepo: MockRepo<Challenge>;
+  let txLeagueRepo: MockRepo<League>;
+  let txMemberRepo: MockRepo<LeagueMember>;
+  let txReservationRepo: MockRepo<Reservation>;
 
   beforeEach(async () => {
     dataSource = createMockDataSource();
@@ -94,13 +103,18 @@ describe('MatchesService', () => {
     disputeRepo = createMockRepo<MatchDispute>();
     auditRepo = createMockRepo<MatchAuditLog>();
     userRepo = createMockRepo<User>();
+    reservationRepo = createMockRepo<Reservation>();
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
+    leagueStandingsService = { recomputeForMatch: jest.fn() };
 
     // Transaction mock repos
     txMatchRepo = createMockRepo<MatchResult>();
     txDisputeRepo = createMockRepo<MatchDispute>();
     txAuditRepo = createMockRepo<MatchAuditLog>();
     txChallengeRepo = createMockRepo<Challenge>();
+    txLeagueRepo = createMockRepo<League>();
+    txMemberRepo = createMockRepo<LeagueMember>();
+    txReservationRepo = createMockRepo<Reservation>();
 
     // Default: transaction executes callback with a mock manager
     dataSource.transaction.mockImplementation(async (cb: any) => {
@@ -110,6 +124,9 @@ describe('MatchesService', () => {
           if (entity === MatchDispute) return txDisputeRepo;
           if (entity === MatchAuditLog) return txAuditRepo;
           if (entity === Challenge) return txChallengeRepo;
+          if (entity === League) return txLeagueRepo;
+          if (entity === LeagueMember) return txMemberRepo;
+          if (entity === Reservation) return txReservationRepo;
           return createMockRepo();
         }),
         save: jest.fn().mockImplementation(async (entity: any) => entity),
@@ -129,8 +146,9 @@ describe('MatchesService', () => {
         { provide: getRepositoryToken(MatchDispute), useValue: disputeRepo },
         { provide: getRepositoryToken(MatchAuditLog), useValue: auditRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getRepositoryToken(Reservation), useValue: reservationRepo },
         { provide: EloService, useValue: { applyForMatchTx: jest.fn() } },
-        { provide: LeagueStandingsService, useValue: { recomputeForMatch: jest.fn() } },
+        { provide: LeagueStandingsService, useValue: leagueStandingsService },
         { provide: UserNotificationsService, useValue: userNotifications },
         {
           provide: ConfigService,
@@ -355,7 +373,7 @@ describe('MatchesService', () => {
         status: DisputeStatus.RESOLVED,
         resolvedAt: new Date(),
       });
-      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.RESOLVED });
+      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.CONFIRMED });
       txAuditRepo.create.mockReturnValue({ id: 'audit-2' });
       txAuditRepo.save.mockResolvedValue({ id: 'audit-2' });
 
@@ -363,7 +381,7 @@ describe('MatchesService', () => {
         resolution: DisputeResolution.CONFIRM_AS_IS,
       });
 
-      expect(result.matchStatus).toBe(MatchResultStatus.RESOLVED);
+      expect(result.matchStatus).toBe(MatchResultStatus.CONFIRMED);
       expect(result.resolution).toBe(DisputeResolution.CONFIRM_AS_IS);
 
       expect(txAuditRepo.create).toHaveBeenCalledWith(
@@ -442,7 +460,7 @@ describe('MatchesService', () => {
         status: DisputeStatus.RESOLVED,
         resolvedAt: new Date(),
       });
-      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.RESOLVED });
+      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.CONFIRMED });
       txAuditRepo.create.mockReturnValue({ id: 'audit-4' });
       txAuditRepo.save.mockResolvedValue({ id: 'audit-4' });
 
@@ -462,6 +480,198 @@ describe('MatchesService', () => {
         expect(call[0].data.link).toBe('/matches/match-1');
         expect(call[0].data.resolution).toBe(DisputeResolution.CONFIRM_AS_IS);
       }
+    });
+
+    it('should call recomputeForMatch on CONFIRM_AS_IS', async () => {
+      const match = fakeMatch({ status: MatchResultStatus.DISPUTED });
+      const dispute = fakeDispute();
+
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(match),
+      });
+      txDisputeRepo.findOne.mockResolvedValue(dispute);
+      txDisputeRepo.save.mockResolvedValue({ ...dispute, status: DisputeStatus.RESOLVED });
+      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.CONFIRMED });
+      txAuditRepo.create.mockReturnValue({ id: 'audit-5' });
+      txAuditRepo.save.mockResolvedValue({ id: 'audit-5' });
+      challengeRepo.findOne.mockResolvedValue(fakeChallenge());
+
+      await service.resolveDispute(ADMIN, 'match-1', {
+        resolution: DisputeResolution.CONFIRM_AS_IS,
+      });
+
+      expect(leagueStandingsService.recomputeForMatch).toHaveBeenCalledWith(
+        expect.anything(),
+        'match-1',
+      );
+    });
+
+    it('should NOT call recomputeForMatch on VOID_MATCH', async () => {
+      const match = fakeMatch({ status: MatchResultStatus.DISPUTED });
+      const dispute = fakeDispute();
+
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(match),
+      });
+      txDisputeRepo.findOne.mockResolvedValue(dispute);
+      txDisputeRepo.save.mockResolvedValue({ ...dispute, status: DisputeStatus.RESOLVED });
+      txMatchRepo.save.mockResolvedValue({ ...match, status: MatchResultStatus.RESOLVED });
+      txAuditRepo.create.mockReturnValue({ id: 'audit-6' });
+      txAuditRepo.save.mockResolvedValue({ id: 'audit-6' });
+      challengeRepo.findOne.mockResolvedValue(fakeChallenge());
+
+      await service.resolveDispute(ADMIN, 'match-1', {
+        resolution: DisputeResolution.VOID_MATCH,
+      });
+
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── reportFromReservation ────────────────────────────────────────
+
+  describe('reportFromReservation', () => {
+    const LEAGUE_ID = 'league-1';
+    const RESERVATION_ID = 'reservation-1';
+
+    const validDto = {
+      reservationId: RESERVATION_ID,
+      teamA1Id: USER_A1,
+      teamA2Id: USER_A2,
+      teamB1Id: USER_B1,
+      teamB2Id: USER_B2,
+      sets: [{ a: 6, b: 3 }, { a: 6, b: 4 }],
+    };
+
+    function setupHappyPath() {
+      txLeagueRepo.findOne.mockResolvedValue({
+        id: LEAGUE_ID,
+        status: LeagueStatus.ACTIVE,
+      });
+      txMemberRepo.findOne.mockResolvedValue({ userId: USER_A1, leagueId: LEAGUE_ID });
+      txReservationRepo.findOne.mockResolvedValue({
+        id: RESERVATION_ID,
+        status: ReservationStatus.CONFIRMED,
+        startAt: new Date(Date.now() - 3600_000), // 1h ago
+      });
+      txMemberRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(4),
+      });
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+      txChallengeRepo.create.mockImplementation((v: any) => ({ id: 'ch-new', ...v }));
+      txChallengeRepo.save.mockImplementation(async (v: any) => v);
+      txMatchRepo.create.mockImplementation((v: any) => ({ id: 'match-new', ...v }));
+      txMatchRepo.save.mockImplementation(async (v: any) => v);
+    }
+
+    it('should create a match from a valid reservation', async () => {
+      setupHappyPath();
+
+      const result = await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
+
+      expect(result.id).toBe('match-new');
+      expect(result.leagueId).toBe(LEAGUE_ID);
+      expect(result.status).toBe(MatchResultStatus.PENDING_CONFIRM);
+      expect(txChallengeRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ reservationId: RESERVATION_ID }),
+      );
+    });
+
+    it('should throw LEAGUE_FORBIDDEN if caller is not a member', async () => {
+      txLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID, status: LeagueStatus.ACTIVE });
+      txMemberRepo.findOne.mockResolvedValue(null);
+
+      try {
+        await service.reportFromReservation(OUTSIDER, LEAGUE_ID, validDto);
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
+    });
+
+    it('should throw RESERVATION_NOT_ELIGIBLE for unconfirmed reservation', async () => {
+      txLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID, status: LeagueStatus.ACTIVE });
+      txMemberRepo.findOne.mockResolvedValue({ userId: USER_A1 });
+      txReservationRepo.findOne.mockResolvedValue({
+        id: RESERVATION_ID,
+        status: ReservationStatus.HOLD,
+        startAt: new Date(Date.now() - 3600_000),
+      });
+
+      try {
+        await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect(e.response.code).toBe('RESERVATION_NOT_ELIGIBLE');
+      }
+    });
+
+    it('should throw RESERVATION_NOT_ELIGIBLE for future reservation', async () => {
+      txLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID, status: LeagueStatus.ACTIVE });
+      txMemberRepo.findOne.mockResolvedValue({ userId: USER_A1 });
+      txReservationRepo.findOne.mockResolvedValue({
+        id: RESERVATION_ID,
+        status: ReservationStatus.CONFIRMED,
+        startAt: new Date(Date.now() + 3600_000), // 1h in the future
+      });
+
+      try {
+        await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect(e.response.code).toBe('RESERVATION_NOT_ELIGIBLE');
+      }
+    });
+
+    it('should throw MATCH_ALREADY_REPORTED for duplicate', async () => {
+      txLeagueRepo.findOne.mockResolvedValue({ id: LEAGUE_ID, status: LeagueStatus.ACTIVE });
+      txMemberRepo.findOne.mockResolvedValue({ userId: USER_A1 });
+      txReservationRepo.findOne.mockResolvedValue({
+        id: RESERVATION_ID,
+        status: ReservationStatus.CONFIRMED,
+        startAt: new Date(Date.now() - 3600_000),
+      });
+      txMemberRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(4),
+      });
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'existing-match' }),
+      });
+
+      try {
+        await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ConflictException);
+        expect(e.response.code).toBe('MATCH_ALREADY_REPORTED');
+      }
+    });
+
+    it('should NOT call recomputeForMatch on report', async () => {
+      setupHappyPath();
+
+      await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
+
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
   });
 });

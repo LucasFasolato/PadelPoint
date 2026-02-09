@@ -24,6 +24,8 @@ import { LeagueStandingsService } from '../leagues/league-standings.service';
 import { League } from '../leagues/league.entity';
 import { LeagueMember } from '../leagues/league-member.entity';
 import { LeagueStatus } from '../leagues/league-status.enum';
+import { Reservation, ReservationStatus } from '../reservations/reservation.entity';
+import { ChallengeType } from '../challenges/challenge-type.enum';
 import { MatchDispute } from './match-dispute.entity';
 import { MatchAuditLog } from './match-audit-log.entity';
 import { DisputeStatus } from './dispute-status.enum';
@@ -60,6 +62,8 @@ export class MatchesService {
     private readonly auditRepo: Repository<MatchAuditLog>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(Reservation)
+    private readonly reservationRepo: Repository<Reservation>,
     private readonly eloService: EloService,
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly userNotifications: UserNotificationsService,
@@ -290,6 +294,206 @@ export class MatchesService {
 
       return matchRepo.save(ent);
     });
+  }
+
+  // ------------------------
+  // report from reservation (league match)
+  // ------------------------
+
+  async reportFromReservation(
+    userId: string,
+    leagueId: string,
+    dto: {
+      reservationId: string;
+      teamA1Id: string;
+      teamA2Id: string;
+      teamB1Id: string;
+      teamB2Id: string;
+      sets: Array<{ a: number; b: number }>;
+      playedAt?: string;
+    },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const leagueRepo = manager.getRepository(League);
+      const memberRepo = manager.getRepository(LeagueMember);
+      const reservationRepo = manager.getRepository(Reservation);
+      const chRepo = manager.getRepository(Challenge);
+      const matchRepo = manager.getRepository(MatchResult);
+
+      // 1. Validate league exists and is ACTIVE
+      const league = await leagueRepo.findOne({ where: { id: leagueId } });
+      if (!league) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'LEAGUE_NOT_FOUND',
+          message: 'League not found',
+        });
+      }
+      if (league.status !== LeagueStatus.ACTIVE) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_NOT_ACTIVE',
+          message: 'League is not active',
+        });
+      }
+
+      // 2. Caller must be a league member
+      const callerMember = await memberRepo.findOne({
+        where: { leagueId, userId },
+      });
+      if (!callerMember) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You are not a member of this league',
+        });
+      }
+
+      // 3. Validate reservation eligibility
+      const reservation = await reservationRepo.findOne({
+        where: { id: dto.reservationId },
+      });
+      if (!reservation) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'RESERVATION_NOT_ELIGIBLE',
+          message: 'Reservation not found',
+        });
+      }
+      if (reservation.status !== ReservationStatus.CONFIRMED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'RESERVATION_NOT_ELIGIBLE',
+          message: 'Reservation is not confirmed',
+        });
+      }
+      if (reservation.startAt > new Date()) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'RESERVATION_NOT_ELIGIBLE',
+          message: 'Reservation has not started yet',
+        });
+      }
+
+      // 4. All 4 participants must be league members
+      const playerIds = [dto.teamA1Id, dto.teamA2Id, dto.teamB1Id, dto.teamB2Id];
+      const memberCount = await memberRepo
+        .createQueryBuilder('m')
+        .where('m."leagueId" = :leagueId', { leagueId })
+        .andWhere('m."userId" IN (:...playerIds)', { playerIds })
+        .getCount();
+
+      if (memberCount !== 4) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_MEMBERS_MISSING',
+          message: 'All 4 match participants must be members of the league',
+        });
+      }
+
+      // 5. Prevent duplicate: match for this reservationId + leagueId
+      const existingMatch = await matchRepo
+        .createQueryBuilder('mr')
+        .innerJoin('mr.challenge', 'c')
+        .where('c."reservationId" = :reservationId', {
+          reservationId: dto.reservationId,
+        })
+        .andWhere('mr."leagueId" = :leagueId', { leagueId })
+        .getOne();
+
+      if (existingMatch) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'MATCH_ALREADY_REPORTED',
+          message: 'A match has already been reported for this reservation and league',
+        });
+      }
+
+      // 6. Validate sets
+      const { winnerTeam } = this.validateSets(dto.sets);
+
+      // 7. Auto-create challenge
+      const challenge = chRepo.create({
+        type: ChallengeType.DIRECT,
+        status: ChallengeStatus.READY,
+        teamA1Id: dto.teamA1Id,
+        teamA2Id: dto.teamA2Id,
+        teamB1Id: dto.teamB1Id,
+        teamB2Id: dto.teamB2Id,
+        reservationId: dto.reservationId,
+      });
+      await chRepo.save(challenge);
+
+      // 8. Create match result
+      const playedAt = dto.playedAt
+        ? DateTime.fromISO(dto.playedAt, { zone: TZ })
+        : DateTime.fromJSDate(reservation.startAt, { zone: TZ });
+
+      if (!playedAt.isValid) throw new BadRequestException('Invalid playedAt');
+
+      const [s1, s2, s3] = dto.sets;
+
+      const match = matchRepo.create({
+        challengeId: challenge.id,
+        challenge,
+        leagueId,
+        playedAt: playedAt.toJSDate(),
+
+        teamASet1: s1.a,
+        teamBSet1: s1.b,
+        teamASet2: s2.a,
+        teamBSet2: s2.b,
+        teamASet3: s3 ? s3.a : null,
+        teamBSet3: s3 ? s3.b : null,
+
+        winnerTeam,
+        status: MatchResultStatus.PENDING_CONFIRM,
+
+        reportedByUserId: userId,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        eloApplied: false,
+      });
+
+      const saved = await matchRepo.save(match);
+
+      // 9. Notify other participants (fire-and-forget)
+      this.notifyMatchReported(saved, playerIds, userId).catch((err) =>
+        this.logger.error(
+          `failed to send match-reported notifications: ${err.message}`,
+        ),
+      );
+
+      return saved;
+    });
+  }
+
+  private async notifyMatchReported(
+    match: MatchResult,
+    playerIds: string[],
+    reporterId: string,
+  ): Promise<void> {
+    const reporter = await this.userRepo.findOne({
+      where: { id: reporterId },
+      select: ['id', 'displayName'],
+    });
+    const reporterName = reporter?.displayName ?? 'A player';
+
+    const othersToNotify = playerIds.filter((id) => id !== reporterId);
+    for (const uid of othersToNotify) {
+      await this.userNotifications.create({
+        userId: uid,
+        type: UserNotificationType.MATCH_REPORTED,
+        title: 'Match reported',
+        body: `${reporterName} reported a match result. Please confirm or reject.`,
+        data: {
+          matchId: match.id,
+          leagueId: match.leagueId,
+          reporterDisplayName: reporterName,
+          link: `/matches/${match.id}`,
+        },
+      });
+    }
   }
 
   async getMyMatches(userId: string) {
@@ -600,14 +804,15 @@ export class MatchesService {
 
       // Update match status based on resolution
       if (dto.resolution === DisputeResolution.CONFIRM_AS_IS) {
-        match.status = MatchResultStatus.RESOLVED;
+        match.status = MatchResultStatus.CONFIRMED;
+        await matchRepo.save(match);
+        // Re-confirm standings so the match is counted again
+        await this.leagueStandingsService.recomputeForMatch(manager, match.id);
       } else if (dto.resolution === DisputeResolution.VOID_MATCH) {
         match.status = MatchResultStatus.RESOLVED;
-        // For MVP: mark as resolved but do not rollback ELO/standings
-        // The match is "voided" semantically — future standings recomputes
-        // should exclude RESOLVED matches if needed.
+        await matchRepo.save(match);
+        // Voided: standings will exclude this match (status != CONFIRMED)
       }
-      await matchRepo.save(match);
 
       // Audit log
       const audit = auditRepo.create({
