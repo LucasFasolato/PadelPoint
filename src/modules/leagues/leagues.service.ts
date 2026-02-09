@@ -13,6 +13,7 @@ import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 import { LeagueStatus } from './league-status.enum';
+import { LeagueMode } from './league-mode.enum';
 import { InviteStatus } from './invite-status.enum';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
@@ -48,7 +49,30 @@ export class LeaguesService {
   // ── create ───────────────────────────────────────────────────────
 
   async createLeague(userId: string, dto: CreateLeagueDto) {
-    if (dto.endDate <= dto.startDate) {
+    const mode = dto.mode ?? LeagueMode.SCHEDULED;
+
+    if (mode === LeagueMode.SCHEDULED) {
+      if (!dto.startDate || !dto.endDate) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_DATES_REQUIRED',
+          message: 'startDate and endDate are required for SCHEDULED leagues',
+        });
+      }
+      if (dto.endDate <= dto.startDate) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_INVALID_DATES',
+          message: 'endDate must be after startDate',
+        });
+      }
+    }
+
+    const startDate = dto.startDate ?? null;
+    const endDate = dto.endDate ?? null;
+
+    // Validate dates if both provided (even for OPEN)
+    if (startDate && endDate && endDate <= startDate) {
       throw new BadRequestException({
         statusCode: 400,
         code: 'LEAGUE_INVALID_DATES',
@@ -57,14 +81,21 @@ export class LeaguesService {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const status =
-      dto.startDate <= today ? LeagueStatus.ACTIVE : LeagueStatus.DRAFT;
+    let status: LeagueStatus;
+    if (mode === LeagueMode.OPEN) {
+      status = LeagueStatus.ACTIVE;
+    } else {
+      status = startDate && startDate <= today
+        ? LeagueStatus.ACTIVE
+        : LeagueStatus.DRAFT;
+    }
 
     const league = this.leagueRepo.create({
       name: dto.name,
       creatorId: userId,
-      startDate: dto.startDate,
-      endDate: dto.endDate,
+      mode,
+      startDate,
+      endDate,
       status,
     });
 
@@ -98,6 +129,7 @@ export class LeaguesService {
     return leagues.map((l) => ({
       id: l.id,
       name: l.name,
+      mode: l.mode,
       status: toApiStatus(l.status),
       startDate: l.startDate,
       endDate: l.endDate,
@@ -252,6 +284,7 @@ export class LeaguesService {
       league: {
         id: invite.league.id,
         name: invite.league.name,
+        mode: invite.league.mode,
         status: toApiStatus(invite.league.status),
         startDate: invite.league.startDate,
         endDate: invite.league.endDate,
@@ -471,6 +504,7 @@ export class LeaguesService {
     return {
       id: league.id,
       name: league.name,
+      mode: league.mode,
       creatorId: league.creatorId,
       startDate: league.startDate,
       endDate: league.endDate,

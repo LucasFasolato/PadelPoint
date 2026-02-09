@@ -4,6 +4,7 @@ import { EntityManager, In, Repository } from 'typeorm';
 import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import { LeagueStatus } from './league-status.enum';
+import { LeagueMode } from './league-mode.enum';
 import {
   MatchResult,
   MatchResultStatus,
@@ -49,14 +50,18 @@ export class LeagueStandingsService {
     if (playerIds.some((id) => !id)) return;
 
     // Find ACTIVE leagues where ALL 4 players are members
-    // and the match playedAt falls within [startDate, endDate]
-    const leagues = await manager
+    // For SCHEDULED: match playedAt must fall within [startDate, endDate]
+    // For OPEN: no date restriction
+    const qb = manager
       .getRepository(League)
       .createQueryBuilder('l')
       .where('l.status = :status', { status: LeagueStatus.ACTIVE })
-      .andWhere('l."startDate" <= :playedAt', { playedAt: match.playedAt })
-      .andWhere('l."endDate" >= :playedAt', { playedAt: match.playedAt })
-      .getMany();
+      .andWhere(
+        '(l.mode = :open OR (l."startDate" <= :playedAt AND l."endDate" >= :playedAt))',
+        { open: LeagueMode.OPEN, playedAt: match.playedAt },
+      );
+
+    const leagues = await qb.getMany();
 
     for (const league of leagues) {
       const memberCount = await manager
@@ -94,15 +99,20 @@ export class LeagueStandingsService {
     const memberUserIds = members.map((m) => m.userId);
     const memberSet = new Set(memberUserIds);
 
-    // Get all confirmed matches within date range
-    const matches = await manager
+    // Get all confirmed matches; for SCHEDULED filter by date range
+    const matchQb = manager
       .getRepository(MatchResult)
       .createQueryBuilder('mr')
       .innerJoinAndSelect('mr.challenge', 'c')
-      .where('mr.status = :status', { status: MatchResultStatus.CONFIRMED })
-      .andWhere('mr."playedAt" >= :start', { start: league.startDate })
-      .andWhere('mr."playedAt" <= :end', { end: league.endDate })
-      .getMany();
+      .where('mr.status = :status', { status: MatchResultStatus.CONFIRMED });
+
+    if (league.mode !== LeagueMode.OPEN && league.startDate && league.endDate) {
+      matchQb
+        .andWhere('mr."playedAt" >= :start', { start: league.startDate })
+        .andWhere('mr."playedAt" <= :end', { end: league.endDate });
+    }
+
+    const matches = await matchQb.getMany();
 
     // Filter: all 4 participants must be league members
     const leagueMatches = matches.filter((mr) => {

@@ -21,6 +21,9 @@ import { Challenge } from '../challenges/challenge.entity';
 import { ChallengeStatus } from '../challenges/challenge-status.enum';
 import { EloService } from '../competitive/elo.service';
 import { LeagueStandingsService } from '../leagues/league-standings.service';
+import { League } from '../leagues/league.entity';
+import { LeagueMember } from '../leagues/league-member.entity';
+import { LeagueStatus } from '../leagues/league-status.enum';
 import { MatchDispute } from './match-dispute.entity';
 import { MatchAuditLog } from './match-audit-log.entity';
 import { DisputeStatus } from './dispute-status.enum';
@@ -154,6 +157,7 @@ export class MatchesService {
     userId: string,
     dto: {
       challengeId: string;
+      leagueId?: string;
       playedAt?: string;
       sets: Array<{ a: number; b: number }>;
     },
@@ -182,6 +186,63 @@ export class MatchesService {
         throw new UnauthorizedException('Only match participants can report');
       }
 
+      // Validate league linkage if provided
+      let leagueId: string | null = null;
+      if (dto.leagueId) {
+        // League match requires a reservation-backed challenge
+        if (!challenge.reservationId) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'LEAGUE_MATCH_NO_RESERVATION',
+            message:
+              'League matches must be linked to a reservation-backed challenge',
+          });
+        }
+
+        const league = await manager
+          .getRepository(League)
+          .findOne({ where: { id: dto.leagueId } });
+        if (!league) {
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'LEAGUE_NOT_FOUND',
+            message: 'League not found',
+          });
+        }
+
+        if (
+          league.status !== LeagueStatus.ACTIVE &&
+          league.status !== LeagueStatus.DRAFT
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'LEAGUE_NOT_ACTIVE',
+            message: 'League is not active',
+          });
+        }
+
+        // All participants must be league members
+        const memberCount = await manager
+          .getRepository(LeagueMember)
+          .createQueryBuilder('m')
+          .where('m."leagueId" = :leagueId', { leagueId: dto.leagueId })
+          .andWhere('m."userId" IN (:...playerIds)', {
+            playerIds: participants.all,
+          })
+          .getCount();
+
+        if (memberCount !== 4) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'LEAGUE_MEMBERS_MISSING',
+            message:
+              'All 4 match participants must be members of the league',
+          });
+        }
+
+        leagueId = dto.leagueId;
+      }
+
       // race-safe: check existing match for this challenge
       const existing = await matchRepo
         .createQueryBuilder('m')
@@ -208,6 +269,7 @@ export class MatchesService {
       const ent = matchRepo.create({
         challengeId: dto.challengeId,
         challenge,
+        leagueId,
         playedAt: playedAt.toJSDate(),
 
         teamASet1: s1.a,

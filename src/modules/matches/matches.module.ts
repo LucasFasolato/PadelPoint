@@ -7,13 +7,15 @@ import { MatchesService } from './matches.service';
 import { MatchesController } from './matches.controller';
 import { Challenge } from '../challenges/challenge.entity';
 import { User } from '../users/user.entity';
+import { League } from '../leagues/league.entity';
+import { LeagueMember } from '../leagues/league-member.entity';
 import { CompetitiveModule } from '../competitive/competitive.module';
 import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MatchResult, MatchDispute, MatchAuditLog, Challenge, User]),
+    TypeOrmModule.forFeature([MatchResult, MatchDispute, MatchAuditLog, Challenge, User, League, LeagueMember]),
     CompetitiveModule,
     LeaguesModule,
     NotificationsModule,

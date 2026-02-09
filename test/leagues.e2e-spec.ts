@@ -54,6 +54,7 @@ describe('Leagues (e2e)', () => {
   const leagueView = {
     id: 'league-1',
     name: 'Summer League',
+    mode: 'scheduled',
     creatorId: FAKE_CREATOR.userId,
     startDate: '2025-06-01',
     endDate: '2025-06-30',
@@ -155,6 +156,51 @@ describe('Leagues (e2e)', () => {
           endDate: '2025-06-30',
           extraField: 'bad',
         })
+        .expect(400);
+    });
+
+    it('should create OPEN league without dates', async () => {
+      const openView = {
+        ...leagueView,
+        id: 'league-open',
+        mode: 'open',
+        startDate: null,
+        endDate: null,
+        status: 'active',
+      };
+      leaguesService.createLeague!.mockResolvedValue(openView);
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues')
+        .send({ name: 'Open League', mode: 'open' })
+        .expect(201);
+
+      expect(res.body.mode).toBe('open');
+      expect(res.body.startDate).toBeNull();
+      expect(res.body.endDate).toBeNull();
+    });
+
+    it('should create SCHEDULED league with dates fails 400 when dates missing', async () => {
+      leaguesService.createLeague!.mockRejectedValue(
+        new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_DATES_REQUIRED',
+          message: 'startDate and endDate are required for SCHEDULED leagues',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues')
+        .send({ name: 'Scheduled League', mode: 'scheduled' })
+        .expect(400);
+
+      expect(res.body.code).toBe('LEAGUE_DATES_REQUIRED');
+    });
+
+    it('should reject invalid mode value', async () => {
+      await request(app.getHttpServer())
+        .post('/leagues')
+        .send({ name: 'Bad Mode', mode: 'invalid' })
         .expect(400);
     });
   });

@@ -5,6 +5,7 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -25,6 +26,10 @@ export class ReportSetDto {
 export class ReportMatchDto {
   @IsString()
   challengeId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  leagueId?: string;
 
   @IsOptional()
   @IsISO8601()

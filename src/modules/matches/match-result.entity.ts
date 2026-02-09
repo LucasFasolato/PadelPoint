@@ -10,6 +10,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Challenge } from '../challenges/challenge.entity';
+import { League } from '../leagues/league.entity';
 import { User } from '../users/user.entity';
 
 export enum MatchResultStatus {
@@ -37,6 +38,14 @@ export class MatchResult {
 
   @Column({ type: 'uuid' })
   challengeId!: string;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  leagueId!: string | null;
+
+  @ManyToOne(() => League, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'leagueId' })
+  league!: League | null;
 
   @Column({ type: 'timestamptz', default: () => 'now()' })
   playedAt!: Date;

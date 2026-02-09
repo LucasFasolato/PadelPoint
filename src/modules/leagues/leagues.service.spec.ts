@@ -7,6 +7,7 @@ import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 import { LeagueStatus } from './league-status.enum';
+import { LeagueMode } from './league-mode.enum';
 import { InviteStatus } from './invite-status.enum';
 import { User } from '../users/user.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
@@ -21,6 +22,7 @@ function fakeLeague(overrides: Partial<League> = {}): League {
     id: 'league-1',
     name: 'Test League',
     creatorId: FAKE_USER_ID,
+    mode: LeagueMode.SCHEDULED,
     startDate: '2025-06-01',
     endDate: '2025-06-30',
     status: LeagueStatus.DRAFT,
@@ -145,6 +147,62 @@ describe('LeaguesService', () => {
       expect(memberRepo.save).toHaveBeenCalledTimes(1);
       expect(result.id).toBe(saved.id);
       expect(result.members).toHaveLength(1);
+    });
+
+    it('should create OPEN league without dates', async () => {
+      const saved = fakeLeague({ mode: LeagueMode.OPEN, startDate: null, endDate: null });
+      leagueRepo.create.mockReturnValue(saved);
+      leagueRepo.save.mockResolvedValue(saved);
+
+      const member = fakeMember();
+      memberRepo.create.mockReturnValue(member);
+      memberRepo.save.mockResolvedValue(member);
+
+      const result = await service.createLeague(FAKE_USER_ID, {
+        name: 'Open League',
+        mode: LeagueMode.OPEN,
+      });
+
+      expect(leagueRepo.save).toHaveBeenCalledTimes(1);
+      expect(result.mode).toBe(LeagueMode.OPEN);
+    });
+
+    it('should reject SCHEDULED league without dates', async () => {
+      await expect(
+        service.createLeague(FAKE_USER_ID, {
+          name: 'Bad League',
+          mode: LeagueMode.SCHEDULED,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      try {
+        await service.createLeague(FAKE_USER_ID, {
+          name: 'Bad League',
+          mode: LeagueMode.SCHEDULED,
+        });
+      } catch (e: any) {
+        expect(e.response.code).toBe('LEAGUE_DATES_REQUIRED');
+      }
+    });
+
+    it('should default mode to SCHEDULED when not provided', async () => {
+      const saved = fakeLeague();
+      leagueRepo.create.mockReturnValue(saved);
+      leagueRepo.save.mockResolvedValue(saved);
+
+      const member = fakeMember();
+      memberRepo.create.mockReturnValue(member);
+      memberRepo.save.mockResolvedValue(member);
+
+      await service.createLeague(FAKE_USER_ID, {
+        name: 'Test League',
+        startDate: '2025-06-01',
+        endDate: '2025-06-30',
+      });
+
+      expect(leagueRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: LeagueMode.SCHEDULED }),
+      );
     });
   });
 

@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { LeagueStatus } from './league-status.enum';
+import { LeagueMode } from './league-mode.enum';
 import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 
@@ -30,11 +31,18 @@ export class League {
   @JoinColumn({ name: 'creatorId' })
   creator!: User;
 
-  @Column({ type: 'date' })
-  startDate!: string;
+  @Column({
+    type: 'enum',
+    enum: LeagueMode,
+    default: LeagueMode.SCHEDULED,
+  })
+  mode!: LeagueMode;
 
-  @Column({ type: 'date' })
-  endDate!: string;
+  @Column({ type: 'date', nullable: true })
+  startDate!: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  endDate!: string | null;
 
   @Column({
     type: 'enum',
