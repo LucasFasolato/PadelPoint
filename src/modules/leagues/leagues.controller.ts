@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -14,6 +15,8 @@ import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
+import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -63,6 +66,38 @@ export class LeaguesController {
   detail(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.leaguesService.getLeagueDetail(user.userId, id);
+  }
+
+  @Get(':id/settings')
+  getSettings(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.getLeagueSettings(user.userId, id);
+  }
+
+  @Patch(':id/settings')
+  updateSettings(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeagueSettingsDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.updateLeagueSettings(user.userId, id, dto);
+  }
+
+  @Patch(':id/members/:memberId/role')
+  updateMemberRole(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.updateMemberRole(
+      user.userId,
+      id,
+      memberId,
+      dto,
+    );
   }
 
   @Post(':id/invites')

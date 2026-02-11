@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import { LeagueStatus } from './league-status.enum';
@@ -9,12 +9,7 @@ import {
   MatchResult,
   MatchResultStatus,
 } from '../matches/match-result.entity';
-import { Challenge } from '../challenges/challenge.entity';
-import { CompetitiveProfile } from '../competitive/competitive-profile.entity';
-
-const POINTS_WIN = 3;
-const POINTS_DRAW = 1;
-const DEFAULT_ELO = 1200;
+import { DEFAULT_LEAGUE_SETTINGS, LeagueSettings } from './league-settings.type';
 
 @Injectable()
 export class LeagueStandingsService {
@@ -27,8 +22,6 @@ export class LeagueStandingsService {
     private readonly memberRepo: Repository<LeagueMember>,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
-    @InjectRepository(CompetitiveProfile)
-    private readonly profileRepo: Repository<CompetitiveProfile>,
   ) {}
 
   /**
@@ -114,27 +107,40 @@ export class LeagueStandingsService {
 
     const matches = await matchQb.getMany();
 
-    // Filter: all 4 participants must be league members
+    // Read configurable settings (fallback to defaults)
+    const settings: LeagueSettings = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
+    const { winPoints, drawPoints, lossPoints } = settings;
+    const includeSources = settings.includeSources ?? { RESERVATION: true, MANUAL: true };
+
+    // Filter: all 4 participants must be league members + source filter
     const leagueMatches = matches.filter((mr) => {
       const ch = mr.challenge;
-      return (
-        memberSet.has(ch.teamA1Id) &&
-        ch.teamA2Id &&
-        memberSet.has(ch.teamA2Id) &&
-        ch.teamB1Id &&
-        memberSet.has(ch.teamB1Id) &&
-        ch.teamB2Id &&
-        memberSet.has(ch.teamB2Id)
-      );
+
+      // All 4 players must be league members
+      if (
+        !memberSet.has(ch.teamA1Id) ||
+        !ch.teamA2Id || !memberSet.has(ch.teamA2Id) ||
+        !ch.teamB1Id || !memberSet.has(ch.teamB1Id) ||
+        !ch.teamB2Id || !memberSet.has(ch.teamB2Id)
+      ) {
+        return false;
+      }
+
+      // Filter by match source (reservation-backed vs manual)
+      const isReservationBacked = ch.reservationId != null;
+      if (isReservationBacked && !includeSources.RESERVATION) return false;
+      if (!isReservationBacked && !includeSources.MANUAL) return false;
+
+      return true;
     });
 
     // Aggregate stats per member
     const stats = new Map<
       string,
-      { wins: number; losses: number; draws: number }
+      { wins: number; losses: number; draws: number; setsDiff: number; gamesDiff: number }
     >();
     for (const uid of memberUserIds) {
-      stats.set(uid, { wins: 0, losses: 0, draws: 0 });
+      stats.set(uid, { wins: 0, losses: 0, draws: 0, setsDiff: 0, gamesDiff: 0 });
     }
 
     for (const mr of leagueMatches) {
@@ -152,36 +158,65 @@ export class LeagueStandingsService {
         const s = stats.get(uid);
         if (s) s.losses++;
       }
-    }
 
-    // Load ELO for tie-breaking
-    const eloMap = new Map<string, number>();
-    if (memberUserIds.length > 0) {
-      const profiles = await manager
-        .getRepository(CompetitiveProfile)
-        .find({ where: { userId: In(memberUserIds) } });
-      for (const p of profiles) {
-        eloMap.set(p.userId, p.elo);
+      // Compute set and game differentials
+      const sets = [
+        { a: mr.teamASet1, b: mr.teamBSet1 },
+        { a: mr.teamASet2, b: mr.teamBSet2 },
+      ];
+      if (mr.teamASet3 != null && mr.teamBSet3 != null) {
+        sets.push({ a: mr.teamASet3, b: mr.teamBSet3 });
+      }
+
+      let setsWonA = 0;
+      let setsWonB = 0;
+      let gamesA = 0;
+      let gamesB = 0;
+      for (const set of sets) {
+        gamesA += set.a;
+        gamesB += set.b;
+        if (set.a > set.b) setsWonA++;
+        else if (set.b > set.a) setsWonB++;
+      }
+
+      for (const uid of teamA) {
+        const s = stats.get(uid);
+        if (s) {
+          s.setsDiff += setsWonA - setsWonB;
+          s.gamesDiff += gamesA - gamesB;
+        }
+      }
+      for (const uid of teamB) {
+        const s = stats.get(uid);
+        if (s) {
+          s.setsDiff += setsWonB - setsWonA;
+          s.gamesDiff += gamesB - gamesA;
+        }
       }
     }
 
-    // Compute points and sort
+    // Compute points and sort using configurable tie-breakers
     const ranked = members.map((m) => {
-      const s = stats.get(m.userId) ?? { wins: 0, losses: 0, draws: 0 };
+      const s = stats.get(m.userId) ?? { wins: 0, losses: 0, draws: 0, setsDiff: 0, gamesDiff: 0 };
       return {
         member: m,
         wins: s.wins,
         losses: s.losses,
         draws: s.draws,
-        points: s.wins * POINTS_WIN + s.draws * POINTS_DRAW,
-        elo: eloMap.get(m.userId) ?? DEFAULT_ELO,
+        setsDiff: s.setsDiff,
+        gamesDiff: s.gamesDiff,
+        points: s.wins * winPoints + s.draws * drawPoints + s.losses * lossPoints,
       };
     });
 
+    const tieBreakers = settings.tieBreakers;
     ranked.sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.elo - a.elo;
+      for (const tb of tieBreakers) {
+        const diff = (b[tb] ?? 0) - (a[tb] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      // Deterministic fallback: userId ASC (stable ordering)
+      return a.member.userId.localeCompare(b.member.userId);
     });
 
     // Update members with computed values
@@ -192,6 +227,8 @@ export class LeagueStandingsService {
       r.member.wins = r.wins;
       r.member.losses = r.losses;
       r.member.draws = r.draws;
+      r.member.setsDiff = r.setsDiff;
+      r.member.gamesDiff = r.gamesDiff;
       r.member.position = i + 1;
     }
 

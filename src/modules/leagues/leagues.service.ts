@@ -17,9 +17,14 @@ import { LeagueMode } from './league-mode.enum';
 import { InviteStatus } from './invite-status.enum';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
+import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { LeagueRole } from './league-role.enum';
+import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { User } from '../users/user.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { LeagueStandingsService } from './league-standings.service';
 
 const INVITE_EXPIRY_DAYS = 7;
 
@@ -44,6 +49,7 @@ export class LeaguesService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly userNotifications: UserNotificationsService,
+    private readonly leagueStandingsService: LeagueStandingsService,
   ) {}
 
   // ── create ───────────────────────────────────────────────────────
@@ -97,15 +103,17 @@ export class LeaguesService {
       startDate,
       endDate,
       status,
+      settings: DEFAULT_LEAGUE_SETTINGS,
     });
 
     const saved = await this.leagueRepo.save(league);
 
-    // Add creator as first member
+    // Add creator as first member (OWNER)
     const member = this.memberRepo.create({
       leagueId: saved.id,
       userId,
       position: 1,
+      role: LeagueRole.OWNER,
     });
     await this.memberRepo.save(member);
 
@@ -186,13 +194,7 @@ export class LeaguesService {
       });
     }
 
-    if (league.creatorId !== userId) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        code: 'LEAGUE_FORBIDDEN',
-        message: 'Only the league creator can invite members',
-      });
-    }
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
 
     // Get existing member userIds to skip
     const existingMembers = await this.memberRepo.find({
@@ -417,6 +419,131 @@ export class LeaguesService {
     return { ok: true };
   }
 
+  // ── settings & roles ────────────────────────────────────────────
+
+  async getLeagueSettings(userId: string, leagueId: string) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertMembership(leagueId, userId);
+    return league.settings ?? DEFAULT_LEAGUE_SETTINGS;
+  }
+
+  async updateLeagueSettings(
+    userId: string,
+    leagueId: string,
+    dto: UpdateLeagueSettingsDto,
+  ) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    const current = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
+    league.settings = {
+      winPoints: dto.winPoints ?? current.winPoints,
+      drawPoints: dto.drawPoints ?? current.drawPoints,
+      lossPoints: dto.lossPoints ?? current.lossPoints,
+      tieBreakers: dto.tieBreakers ?? current.tieBreakers,
+      includeSources: dto.includeSources ?? current.includeSources,
+    };
+
+    // Save settings + recompute standings in a single transaction
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(league);
+      await this.leagueStandingsService.recomputeLeague(manager, leagueId);
+    });
+
+    return league.settings;
+  }
+
+  async updateMemberRole(
+    userId: string,
+    leagueId: string,
+    targetUserId: string,
+    dto: UpdateMemberRoleDto,
+  ) {
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER);
+
+    const target = await this.memberRepo.findOne({
+      where: { leagueId, userId: targetUserId },
+      relations: ['user'],
+    });
+
+    if (!target) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'MEMBER_NOT_FOUND',
+        message: 'Member not found in this league',
+      });
+    }
+
+    // Prevent demoting the last OWNER
+    if (target.role === LeagueRole.OWNER && (dto.role as string) !== LeagueRole.OWNER) {
+      const ownerCount = await this.memberRepo.count({
+        where: { leagueId, role: LeagueRole.OWNER },
+      });
+      if (ownerCount <= 1) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LAST_OWNER',
+          message: 'Cannot demote the last owner of the league',
+        });
+      }
+    }
+
+    target.role = dto.role;
+    await this.memberRepo.save(target);
+    return this.toMemberView(target);
+  }
+
+  // ── auth helpers ───────────────────────────────────────────────
+
+  private async assertMembership(
+    leagueId: string,
+    userId: string,
+  ): Promise<LeagueMember> {
+    const member = await this.memberRepo.findOne({
+      where: { leagueId, userId },
+    });
+    if (!member) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      });
+    }
+    return member;
+  }
+
+  private async assertRole(
+    leagueId: string,
+    userId: string,
+    ...allowedRoles: LeagueRole[]
+  ): Promise<LeagueMember> {
+    const member = await this.assertMembership(leagueId, userId);
+    if (!allowedRoles.includes(member.role)) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You do not have permission to perform this action',
+      });
+    }
+    return member;
+  }
+
   // ── notification helpers ─────────────────────────────────────────
 
   private async sendInviteReceivedNotifications(
@@ -509,6 +636,7 @@ export class LeaguesService {
       startDate: league.startDate,
       endDate: league.endDate,
       status: toApiStatus(league.status),
+      settings: league.settings ?? DEFAULT_LEAGUE_SETTINGS,
       createdAt: league.createdAt.toISOString(),
       members: members.map((m) => this.toMemberView(m)),
     };
@@ -518,10 +646,13 @@ export class LeaguesService {
     return {
       userId: m.userId,
       displayName: m.user?.displayName ?? null,
+      role: m.role,
       points: m.points,
       wins: m.wins,
       losses: m.losses,
       draws: m.draws,
+      setsDiff: m.setsDiff,
+      gamesDiff: m.gamesDiff,
       position: m.position,
       joinedAt: m.joinedAt.toISOString(),
     };

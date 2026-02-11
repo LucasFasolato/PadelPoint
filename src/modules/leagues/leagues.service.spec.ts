@@ -8,10 +8,13 @@ import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 import { LeagueStatus } from './league-status.enum';
 import { LeagueMode } from './league-mode.enum';
+import { LeagueRole } from './league-role.enum';
+import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { InviteStatus } from './invite-status.enum';
 import { User } from '../users/user.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { LeagueStandingsService } from './league-standings.service';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -26,6 +29,7 @@ function fakeLeague(overrides: Partial<League> = {}): League {
     startDate: '2025-06-01',
     endDate: '2025-06-30',
     status: LeagueStatus.DRAFT,
+    settings: DEFAULT_LEAGUE_SETTINGS,
     createdAt: new Date('2025-01-01T12:00:00Z'),
     updatedAt: new Date('2025-01-01T12:00:00Z'),
     members: [],
@@ -40,10 +44,13 @@ function fakeMember(overrides: Partial<LeagueMember> = {}): LeagueMember {
     leagueId: 'league-1',
     userId: FAKE_USER_ID,
     user: { displayName: 'Test Player' },
+    role: LeagueRole.MEMBER,
     points: 0,
     wins: 0,
     losses: 0,
     draws: 0,
+    setsDiff: 0,
+    gamesDiff: 0,
     position: 1,
     joinedAt: new Date('2025-01-01T12:00:00Z'),
     ...overrides,
@@ -72,6 +79,7 @@ describe('LeaguesService', () => {
   let inviteRepo: MockRepo<LeagueInvite>;
   let userRepo: MockRepo<User>;
   let userNotifications: { create: jest.Mock };
+  let leagueStandingsService: { recomputeLeague: jest.Mock };
   let dataSource: { transaction: jest.Mock; manager: any };
 
   beforeEach(async () => {
@@ -80,6 +88,7 @@ describe('LeaguesService', () => {
     inviteRepo = createMockRepo<LeagueInvite>();
     userRepo = createMockRepo<User>();
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
+    leagueStandingsService = { recomputeLeague: jest.fn().mockResolvedValue([]) };
     dataSource = {
       transaction: jest.fn().mockImplementation(async (cb: any) => cb({
         save: jest.fn().mockImplementation(async (entity: any) => entity),
@@ -99,6 +108,7 @@ describe('LeaguesService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: UserNotificationsService, useValue: userNotifications },
         { provide: DataSource, useValue: dataSource },
+        { provide: LeagueStandingsService, useValue: leagueStandingsService },
       ],
     }).compile();
 
@@ -330,6 +340,7 @@ describe('LeaguesService', () => {
     it('createInvites should persist LEAGUE_INVITE_RECEIVED for each invited userId', async () => {
       const league = fakeLeague();
       leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER })); // assertRole
       memberRepo.find.mockResolvedValue([]); // no existing members to skip
 
       const savedInvites = [
@@ -362,6 +373,7 @@ describe('LeaguesService', () => {
     it('createInvites should include inviterDisplayName in notification data', async () => {
       const league = fakeLeague();
       leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER })); // assertRole
       memberRepo.find.mockResolvedValue([]);
       userRepo.findOne.mockResolvedValue({ id: FAKE_USER_ID, displayName: 'John Doe' });
 
@@ -471,6 +483,260 @@ describe('LeaguesService', () => {
       const call = userNotifications.create.mock.calls[0][0];
       expect(call.data.link).toBe('/leagues/league-1');
       expect(call.data.link).toMatch(/^\/leagues\/[a-z0-9-]+$/);
+    });
+  });
+
+  // ── createLeague role ──────────────────────────────────────────
+
+  describe('createLeague – OWNER role', () => {
+    it('should set creator member role to OWNER', async () => {
+      const saved = fakeLeague();
+      leagueRepo.create.mockReturnValue(saved);
+      leagueRepo.save.mockResolvedValue(saved);
+
+      const member = fakeMember({ role: LeagueRole.OWNER });
+      memberRepo.create.mockReturnValue(member);
+      memberRepo.save.mockResolvedValue(member);
+
+      await service.createLeague(FAKE_USER_ID, {
+        name: 'Test League',
+        startDate: '2025-06-01',
+        endDate: '2025-06-30',
+      });
+
+      expect(memberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: LeagueRole.OWNER }),
+      );
+    });
+  });
+
+  // ── getLeagueSettings ──────────────────────────────────────────
+
+  describe('getLeagueSettings', () => {
+    it('should return settings for a league member', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(fakeMember());
+
+      const result = await service.getLeagueSettings(FAKE_USER_ID, 'league-1');
+
+      expect(result).toEqual(DEFAULT_LEAGUE_SETTINGS);
+    });
+
+    it('should throw LEAGUE_FORBIDDEN for non-member', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(null);
+
+      try {
+        await service.getLeagueSettings('outsider-id', 'league-1');
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
+    });
+
+    it('should throw LEAGUE_NOT_FOUND for missing league', async () => {
+      leagueRepo.findOne.mockResolvedValue(null);
+
+      try {
+        await service.getLeagueSettings(FAKE_USER_ID, 'missing');
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect(e.response.code).toBe('LEAGUE_NOT_FOUND');
+      }
+    });
+  });
+
+  // ── updateLeagueSettings ───────────────────────────────────────
+
+  describe('updateLeagueSettings', () => {
+    it('should allow OWNER to update settings', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      leagueRepo.save.mockImplementation(async (l: any) => l);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+
+      const result = await service.updateLeagueSettings(FAKE_USER_ID, 'league-1', {
+        winPoints: 2, drawPoints: 0, lossPoints: 0,
+      });
+
+      expect(result.winPoints).toBe(2);
+      expect(result.drawPoints).toBe(0);
+      expect(result.tieBreakers).toEqual(DEFAULT_LEAGUE_SETTINGS.tieBreakers);
+    });
+
+    it('should allow ADMIN to update settings', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      leagueRepo.save.mockImplementation(async (l: any) => l);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+
+      const result = await service.updateLeagueSettings(FAKE_USER_ID, 'league-1', {
+        tieBreakers: ['points', 'setsDiff', 'gamesDiff'],
+      });
+
+      expect(result.tieBreakers).toEqual(['points', 'setsDiff', 'gamesDiff']);
+    });
+
+    it('should reject MEMBER from updating settings', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      try {
+        await service.updateLeagueSettings(FAKE_USER_ID, 'league-1', {
+          winPoints: 5, drawPoints: 2, lossPoints: 0,
+        });
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
+    });
+  });
+
+  // ── updateMemberRole ───────────────────────────────────────────
+
+  describe('updateMemberRole', () => {
+    it('should allow OWNER to promote a member to ADMIN', async () => {
+      const owner = fakeMember({ role: LeagueRole.OWNER });
+      const target = fakeMember({
+        id: 'member-2',
+        userId: FAKE_USER_ID_2,
+        role: LeagueRole.MEMBER,
+        user: { displayName: 'Target Player' } as any,
+      });
+
+      memberRepo.findOne
+        .mockResolvedValueOnce(owner)  // assertRole
+        .mockResolvedValueOnce(target); // find target
+      memberRepo.save.mockImplementation(async (m: any) => m);
+
+      const result = await service.updateMemberRole(
+        FAKE_USER_ID,
+        'league-1',
+        FAKE_USER_ID_2,
+        { role: LeagueRole.ADMIN },
+      );
+
+      expect(result.role).toBe(LeagueRole.ADMIN);
+    });
+
+    it('should allow OWNER to demote ADMIN to MEMBER', async () => {
+      const owner = fakeMember({ role: LeagueRole.OWNER });
+      const target = fakeMember({
+        id: 'member-2',
+        userId: FAKE_USER_ID_2,
+        role: LeagueRole.ADMIN,
+        user: { displayName: 'Target Player' } as any,
+      });
+
+      memberRepo.findOne
+        .mockResolvedValueOnce(owner)
+        .mockResolvedValueOnce(target);
+      memberRepo.save.mockImplementation(async (m: any) => m);
+
+      const result = await service.updateMemberRole(
+        FAKE_USER_ID,
+        'league-1',
+        FAKE_USER_ID_2,
+        { role: LeagueRole.MEMBER },
+      );
+
+      expect(result.role).toBe(LeagueRole.MEMBER);
+    });
+
+    it('should reject non-OWNER from updating roles', async () => {
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+
+      try {
+        await service.updateMemberRole(FAKE_USER_ID, 'league-1', FAKE_USER_ID_2, {
+          role: LeagueRole.ADMIN,
+        });
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
+    });
+
+    it('should prevent demoting the last OWNER', async () => {
+      const owner = fakeMember({ role: LeagueRole.OWNER });
+
+      memberRepo.findOne
+        .mockResolvedValueOnce(owner)  // assertRole (caller is OWNER)
+        .mockResolvedValueOnce(fakeMember({
+          id: 'member-target',
+          userId: FAKE_USER_ID_2,
+          role: LeagueRole.OWNER,
+          user: { displayName: 'Other Owner' } as any,
+        })); // find target (also OWNER)
+      memberRepo.count.mockResolvedValue(1); // only 1 owner
+
+      try {
+        await service.updateMemberRole(FAKE_USER_ID, 'league-1', FAKE_USER_ID_2, {
+          role: LeagueRole.MEMBER,
+        });
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect(e.response.code).toBe('LAST_OWNER');
+      }
+    });
+
+    it('should throw MEMBER_NOT_FOUND for missing target', async () => {
+      memberRepo.findOne
+        .mockResolvedValueOnce(fakeMember({ role: LeagueRole.OWNER })) // assertRole
+        .mockResolvedValueOnce(null); // target not found
+
+      try {
+        await service.updateMemberRole(FAKE_USER_ID, 'league-1', 'nonexistent', {
+          role: LeagueRole.ADMIN,
+        });
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(NotFoundException);
+        expect(e.response.code).toBe('MEMBER_NOT_FOUND');
+      }
+    });
+  });
+
+  // ── createInvites – ADMIN can invite ───────────────────────────
+
+  describe('createInvites – role-based auth', () => {
+    it('should allow ADMIN to create invites', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      memberRepo.find.mockResolvedValue([]);
+
+      const savedInvites = [
+        fakeInvite({ invitedUserId: FAKE_USER_ID_2, token: 'tok1' }),
+      ];
+      inviteRepo.create.mockReturnValue(savedInvites[0]);
+      inviteRepo.save.mockResolvedValue(savedInvites);
+
+      const result = await service.createInvites(FAKE_USER_ID, 'league-1', {
+        userIds: [FAKE_USER_ID_2],
+      });
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('should reject MEMBER from creating invites', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      try {
+        await service.createInvites(FAKE_USER_ID, 'league-1', {
+          userIds: [FAKE_USER_ID_2],
+        });
+        fail('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(ForbiddenException);
+        expect(e.response.code).toBe('LEAGUE_FORBIDDEN');
+      }
     });
   });
 });

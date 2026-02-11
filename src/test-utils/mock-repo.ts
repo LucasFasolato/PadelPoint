@@ -2,6 +2,7 @@
 export type MockRepo<T> = {
   findOne: jest.Mock;
   find: jest.Mock;
+  count: jest.Mock;
   create: jest.Mock;
   save: jest.Mock;
   update: jest.Mock;
@@ -15,6 +16,7 @@ export function createMockRepo<T>(): MockRepo<T> {
   return {
     findOne: jest.fn(),
     find: jest.fn(),
+    count: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),

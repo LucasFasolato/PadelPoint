@@ -4,8 +4,6 @@ import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
 import { MatchResult } from '../matches/match-result.entity';
-import { Challenge } from '../challenges/challenge.entity';
-import { CompetitiveProfile } from '../competitive/competitive-profile.entity';
 import { User } from '../users/user.entity';
 import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
@@ -19,8 +17,6 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       LeagueMember,
       LeagueInvite,
       MatchResult,
-      Challenge,
-      CompetitiveProfile,
       User,
     ]),
     NotificationsModule,

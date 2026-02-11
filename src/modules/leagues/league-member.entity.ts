@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { League } from './league.entity';
+import { LeagueRole } from './league-role.enum';
 
 @Entity('league_members')
 @Index(['leagueId', 'userId'], { unique: true })
@@ -31,6 +32,9 @@ export class LeagueMember {
   @JoinColumn({ name: 'userId' })
   user!: User;
 
+  @Column({ type: 'enum', enum: LeagueRole, default: LeagueRole.MEMBER })
+  role!: LeagueRole;
+
   @Column({ type: 'int', default: 0 })
   points!: number;
 
@@ -42,6 +46,12 @@ export class LeagueMember {
 
   @Column({ type: 'int', default: 0 })
   draws!: number;
+
+  @Column({ type: 'int', default: 0 })
+  setsDiff!: number;
+
+  @Column({ type: 'int', default: 0 })
+  gamesDiff!: number;
 
   @Column({ type: 'int', nullable: true })
   position!: number | null;
