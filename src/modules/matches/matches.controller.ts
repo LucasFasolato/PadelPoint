@@ -80,6 +80,12 @@ export class MatchesController {
     return this.service.resolveDispute(user.userId, id, dto);
   }
 
+  @Post(':id/resolve-confirm-as-is')
+  resolveConfirmAsIs(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    return this.service.resolveConfirmAsIs(user.userId, id);
+  }
+
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.service.getById(id);

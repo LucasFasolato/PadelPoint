@@ -34,6 +34,8 @@ import { DisputeReasonCode } from './dispute-reason.enum';
 import { MatchAuditAction } from './match-audit-action.enum';
 import { DisputeResolution } from './dto/resolve-dispute.dto';
 import { User } from '../users/user.entity';
+import { MatchSource } from './match-source.enum';
+import { LeagueRole } from '../leagues/league-role.enum';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 
@@ -285,6 +287,7 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
+        source: MatchSource.RESERVATION,
         status: MatchResultStatus.PENDING_CONFIRM,
 
         reportedByUserId: userId,
@@ -448,6 +451,7 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
+        source: MatchSource.RESERVATION,
         status: MatchResultStatus.PENDING_CONFIRM,
 
         reportedByUserId: userId,
@@ -497,6 +501,142 @@ export class MatchesService {
     }
   }
 
+  // ------------------------
+  // report manual (no reservation)
+  // ------------------------
+
+  async reportManual(
+    userId: string,
+    leagueId: string,
+    dto: {
+      teamA1Id: string;
+      teamA2Id: string;
+      teamB1Id: string;
+      teamB2Id: string;
+      sets: Array<{ a: number; b: number }>;
+      playedAt?: string;
+    },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const leagueRepo = manager.getRepository(League);
+      const memberRepo = manager.getRepository(LeagueMember);
+      const chRepo = manager.getRepository(Challenge);
+      const matchRepo = manager.getRepository(MatchResult);
+
+      // 1. Validate league
+      const league = await leagueRepo.findOne({ where: { id: leagueId } });
+      if (!league) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'LEAGUE_NOT_FOUND',
+          message: 'League not found',
+        });
+      }
+      if (league.status !== LeagueStatus.ACTIVE) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_NOT_ACTIVE',
+          message: 'League is not active',
+        });
+      }
+
+      // 2. Caller must be a league member
+      const callerMember = await memberRepo.findOne({
+        where: { leagueId, userId },
+      });
+      if (!callerMember) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You are not a member of this league',
+        });
+      }
+
+      // 3. Prevent duplicate player selection
+      const playerIds = [dto.teamA1Id, dto.teamA2Id, dto.teamB1Id, dto.teamB2Id];
+      if (new Set(playerIds).size !== 4) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'DUPLICATE_PLAYERS',
+          message: 'All 4 players must be different',
+        });
+      }
+
+      // 4. All 4 participants must be league members
+      const memberCount = await memberRepo
+        .createQueryBuilder('m')
+        .where('m."leagueId" = :leagueId', { leagueId })
+        .andWhere('m."userId" IN (:...playerIds)', { playerIds })
+        .getCount();
+
+      if (memberCount !== 4) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_MEMBERS_MISSING',
+          message: 'All 4 match participants must be members of the league',
+        });
+      }
+
+      // 5. Validate sets
+      const { winnerTeam } = this.validateSets(dto.sets);
+
+      // 6. Auto-create challenge (no reservation)
+      const challenge = chRepo.create({
+        type: ChallengeType.DIRECT,
+        status: ChallengeStatus.READY,
+        teamA1Id: dto.teamA1Id,
+        teamA2Id: dto.teamA2Id,
+        teamB1Id: dto.teamB1Id,
+        teamB2Id: dto.teamB2Id,
+        reservationId: null,
+      });
+      await chRepo.save(challenge);
+
+      // 7. Create match result
+      const playedAt = dto.playedAt
+        ? DateTime.fromISO(dto.playedAt, { zone: TZ })
+        : DateTime.now().setZone(TZ);
+
+      if (!playedAt.isValid) throw new BadRequestException('Invalid playedAt');
+
+      const [s1, s2, s3] = dto.sets;
+
+      const match = matchRepo.create({
+        challengeId: challenge.id,
+        challenge,
+        leagueId,
+        playedAt: playedAt.toJSDate(),
+
+        teamASet1: s1.a,
+        teamBSet1: s1.b,
+        teamASet2: s2.a,
+        teamBSet2: s2.b,
+        teamASet3: s3 ? s3.a : null,
+        teamBSet3: s3 ? s3.b : null,
+
+        winnerTeam,
+        source: MatchSource.MANUAL,
+        status: MatchResultStatus.PENDING_CONFIRM,
+
+        reportedByUserId: userId,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        eloApplied: false,
+      });
+
+      const saved = await matchRepo.save(match);
+
+      // 8. Notify other participants (fire-and-forget)
+      this.notifyMatchReported(saved, playerIds, userId).catch((err) =>
+        this.logger.error(
+          `failed to send match-reported notifications: ${err.message}`,
+        ),
+      );
+
+      return saved;
+    });
+  }
+
   async getMyMatches(userId: string) {
     // Obtener challenges donde participo
     const challenges = await this.challengeRepo.find({
@@ -532,11 +672,20 @@ export class MatchesService {
       const repo = manager.getRepository(MatchResult);
       const chRepo = manager.getRepository(Challenge);
 
-      const match = await repo.findOne({ where: { id: matchId } });
+      // Lock match row to prevent double transitions
+      const match = await repo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.id = :id', { id: matchId })
+        .getOne();
+
       if (!match) throw new NotFoundException('Match result not found');
 
-      if (match.status === MatchResultStatus.CONFIRMED) {
-        // si ya estaba confirmado, igual asegurá ELO aplicado (idempotente)
+      // Idempotent: already CONFIRMED or RESOLVED → return ok
+      if (
+        match.status === MatchResultStatus.CONFIRMED ||
+        match.status === MatchResultStatus.RESOLVED
+      ) {
         await this.eloService.applyForMatchTx(manager, match.id);
         return repo.findOne({ where: { id: match.id } });
       }
@@ -549,19 +698,9 @@ export class MatchesService {
       });
       if (!challenge) throw new NotFoundException('Challenge not found');
 
-      const a1 = challenge.teamA1Id;
-      const a2 = challenge.teamA2Id;
-      const b1 = challenge.teamB1Id;
-      const b2 = challenge.teamB2Id;
+      const participants = this.getParticipantsOrThrow(challenge);
 
-      if (!a1 || !a2 || !b1 || !b2) {
-        throw new BadRequestException(
-          'Challenge does not have 4 players assigned (2v2). Ensure both teams are fully set.',
-        );
-      }
-
-      const all = [a1, a2, b1, b2];
-      if (!all.includes(userId))
+      if (!participants.all.includes(userId))
         throw new UnauthorizedException('Only match participants can confirm');
       if (match.reportedByUserId === userId)
         throw new BadRequestException(
@@ -574,13 +713,16 @@ export class MatchesService {
 
       await repo.save(match);
 
-      // ✅ aplica ELO dentro de la misma tx
       await this.eloService.applyForMatchTx(manager, match.id);
-
-      // Update league standings for any leagues this match affects
       await this.leagueStandingsService.recomputeForMatch(manager, match.id);
 
-      // ✅ devolvé el estado final (con eloApplied actualizado)
+      // Notify other participants (fire-and-forget)
+      this.notifyMatchConfirmed(match, participants.all, userId).catch((err) =>
+        this.logger.error(
+          `failed to send match-confirmed notifications: ${err.message}`,
+        ),
+      );
+
       return repo.findOne({ where: { id: match.id } });
     });
   }
@@ -661,6 +803,26 @@ export class MatchesService {
           code: 'MATCH_NOT_FOUND',
           message: 'Match result not found',
         });
+      }
+
+      // Idempotent: already disputed → return existing dispute
+      if (match.status === MatchResultStatus.DISPUTED) {
+        const openDispute = await disputeRepo.findOne({
+          where: { matchId, status: DisputeStatus.OPEN },
+        });
+        return {
+          dispute: openDispute
+            ? {
+                id: openDispute.id,
+                matchId: openDispute.matchId,
+                reasonCode: openDispute.reasonCode,
+                message: openDispute.message,
+                status: openDispute.status,
+                createdAt: openDispute.createdAt.toISOString(),
+              }
+            : null,
+          matchStatus: match.status,
+        };
       }
 
       if (match.status !== MatchResultStatus.CONFIRMED) {
@@ -847,8 +1009,150 @@ export class MatchesService {
   }
 
   // ------------------------
+  // resolve-confirm-as-is (league OWNER/ADMIN)
+  // ------------------------
+
+  async resolveConfirmAsIs(userId: string, matchId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const matchRepo = manager.getRepository(MatchResult);
+      const memberRepo = manager.getRepository(LeagueMember);
+      const disputeRepo = manager.getRepository(MatchDispute);
+      const auditRepo = manager.getRepository(MatchAuditLog);
+
+      // Lock match row
+      const match = await matchRepo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.id = :id', { id: matchId })
+        .getOne();
+
+      if (!match) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'MATCH_NOT_FOUND',
+          message: 'Match result not found',
+        });
+      }
+
+      if (!match.leagueId) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_NOT_LEAGUE',
+          message: 'This match is not associated with a league',
+        });
+      }
+
+      // Caller must be league OWNER or ADMIN
+      const callerMember = await memberRepo.findOne({
+        where: { leagueId: match.leagueId, userId },
+      });
+      if (
+        !callerMember ||
+        (callerMember.role !== LeagueRole.OWNER &&
+          callerMember.role !== LeagueRole.ADMIN)
+      ) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'Only league OWNER or ADMIN can resolve matches',
+        });
+      }
+
+      // Idempotent: already confirmed
+      if (match.status === MatchResultStatus.CONFIRMED) {
+        return { matchId: match.id, matchStatus: match.status };
+      }
+
+      // Must be DISPUTED or PENDING_CONFIRM
+      if (
+        match.status !== MatchResultStatus.DISPUTED &&
+        match.status !== MatchResultStatus.PENDING_CONFIRM
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_STATE',
+          message: `Cannot resolve match in status ${match.status}`,
+        });
+      }
+
+      // Close any open dispute
+      const openDispute = await disputeRepo.findOne({
+        where: { matchId, status: DisputeStatus.OPEN },
+      });
+      if (openDispute) {
+        openDispute.status = DisputeStatus.RESOLVED;
+        openDispute.resolvedAt = new Date();
+        await disputeRepo.save(openDispute);
+      }
+
+      // Transition to CONFIRMED (counts in standings)
+      match.status = MatchResultStatus.CONFIRMED;
+      match.confirmedByUserId = userId;
+      await matchRepo.save(match);
+
+      // Apply ELO + recompute standings
+      await this.eloService.applyForMatchTx(manager, match.id);
+      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+
+      // Audit log
+      const audit = auditRepo.create({
+        matchId,
+        actorUserId: userId,
+        action: MatchAuditAction.DISPUTE_RESOLVED,
+        payload: {
+          disputeId: openDispute?.id ?? null,
+          resolution: DisputeResolution.CONFIRM_AS_IS,
+        },
+      });
+      await auditRepo.save(audit);
+
+      // Notify participants (fire-and-forget)
+      this.notifyResolution(match, DisputeResolution.CONFIRM_AS_IS).catch(
+        (err) =>
+          this.logger.error(
+            `failed to send resolve notifications: ${err.message}`,
+          ),
+      );
+
+      return {
+        matchId: match.id,
+        matchStatus: match.status,
+        resolution: DisputeResolution.CONFIRM_AS_IS,
+      };
+    });
+  }
+
+  // ------------------------
   // notification helpers
   // ------------------------
+
+  private async notifyMatchConfirmed(
+    match: MatchResult,
+    playerIds: string[],
+    confirmerId: string,
+  ): Promise<void> {
+    const confirmer = await this.userRepo.findOne({
+      where: { id: confirmerId },
+      select: ['id', 'displayName'],
+    });
+    const confirmerName = confirmer?.displayName ?? 'A player';
+
+    const othersToNotify = playerIds.filter((id) => id !== confirmerId);
+    for (const uid of othersToNotify) {
+      await this.userNotifications.create({
+        userId: uid,
+        type: UserNotificationType.MATCH_CONFIRMED,
+        title: 'Match confirmed',
+        body: `${confirmerName} confirmed the match result.`,
+        data: {
+          matchId: match.id,
+          leagueId: match.leagueId,
+          confirmerDisplayName: confirmerName,
+          link: `/matches/${match.id}`,
+        },
+      });
+    }
+  }
 
   private async notifyDispute(
     match: MatchResult,
@@ -865,14 +1169,34 @@ export class MatchesService {
     const participants = this.getParticipantsOrThrow(challenge);
     const othersToNotify = participants.all.filter((id) => id !== raisedByUserId);
 
-    for (const uid of othersToNotify) {
+    // Collect league OWNER/ADMIN user IDs to also notify
+    const leagueAdminIds: string[] = [];
+    if (match.leagueId) {
+      const admins = await this.dataSource
+        .getRepository(LeagueMember)
+        .createQueryBuilder('m')
+        .where('m."leagueId" = :leagueId', { leagueId: match.leagueId })
+        .andWhere('m.role IN (:...roles)', {
+          roles: [LeagueRole.OWNER, LeagueRole.ADMIN],
+        })
+        .getMany();
+      for (const a of admins) {
+        if (!participants.all.includes(a.userId) && a.userId !== raisedByUserId) {
+          leagueAdminIds.push(a.userId);
+        }
+      }
+    }
+
+    const allToNotify = [...othersToNotify, ...leagueAdminIds];
+    for (const uid of allToNotify) {
       await this.userNotifications.create({
         userId: uid,
         type: UserNotificationType.MATCH_DISPUTED,
         title: 'Match disputed',
-        body: `${raiserName} raised a dispute on your match (${reasonCode}).`,
+        body: `${raiserName} raised a dispute on a match (${reasonCode}).`,
         data: {
           matchId: match.id,
+          leagueId: match.leagueId,
           raisedByDisplayName: raiserName,
           reasonCode,
           link: `/matches/${match.id}`,

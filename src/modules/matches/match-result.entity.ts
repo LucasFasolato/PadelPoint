@@ -12,6 +12,7 @@ import {
 import { Challenge } from '../challenges/challenge.entity';
 import { League } from '../leagues/league.entity';
 import { User } from '../users/user.entity';
+import { MatchSource } from './match-source.enum';
 
 export enum MatchResultStatus {
   PENDING_CONFIRM = 'pending_confirm',
@@ -98,6 +99,13 @@ export class MatchResult {
   // Optional admin notes / reason on rejection
   @Column({ type: 'text', nullable: true })
   rejectionReason!: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: MatchSource,
+    default: MatchSource.RESERVATION,
+  })
+  source!: MatchSource;
 
   @Column({ type: 'boolean', default: false })
   eloApplied!: boolean;
