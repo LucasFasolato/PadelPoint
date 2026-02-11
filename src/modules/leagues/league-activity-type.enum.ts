@@ -5,4 +5,8 @@ export enum LeagueActivityType {
   MATCH_RESOLVED = 'match_resolved',
   MEMBER_JOINED = 'member_joined',
   SETTINGS_UPDATED = 'settings_updated',
+  CHALLENGE_CREATED = 'challenge_created',
+  CHALLENGE_ACCEPTED = 'challenge_accepted',
+  CHALLENGE_DECLINED = 'challenge_declined',
+  CHALLENGE_EXPIRED = 'challenge_expired',
 }

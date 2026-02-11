@@ -1,0 +1,7 @@
+export enum LeagueChallengeStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+  EXPIRED = 'EXPIRED',
+  COMPLETED = 'COMPLETED',
+}
