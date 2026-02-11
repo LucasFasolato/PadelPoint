@@ -36,6 +36,8 @@ import { DisputeResolution } from './dto/resolve-dispute.dto';
 import { User } from '../users/user.entity';
 import { MatchSource } from './match-source.enum';
 import { LeagueRole } from '../leagues/league-role.enum';
+import { LeagueActivityService } from '../leagues/league-activity.service';
+import { LeagueActivityType } from '../leagues/league-activity-type.enum';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 
@@ -69,6 +71,7 @@ export class MatchesService {
     private readonly reservationRepo: Repository<Reservation>,
     private readonly eloService: EloService,
     private readonly leagueStandingsService: LeagueStandingsService,
+    private readonly leagueActivityService: LeagueActivityService,
     private readonly userNotifications: UserNotificationsService,
     config: ConfigService,
   ) {
@@ -469,6 +472,18 @@ export class MatchesService {
         ),
       );
 
+      // 10. League activity (fire-and-forget)
+      this.logLeagueActivity(
+        leagueId,
+        LeagueActivityType.MATCH_REPORTED,
+        userId,
+        saved.id,
+        {
+          participantIds: playerIds,
+          sets: dto.sets,
+        },
+      );
+
       return saved;
     });
   }
@@ -633,6 +648,18 @@ export class MatchesService {
         ),
       );
 
+      // 9. League activity (fire-and-forget)
+      this.logLeagueActivity(
+        leagueId,
+        LeagueActivityType.MATCH_REPORTED,
+        userId,
+        saved.id,
+        {
+          participantIds: playerIds,
+          sets: dto.sets,
+        },
+      );
+
       return saved;
     });
   }
@@ -721,6 +748,17 @@ export class MatchesService {
         this.logger.error(
           `failed to send match-confirmed notifications: ${err.message}`,
         ),
+      );
+
+      // League activity (fire-and-forget)
+      this.logLeagueActivity(
+        match.leagueId,
+        LeagueActivityType.MATCH_CONFIRMED,
+        userId,
+        match.id,
+        {
+          participantIds: participants.all,
+        },
       );
 
       return repo.findOne({ where: { id: match.id } });
@@ -906,6 +944,17 @@ export class MatchesService {
           this.logger.error(`failed to send dispute notifications: ${err.message}`),
       );
 
+      // League activity (fire-and-forget)
+      this.logLeagueActivity(
+        match.leagueId,
+        LeagueActivityType.MATCH_DISPUTED,
+        userId,
+        match.id,
+        {
+          participantIds: participants.all,
+        },
+      );
+
       return {
         dispute: {
           id: dispute.id,
@@ -993,6 +1042,14 @@ export class MatchesService {
       // Notify participants (fire-and-forget)
       this.notifyResolution(match, dto.resolution).catch((err) =>
         this.logger.error(`failed to send resolve notifications: ${err.message}`),
+      );
+
+      // League activity (fire-and-forget)
+      this.logLeagueActivity(
+        match.leagueId,
+        LeagueActivityType.MATCH_RESOLVED,
+        adminUserId,
+        match.id,
       );
 
       return {
@@ -1112,6 +1169,14 @@ export class MatchesService {
           this.logger.error(
             `failed to send resolve notifications: ${err.message}`,
           ),
+      );
+
+      // League activity (fire-and-forget)
+      this.logLeagueActivity(
+        match.leagueId,
+        LeagueActivityType.MATCH_RESOLVED,
+        userId,
+        match.id,
       );
 
       return {
@@ -1355,5 +1420,51 @@ export class MatchesService {
         participants,
       };
     });
+  }
+
+  private logLeagueActivity(
+    leagueId: string | null | undefined,
+    type: LeagueActivityType,
+    actorId: string | null | undefined,
+    matchId: string,
+    details?: {
+      participantIds?: string[];
+      sets?: Array<{ a: number; b: number }>;
+    },
+  ): void {
+    if (!leagueId) return;
+
+    const payload: Record<string, unknown> = {
+      leagueId,
+      matchId,
+    };
+
+    if (details?.participantIds?.length) {
+      payload.participantIds = [...new Set(details.participantIds)];
+    }
+
+    if (details?.sets?.length) {
+      payload.scoreSummary = details.sets.map((s) => `${s.a}-${s.b}`).join(' ');
+    }
+
+    try {
+      void this.leagueActivityService
+        .create({
+          leagueId,
+          type,
+          actorId: actorId ?? null,
+          entityId: matchId,
+          payload,
+        })
+        .catch((err: unknown) => {
+          const message =
+            err instanceof Error ? err.message : 'unknown league activity error';
+          this.logger.warn(`failed to log league activity: ${message}`);
+        });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'unknown league activity error';
+      this.logger.warn(`failed to log league activity: ${message}`);
+    }
   }
 }

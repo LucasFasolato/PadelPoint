@@ -25,6 +25,8 @@ import { User } from '../users/user.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { LeagueStandingsService } from './league-standings.service';
+import { LeagueActivityService } from './league-activity.service';
+import { LeagueActivityType } from './league-activity-type.enum';
 
 const INVITE_EXPIRY_DAYS = 7;
 
@@ -50,6 +52,7 @@ export class LeaguesService {
     private readonly userRepo: Repository<User>,
     private readonly userNotifications: UserNotificationsService,
     private readonly leagueStandingsService: LeagueStandingsService,
+    private readonly leagueActivityService: LeagueActivityService,
   ) {}
 
   // ── create ───────────────────────────────────────────────────────
@@ -372,6 +375,12 @@ export class LeaguesService {
     this.sendInviteAcceptedNotification(invite.league, saved!).catch((err) => {
       this.logger.error(`failed to send invite-accepted notification: ${err.message}`);
     });
+    this.logLeagueActivity(
+      invite.leagueId,
+      LeagueActivityType.MEMBER_JOINED,
+      userId,
+      saved!.userId,
+    );
 
     return { member: this.toMemberView(saved!), alreadyMember: false };
   }
@@ -459,12 +468,41 @@ export class LeaguesService {
       tieBreakers: dto.tieBreakers ?? current.tieBreakers,
       includeSources: dto.includeSources ?? current.includeSources,
     };
+    const updatedFields: string[] = [];
+    if (dto.winPoints !== undefined && dto.winPoints !== current.winPoints) {
+      updatedFields.push('winPoints');
+    }
+    if (dto.drawPoints !== undefined && dto.drawPoints !== current.drawPoints) {
+      updatedFields.push('drawPoints');
+    }
+    if (dto.lossPoints !== undefined && dto.lossPoints !== current.lossPoints) {
+      updatedFields.push('lossPoints');
+    }
+    if (
+      dto.tieBreakers !== undefined &&
+      JSON.stringify(dto.tieBreakers) !== JSON.stringify(current.tieBreakers)
+    ) {
+      updatedFields.push('tieBreakers');
+    }
+    if (
+      dto.includeSources !== undefined &&
+      JSON.stringify(dto.includeSources) !== JSON.stringify(current.includeSources)
+    ) {
+      updatedFields.push('includeSources');
+    }
 
     // Save settings + recompute standings in a single transaction
     await this.dataSource.transaction(async (manager) => {
       await manager.save(league);
       await this.leagueStandingsService.recomputeLeague(manager, leagueId);
     });
+    this.logLeagueActivity(
+      leagueId,
+      LeagueActivityType.SETTINGS_UPDATED,
+      userId,
+      leagueId,
+      { updatedFields },
+    );
 
     return league.settings;
   }
@@ -626,6 +664,34 @@ export class LeaguesService {
   }
 
   // ── views ────────────────────────────────────────────────────────
+
+  private logLeagueActivity(
+    leagueId: string,
+    type: LeagueActivityType,
+    actorId: string | null | undefined,
+    entityId?: string | null,
+    payload?: Record<string, unknown> | null,
+  ): void {
+    try {
+      void this.leagueActivityService
+        .create({
+          leagueId,
+          type,
+          actorId: actorId ?? null,
+          entityId: entityId ?? null,
+          payload: payload ?? null,
+        })
+        .catch((err: unknown) => {
+          const message =
+            err instanceof Error ? err.message : 'unknown league activity error';
+          this.logger.warn(`failed to log league activity: ${message}`);
+        });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'unknown league activity error';
+      this.logger.warn(`failed to log league activity: ${message}`);
+    }
+  }
 
   private toLeagueView(league: League, members: LeagueMember[]) {
     return {

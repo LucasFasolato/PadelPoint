@@ -3,9 +3,12 @@ import {
   Controller,
   Get,
   Header,
+  NotFoundException,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -13,10 +16,13 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
+import { LeagueActivityService } from './league-activity.service';
 import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
 import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { LeagueActivityQueryDto } from './dto/league-activity-query.dto';
+import { LeagueStandingsHistoryQueryDto } from './dto/league-standings-history-query.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -26,6 +32,7 @@ export class LeaguesController {
   constructor(
     private readonly leaguesService: LeaguesService,
     private readonly standingsService: LeagueStandingsService,
+    private readonly activityService: LeagueActivityService,
   ) {}
 
   @Post()
@@ -98,6 +105,68 @@ export class LeaguesController {
       memberId,
       dto,
     );
+  }
+
+  @Get(':id/activity')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  async getActivity(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query() query: LeagueActivityQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    await this.leaguesService.getLeagueDetail(user.userId, id);
+    return this.activityService.list(id, {
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+  }
+
+  @Get(':id/standings')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  async getStandings(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    await this.leaguesService.getLeagueDetail(user.userId, id);
+    return this.standingsService.getStandingsWithMovement(id);
+  }
+
+  @Get(':id/standings/history')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  async getStandingsHistory(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query() query: LeagueStandingsHistoryQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    await this.leaguesService.getLeagueDetail(user.userId, id);
+    return this.standingsService.getStandingsHistory(id, query.limit);
+  }
+
+  @Get(':id/standings/history/:version')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  async getStandingsHistoryVersion(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('version', ParseIntPipe) version: number,
+  ) {
+    const user = req.user as AuthUser;
+    await this.leaguesService.getLeagueDetail(user.userId, id);
+    const snapshot = await this.standingsService.getStandingsSnapshotByVersion(
+      id,
+      version,
+    );
+    if (!snapshot) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'STANDINGS_SNAPSHOT_NOT_FOUND',
+        message: 'Standings snapshot not found',
+      });
+    }
+    return snapshot;
   }
 
   @Post(':id/invites')
