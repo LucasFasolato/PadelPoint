@@ -94,9 +94,10 @@ export class LeaguesService {
     if (mode === LeagueMode.OPEN) {
       status = LeagueStatus.ACTIVE;
     } else {
-      status = startDate && startDate <= today
-        ? LeagueStatus.ACTIVE
-        : LeagueStatus.DRAFT;
+      status =
+        startDate && startDate <= today
+          ? LeagueStatus.ACTIVE
+          : LeagueStatus.DRAFT;
     }
 
     const league = this.leagueRepo.create({
@@ -210,6 +211,7 @@ export class LeaguesService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
 
+    // Invites by userId (ya existente, sin cambios)
     for (const uid of dto.userIds ?? []) {
       if (existingSet.has(uid)) continue;
       invites.push(
@@ -224,12 +226,28 @@ export class LeaguesService {
       );
     }
 
+    // Invites by email — AHORA resolvemos el userId si el email existe
     for (const email of dto.emails ?? []) {
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // Buscar si el email corresponde a un usuario existente
+      const existingUser = await this.userRepo.findOne({
+        where: { email: normalizedEmail },
+        select: ['id'],
+      });
+
+      const resolvedUserId = existingUser?.id ?? null;
+
+      // Si el usuario ya es miembro, skip
+      if (resolvedUserId && existingSet.has(resolvedUserId)) {
+        continue;
+      }
+
       invites.push(
         this.inviteRepo.create({
           leagueId,
-          invitedUserId: null,
-          invitedEmail: email,
+          invitedUserId: resolvedUserId, // ✅ Ahora se guarda el userId si existe
+          invitedEmail: normalizedEmail,
           token: crypto.randomBytes(32).toString('hex'),
           status: InviteStatus.PENDING,
           expiresAt,
@@ -373,7 +391,9 @@ export class LeaguesService {
 
     // Notify league creator (fire-and-forget, non-blocking)
     this.sendInviteAcceptedNotification(invite.league, saved!).catch((err) => {
-      this.logger.error(`failed to send invite-accepted notification: ${err.message}`);
+      this.logger.error(
+        `failed to send invite-accepted notification: ${err.message}`,
+      );
     });
     this.logLeagueActivity(
       invite.leagueId,
@@ -422,7 +442,9 @@ export class LeaguesService {
 
     // Notify league creator (fire-and-forget)
     this.sendInviteDeclinedNotification(invite, userId).catch((err) => {
-      this.logger.error(`failed to send invite-declined notification: ${err.message}`);
+      this.logger.error(
+        `failed to send invite-declined notification: ${err.message}`,
+      );
     });
 
     return { ok: true };
@@ -486,7 +508,8 @@ export class LeaguesService {
     }
     if (
       dto.includeSources !== undefined &&
-      JSON.stringify(dto.includeSources) !== JSON.stringify(current.includeSources)
+      JSON.stringify(dto.includeSources) !==
+        JSON.stringify(current.includeSources)
     ) {
       updatedFields.push('includeSources');
     }
@@ -529,7 +552,10 @@ export class LeaguesService {
     }
 
     // Prevent demoting the last OWNER
-    if (target.role === LeagueRole.OWNER && (dto.role as string) !== LeagueRole.OWNER) {
+    if (
+      target.role === LeagueRole.OWNER &&
+      (dto.role as string) !== LeagueRole.OWNER
+    ) {
       const ownerCount = await this.memberRepo.count({
         where: { leagueId, role: LeagueRole.OWNER },
       });
@@ -683,7 +709,9 @@ export class LeaguesService {
         })
         .catch((err: unknown) => {
           const message =
-            err instanceof Error ? err.message : 'unknown league activity error';
+            err instanceof Error
+              ? err.message
+              : 'unknown league activity error';
           this.logger.warn(`failed to log league activity: ${message}`);
         });
     } catch (err: unknown) {
