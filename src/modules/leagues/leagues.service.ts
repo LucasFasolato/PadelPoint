@@ -198,7 +198,7 @@ export class LeaguesService {
       });
     }
 
-    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER);
 
     // Get existing member userIds to skip
     const existingMembers = await this.memberRepo.find({
@@ -480,7 +480,7 @@ export class LeaguesService {
       });
     }
 
-    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER);
 
     const current = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
     league.settings = {
