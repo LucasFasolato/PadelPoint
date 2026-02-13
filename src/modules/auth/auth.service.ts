@@ -69,11 +69,18 @@ export class AuthService {
 
   private issueToken(userId: string, email: string, role: string) {
     if (!process.env.JWT_SECRET) {
-      // optional: remove once stable
       throw new Error('JWT_SECRET not loaded');
     }
     const payload = { sub: userId, email, role };
     const accessToken = this.jwt.sign(payload);
-    return { accessToken };
+
+    return {
+      accessToken,
+      user: {
+        userId,
+        email,
+        role,
+      },
+    };
   }
 }
