@@ -3,11 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
@@ -31,6 +27,9 @@ const FAKE_OUTSIDER = {
   email: 'outsider@test.com',
   role: 'player',
 };
+
+const LEAGUE_ID = 'd4444444-4444-4444-8444-444444444444';
+const INVITE_ID = 'e5555555-5555-4555-8555-555555555555';
 
 // Simulates different users by reading x-test-user header
 function fakeGuard() {
@@ -59,7 +58,7 @@ describe('Leagues (e2e)', () => {
   let activityService: Partial<Record<keyof LeagueActivityService, jest.Mock>>;
 
   const leagueView = {
-    id: 'league-1',
+    id: LEAGUE_ID,
     name: 'Summer League',
     mode: 'scheduled',
     creatorId: FAKE_CREATOR.userId,
@@ -143,7 +142,7 @@ describe('Leagues (e2e)', () => {
         })
         .expect(201);
 
-      expect(res.body.id).toBe('league-1');
+      expect(res.body.id).toBe(LEAGUE_ID);
       expect(res.body.members).toHaveLength(1);
       expect(res.body.members[0].userId).toBe(FAKE_CREATOR.userId);
       expect(leaguesService.createLeague).toHaveBeenCalledWith(
@@ -232,7 +231,7 @@ describe('Leagues (e2e)', () => {
       leaguesService.createInvites.mockResolvedValue([inviteView]);
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/league-1/invites')
+        .post(`/leagues/${LEAGUE_ID}/invites`)
         .send({ userIds: [FAKE_INVITEE.userId] });
 
       if (res.status !== 201) {
@@ -254,7 +253,7 @@ describe('Leagues (e2e)', () => {
         status: 'pending',
         expiresAt: '2025-01-08T12:00:00.000Z',
         league: {
-          id: 'league-1',
+          id: LEAGUE_ID,
           name: 'Summer League',
           status: 'upcoming',
           startDate: '2025-06-01',
@@ -290,7 +289,7 @@ describe('Leagues (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/invite-1/accept')
+        .post(`/leagues/invites/${INVITE_ID}/accept`)
         .set('x-test-user', 'invitee')
         .expect(200);
 
@@ -298,7 +297,7 @@ describe('Leagues (e2e)', () => {
       expect(res.body.alreadyMember).toBe(false);
       expect(leaguesService.acceptInvite).toHaveBeenCalledWith(
         FAKE_INVITEE.userId,
-        'invite-1',
+        INVITE_ID,
       );
     });
 
@@ -318,7 +317,7 @@ describe('Leagues (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/invite-1/accept')
+        .post(`/leagues/invites/${INVITE_ID}/accept`)
         .set('x-test-user', 'invitee')
         .expect(200);
 
@@ -333,14 +332,14 @@ describe('Leagues (e2e)', () => {
       leaguesService.declineInvite.mockResolvedValue({ ok: true });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/invite-1/decline')
+        .post(`/leagues/invites/${INVITE_ID}/decline`)
         .set('x-test-user', 'invitee')
         .expect(200);
 
       expect(res.body.ok).toBe(true);
       expect(leaguesService.declineInvite).toHaveBeenCalledWith(
         FAKE_INVITEE.userId,
-        'invite-1',
+        INVITE_ID,
       );
     });
 
@@ -348,28 +347,20 @@ describe('Leagues (e2e)', () => {
       leaguesService.declineInvite.mockResolvedValue({ ok: true });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/invite-1/decline')
+        .post(`/leagues/invites/${INVITE_ID}/decline`)
         .set('x-test-user', 'invitee')
         .expect(200);
 
       expect(res.body.ok).toBe(true);
     });
 
-    it('should return 404 for invalid invite id', async () => {
-      leaguesService.declineInvite.mockRejectedValue(
-        new NotFoundException({
-          statusCode: 404,
-          code: 'INVITE_INVALID',
-          message: 'Invite not found',
-        }),
-      );
-
+    it('should return 400 for invalid invite id param', async () => {
       const res = await request(app.getHttpServer())
         .post('/leagues/invites/bad-invite-id/decline')
         .set('x-test-user', 'invitee')
-        .expect(404);
+        .expect(400);
 
-      expect(res.body.code).toBe('INVITE_INVALID');
+      expect(res.body.code).toBe('INVALID_UUID_PARAM');
     });
   });
 
@@ -396,7 +387,7 @@ describe('Leagues (e2e)', () => {
       leaguesService.getLeagueDetail.mockResolvedValue(detailWithTwoMembers);
 
       const res = await request(app.getHttpServer())
-        .get('/leagues/league-1')
+        .get(`/leagues/${LEAGUE_ID}`)
         .expect(200);
 
       expect(res.body.members).toHaveLength(2);
@@ -413,11 +404,18 @@ describe('Leagues (e2e)', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .get('/leagues/league-1')
+        .get(`/leagues/${LEAGUE_ID}`)
         .set('x-test-user', 'outsider')
         .expect(403);
 
       expect(res.body.code).toBe('LEAGUE_FORBIDDEN');
+    });
+    it('should return 400 for invalid league id param', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/leagues/undefined')
+        .expect(400);
+
+      expect(res.body.code).toBe('INVALID_UUID_PARAM');
     });
   });
 
@@ -427,7 +425,7 @@ describe('Leagues (e2e)', () => {
     it('should list leagues for authenticated user', async () => {
       leaguesService.listMyLeagues.mockResolvedValue([
         {
-          id: 'league-1',
+          id: LEAGUE_ID,
           name: 'Summer League',
           status: 'upcoming',
           startDate: '2025-06-01',
@@ -465,7 +463,7 @@ describe('Leagues (e2e)', () => {
       leaguesService.getLeagueDetail.mockResolvedValue(leagueView);
 
       const res = await request(app.getHttpServer())
-        .get('/leagues/league-1')
+        .get(`/leagues/${LEAGUE_ID}`)
         .expect(200);
 
       expect(res.headers['cache-control']).toContain('no-store');

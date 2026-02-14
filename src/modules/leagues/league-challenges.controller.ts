@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LeagueChallengesService } from './league-challenges.service';
 import { CreateLeagueChallengeDto } from './dto/create-league-challenge.dto';
 import { ListLeagueChallengesQueryDto } from './dto/list-league-challenges-query.dto';
+import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -24,7 +25,7 @@ export class LeagueChallengesController {
   @Post()
   create(
     @Req() req: Request,
-    @Param('leagueId') leagueId: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
     @Body() dto: CreateLeagueChallengeDto,
   ) {
     const user = req.user as AuthUser;
@@ -34,7 +35,7 @@ export class LeagueChallengesController {
   @Get()
   list(
     @Req() req: Request,
-    @Param('leagueId') leagueId: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
     @Query() query: ListLeagueChallengesQueryDto,
   ) {
     const user = req.user as AuthUser;

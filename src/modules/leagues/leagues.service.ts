@@ -263,7 +263,10 @@ export class LeaguesService {
 
     // Fire-and-forget: notify each invited user
     this.sendInviteReceivedNotifications(saved, league, userId).catch((err) => {
-      this.logger.error(`failed to send invite notifications: ${err.message}`);
+      const message = err instanceof Error ? err.message : 'unknown';
+      this.logger.error(
+        `failed to send invite notifications: leagueId=${league.id} inviterId=${userId} error=${message}`,
+      );
     });
 
     return saved.map((i) => this.toInviteView(i));
@@ -739,23 +742,30 @@ export class LeaguesService {
     for (const invite of invites) {
       if (!invite.invitedUserId) continue; // email-only invites — no in-app user to notify
 
-      await this.userNotifications.create({
-        userId: invite.invitedUserId,
-        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
-        title: `You've been invited to ${league.name}`,
-        body: inviterName
-          ? `${inviterName} invited you to join their league.`
-          : 'You have been invited to join a league.',
-        data: {
-          inviteId: invite.id,
-          leagueId: league.id,
-          leagueName: league.name,
-          inviterDisplayName: inviterName,
-          startDate: league.startDate,
-          endDate: league.endDate,
-          link: `/leagues/invites/${invite.id}`,
-        },
-      });
+      try {
+        await this.userNotifications.create({
+          userId: invite.invitedUserId,
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          title: `You've been invited to ${league.name}`,
+          body: inviterName
+            ? `${inviterName} invited you to join their league.`
+            : 'You have been invited to join a league.',
+          data: {
+            inviteId: invite.id,
+            leagueId: league.id,
+            leagueName: league.name,
+            inviterDisplayName: inviterName,
+            startDate: league.startDate,
+            endDate: league.endDate,
+            link: `/leagues/invites/${invite.id}`,
+          },
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'unknown';
+        this.logger.error(
+          `failed to persist invite notification: leagueId=${league.id} inviterId=${inviterUserId} invitedUserId=${invite.invitedUserId} inviteId=${invite.id} error=${message}`,
+        );
+      }
     }
   }
 

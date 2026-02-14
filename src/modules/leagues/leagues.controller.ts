@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';
@@ -58,14 +59,20 @@ export class LeaguesController {
 
   @Post('invites/:inviteId/accept')
   @HttpCode(200)
-  acceptInvite(@Req() req: Request, @Param('inviteId') inviteId: string) {
+  acceptInvite(
+    @Req() req: Request,
+    @Param('inviteId', new ParseRequiredUuidPipe('inviteId')) inviteId: string,
+  ) {
     const user = req.user as AuthUser;
     return this.leaguesService.acceptInvite(user.userId, inviteId);
   }
 
   @Post('invites/:inviteId/decline')
   @HttpCode(200)
-  declineInvite(@Req() req: Request, @Param('inviteId') inviteId: string) {
+  declineInvite(
+    @Req() req: Request,
+    @Param('inviteId', new ParseRequiredUuidPipe('inviteId')) inviteId: string,
+  ) {
     const user = req.user as AuthUser;
     return this.leaguesService.declineInvite(user.userId, inviteId);
   }
@@ -73,13 +80,19 @@ export class LeaguesController {
   @Get(':id')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
-  detail(@Req() req: Request, @Param('id') id: string) {
+  detail(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
     const user = req.user as AuthUser;
     return this.leaguesService.getLeagueDetail(user.userId, id);
   }
 
   @Get(':id/settings')
-  getSettings(@Req() req: Request, @Param('id') id: string) {
+  getSettings(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
     const user = req.user as AuthUser;
     return this.leaguesService.getLeagueSettings(user.userId, id);
   }
@@ -87,7 +100,7 @@ export class LeaguesController {
   @Patch(':id/settings')
   updateSettings(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Body() dto: UpdateLeagueSettingsDto,
   ) {
     const user = req.user as AuthUser;
@@ -97,8 +110,8 @@ export class LeaguesController {
   @Patch(':id/members/:memberId/role')
   updateMemberRole(
     @Req() req: Request,
-    @Param('id') id: string,
-    @Param('memberId') memberId: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('memberId', new ParseRequiredUuidPipe('memberId')) memberId: string,
     @Body() dto: UpdateMemberRoleDto,
   ) {
     const user = req.user as AuthUser;
@@ -110,7 +123,7 @@ export class LeaguesController {
   @Header('Pragma', 'no-cache')
   async getActivity(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Query() query: LeagueActivityQueryDto,
   ) {
     const user = req.user as AuthUser;
@@ -124,7 +137,10 @@ export class LeaguesController {
   @Get(':id/standings')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
-  async getStandings(@Req() req: Request, @Param('id') id: string) {
+  async getStandings(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
     const user = req.user as AuthUser;
     await this.leaguesService.getLeagueDetail(user.userId, id);
     return this.standingsService.getStandingsWithMovement(id);
@@ -135,7 +151,7 @@ export class LeaguesController {
   @Header('Pragma', 'no-cache')
   async getStandingsHistory(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Query() query: LeagueStandingsHistoryQueryDto,
   ) {
     const user = req.user as AuthUser;
@@ -148,7 +164,7 @@ export class LeaguesController {
   @Header('Pragma', 'no-cache')
   async getStandingsHistoryVersion(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Param('version', ParseIntPipe) version: number,
   ) {
     const user = req.user as AuthUser;
@@ -170,7 +186,7 @@ export class LeaguesController {
   @Post(':id/invites')
   invite(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Body() dto: CreateInvitesDto,
   ) {
     const user = req.user as AuthUser;
@@ -178,7 +194,10 @@ export class LeaguesController {
   }
 
   @Post(':id/recompute')
-  async recompute(@Req() req: Request, @Param('id') id: string) {
+  async recompute(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
     const user = req.user as AuthUser;
     // Verify membership first
     await this.leaguesService.getLeagueDetail(user.userId, id);

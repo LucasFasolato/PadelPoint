@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MatchesService } from './matches.service';
 import { ReportFromReservationDto } from './dto/report-from-reservation.dto';
 import { ReportManualDto } from './dto/report-manual.dto';
+import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -26,7 +27,7 @@ export class LeagueMatchesController {
   @Header('Pragma', 'no-cache')
   getEligibleReservations(
     @Req() req: Request,
-    @Param('leagueId') leagueId: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
   ) {
     const user = req.user as AuthUser;
     return this.matchesService.getEligibleReservations(user.userId, leagueId);
@@ -35,7 +36,7 @@ export class LeagueMatchesController {
   @Post(':leagueId/report-from-reservation')
   reportFromReservation(
     @Req() req: Request,
-    @Param('leagueId') leagueId: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
     @Body() dto: ReportFromReservationDto,
   ) {
     const user = req.user as AuthUser;
@@ -49,7 +50,7 @@ export class LeagueMatchesController {
   @Post(':leagueId/report-manual')
   reportManual(
     @Req() req: Request,
-    @Param('leagueId') leagueId: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
     @Body() dto: ReportManualDto,
   ) {
     const user = req.user as AuthUser;
