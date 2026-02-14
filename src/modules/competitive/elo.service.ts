@@ -15,6 +15,9 @@ import {
 } from '../matches/match-result.entity';
 import { Challenge } from '../challenges/challenge.entity';
 
+const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
+  'REL_6a6e2e2804aaf5d2fa7d83f8fa';
+
 @Injectable()
 export class EloService {
   constructor(
@@ -78,7 +81,18 @@ export class EloService {
       draws: 0,
     } as CompetitiveProfile);
 
-    return repo.save(p);
+    try {
+      return await repo.save(p);
+    } catch (err: any) {
+      const isDuplicate =
+        String(err?.code) === '23505' &&
+        String(err?.constraint) === COMPETITIVE_PROFILE_USER_REL_CONSTRAINT;
+      if (!isDuplicate) throw err;
+
+      const existing = await repo.findOne({ where: { userId } });
+      if (!existing) throw err;
+      return existing;
+    }
   }
 
   /**

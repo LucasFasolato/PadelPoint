@@ -111,6 +111,30 @@ describe('CompetitiveService', () => {
       expect(result.userId).toBe(FAKE_USER_ID);
       expect(result.onboardingComplete).toBe(false);
     });
+
+    it('should handle duplicate profile create idempotently', async () => {
+      const user = {
+        id: FAKE_USER_ID,
+        email: 'a@b.com',
+        displayName: 'Test',
+      };
+      const existing = fakeProfile({ user: user as any });
+
+      profileRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      usersService.findById.mockResolvedValue(user);
+      profileRepo.create.mockReturnValue(existing);
+      profileRepo.save.mockRejectedValue({
+        code: '23505',
+        constraint: 'REL_6a6e2e2804aaf5d2fa7d83f8fa',
+      });
+
+      const result = await service.getOrCreateProfile(FAKE_USER_ID);
+
+      expect(result.userId).toBe(FAKE_USER_ID);
+      expect(result.email).toBe('a@b.com');
+    });
   });
 
   // ── upsertOnboarding ────────────────────────────────────────────

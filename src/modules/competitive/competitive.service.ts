@@ -16,6 +16,9 @@ import {
 } from './competitive.constants';
 import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
 
+const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
+  'REL_6a6e2e2804aaf5d2fa7d83f8fa';
+
 @Injectable()
 export class CompetitiveService {
   constructor(
@@ -27,28 +30,7 @@ export class CompetitiveService {
   ) {}
 
   async getOrCreateProfile(userId: string) {
-    const existing = await this.profileRepo.findOne({
-      where: { userId },
-      relations: ['user'],
-    });
-    if (existing) return this.toProfileView(existing);
-
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-
-    const created = this.profileRepo.create({
-      userId: user.id,
-      user,
-      elo: DEFAULT_ELO,
-      initialCategory: null,
-      categoryLocked: false,
-      matchesPlayed: 0,
-      wins: 0,
-      losses: 0,
-      draws: 0,
-    });
-
-    const saved = await this.profileRepo.save(created);
+    const saved = await this.getOrCreateProfileEntity(userId);
     return this.toProfileView(saved);
   }
 
@@ -139,7 +121,7 @@ export class CompetitiveService {
 
   // INTERNAL helper for EloService
   async getOrCreateProfileEntity(userId: string) {
-    const existing = await this.profileRepo.findOne({
+    let existing = await this.profileRepo.findOne({
       where: { userId },
       relations: ['user'],
     });
@@ -160,7 +142,25 @@ export class CompetitiveService {
       draws: 0,
     });
 
-    return this.profileRepo.save(created);
+    try {
+      return await this.profileRepo.save(created);
+    } catch (err: any) {
+      const isDuplicate =
+        String(err?.code) === '23505' &&
+        String(err?.constraint) === COMPETITIVE_PROFILE_USER_REL_CONSTRAINT;
+      if (!isDuplicate) throw err;
+    }
+
+    existing = await this.profileRepo.findOne({
+      where: { userId },
+      relations: ['user'],
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Competitive profile not found');
+    }
+
+    return existing;
   }
 
   async getOnboarding(userId: string) {
