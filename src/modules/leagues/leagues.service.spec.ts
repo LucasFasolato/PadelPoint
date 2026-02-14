@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -91,6 +92,12 @@ describe('LeaguesService', () => {
   let leagueStandingsService: { recomputeLeague: jest.Mock };
   let leagueActivityService: { create: jest.Mock; list: jest.Mock };
   let dataSource: { transaction: jest.Mock; manager: any };
+  let inviteLockQb: {
+    setLock: jest.Mock;
+    leftJoinAndSelect: jest.Mock;
+    where: jest.Mock;
+    getOne: jest.Mock;
+  };
 
   beforeEach(async () => {
     leagueRepo = createMockRepo<League>();
@@ -120,7 +127,7 @@ describe('LeaguesService', () => {
     };
 
     let lockedInviteId: string | null = null;
-    const inviteLockQb = {
+    inviteLockQb = {
       setLock: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockImplementation((_sql: string, params: any) => {
@@ -146,6 +153,10 @@ describe('LeaguesService', () => {
               return {
                 createQueryBuilder: jest.fn().mockReturnValue(inviteLockQb),
                 save: inviteRepo.save,
+              };
+            case 'League':
+              return {
+                findOne: leagueRepo.findOne,
               };
             case 'LeagueMember':
               return {
@@ -183,6 +194,7 @@ describe('LeaguesService', () => {
       displayName: 'Creator Player',
     });
     userRepo.find.mockResolvedValue([]);
+    leagueRepo.findOne.mockResolvedValue(fakeLeague());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -353,6 +365,7 @@ describe('LeaguesService', () => {
     it('should accept a valid invite and create a member', async () => {
       const invite = fakeInvite();
       inviteRepo.findOne.mockResolvedValue(invite);
+      leagueRepo.findOne.mockResolvedValue(fakeLeague({ id: invite.leagueId }));
 
       const member = fakeMember({ userId: FAKE_USER_ID_2 });
       memberRepo.create.mockReturnValue(member);
@@ -365,11 +378,13 @@ describe('LeaguesService', () => {
       expect(result.member.userId).toBe(FAKE_USER_ID_2);
       expect(result.member.displayName).toBe('Test Player');
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(inviteLockQb.leftJoinAndSelect).not.toHaveBeenCalled();
     });
 
     it('should be idempotent — accepting again returns existing member', async () => {
       const invite = fakeInvite({ status: InviteStatus.ACCEPTED });
       inviteRepo.findOne.mockResolvedValue(invite);
+      leagueRepo.findOne.mockResolvedValue(fakeLeague({ id: invite.leagueId }));
 
       const existingMember = fakeMember({ userId: FAKE_USER_ID_2 });
       memberRepo.findOne.mockResolvedValue(existingMember);
@@ -386,6 +401,7 @@ describe('LeaguesService', () => {
       });
       inviteRepo.findOne.mockResolvedValue(invite);
       inviteRepo.save.mockResolvedValue(invite);
+      leagueRepo.findOne.mockResolvedValue(fakeLeague({ id: invite.leagueId }));
 
       try {
         await service.acceptInvite(FAKE_USER_ID_2, 'invite-1');
@@ -408,15 +424,17 @@ describe('LeaguesService', () => {
       }
     });
 
-    it('should throw INVITE_ALREADY_USED for declined invite', async () => {
+    it('should throw INVITE_ALREADY_USED with 409 for declined invite', async () => {
       const invite = fakeInvite({ status: InviteStatus.DECLINED });
       inviteRepo.findOne.mockResolvedValue(invite);
+      leagueRepo.findOne.mockResolvedValue(fakeLeague({ id: invite.leagueId }));
 
       try {
         await service.acceptInvite(FAKE_USER_ID_2, 'invite-1');
         fail('should have thrown');
       } catch (e: any) {
-        expect(e).toBeInstanceOf(BadRequestException);
+        expect(e).toBeInstanceOf(ConflictException);
+        expect(e.response.statusCode).toBe(409);
         expect(e.response.code).toBe('INVITE_ALREADY_USED');
       }
     });
@@ -1129,21 +1147,18 @@ describe('LeaguesService', () => {
   // -- acceptInvite – race condition handling ---------------------
 
   describe('acceptInvite – race condition', () => {
-    it('should handle duplicate key error gracefully', async () => {
+    it('should not 500 when member insert hits duplicate key', async () => {
       const invite = fakeInvite();
       inviteRepo.findOne.mockResolvedValue(invite);
 
       const member = fakeMember({ userId: FAKE_USER_ID_2 });
       memberRepo.create.mockReturnValue(member);
+      memberRepo.save.mockRejectedValueOnce({ code: '23505' });
       memberRepo.findOne.mockResolvedValue(member);
-
-      const duplicateError = new Error('duplicate key') as any;
-      duplicateError.code = '23505';
-      dataSource.transaction.mockRejectedValueOnce(duplicateError);
 
       const result = await service.acceptInvite(FAKE_USER_ID_2, 'invite-1');
 
-      expect(result.alreadyMember).toBe(true);
+      expect(result.alreadyMember).toBe(false);
       expect(result.member.userId).toBe(FAKE_USER_ID_2);
     });
   });
