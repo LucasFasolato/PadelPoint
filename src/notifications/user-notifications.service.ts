@@ -161,6 +161,20 @@ export class UserNotificationsService {
     return { updated };
   }
 
+  async markInviteNotificationReadByInviteId(
+    inviteId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(UserNotification)
+      .set({ readAt: () => 'NOW()' })
+      .where('userId = :userId', { userId })
+      .andWhere('readAt IS NULL')
+      .andWhere("data->>'inviteId' = :inviteId", { inviteId })
+      .execute();
+  }
+
   async getUnreadCount(userId: string): Promise<number> {
     return this.repo
       .createQueryBuilder('n')

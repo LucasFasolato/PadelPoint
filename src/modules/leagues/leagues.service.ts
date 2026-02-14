@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 
 import { League } from './league.entity';
@@ -94,9 +94,10 @@ export class LeaguesService {
     if (mode === LeagueMode.OPEN) {
       status = LeagueStatus.ACTIVE;
     } else {
-      status = startDate && startDate <= today
-        ? LeagueStatus.ACTIVE
-        : LeagueStatus.DRAFT;
+      status =
+        startDate && startDate <= today
+          ? LeagueStatus.ACTIVE
+          : LeagueStatus.DRAFT;
     }
 
     const league = this.leagueRepo.create({
@@ -206,12 +207,29 @@ export class LeaguesService {
     });
     const existingSet = new Set(existingMembers.map((m) => m.userId));
 
+    // Skip users who already have a pending invite
+    const userIds = dto.userIds ?? [];
+    const pendingSet = new Set<string>();
+    if (userIds.length > 0) {
+      const pendingInvites = await this.inviteRepo.find({
+        where: {
+          leagueId,
+          status: InviteStatus.PENDING,
+          invitedUserId: In(userIds),
+        },
+        select: ['invitedUserId'],
+      });
+      for (const inv of pendingInvites) {
+        if (inv.invitedUserId) pendingSet.add(inv.invitedUserId);
+      }
+    }
+
     const invites: LeagueInvite[] = [];
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
 
-    for (const uid of dto.userIds ?? []) {
-      if (existingSet.has(uid)) continue;
+    for (const uid of userIds) {
+      if (existingSet.has(uid) || pendingSet.has(uid)) continue;
       invites.push(
         this.inviteRepo.create({
           leagueId,
@@ -360,10 +378,25 @@ export class LeaguesService {
 
     invite.status = InviteStatus.ACCEPTED;
 
-    await this.dataSource.transaction(async (manager) => {
-      await manager.save(member);
-      await manager.save(invite);
-    });
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.save(member);
+        await manager.save(invite);
+      });
+    } catch (err: any) {
+      // Race condition: another request already created the member
+      if (String(err?.code) === '23505') {
+        const existing = await this.memberRepo.findOne({
+          where: { leagueId: invite.leagueId, userId },
+          relations: ['user'],
+        });
+        if (existing) {
+          this.markInviteNotificationRead(invite.id, userId);
+          return { member: this.toMemberView(existing), alreadyMember: true };
+        }
+      }
+      throw err;
+    }
 
     // Reload with user relation for displayName
     const saved = await this.memberRepo.findOne({
@@ -371,10 +404,17 @@ export class LeaguesService {
       relations: ['user'],
     });
 
+    // Mark the invite notification as read (fire-and-forget)
+    this.markInviteNotificationRead(invite.id, userId);
+
     // Notify league creator (fire-and-forget, non-blocking)
-    this.sendInviteAcceptedNotification(invite.league, saved!).catch((err) => {
-      this.logger.error(`failed to send invite-accepted notification: ${err.message}`);
-    });
+    this.sendInviteAcceptedNotification(invite, invite.league, saved!).catch(
+      (err) => {
+        this.logger.error(
+          `failed to send invite-accepted notification: ${err.message}`,
+        );
+      },
+    );
     this.logLeagueActivity(
       invite.leagueId,
       LeagueActivityType.MEMBER_JOINED,
@@ -399,6 +439,11 @@ export class LeaguesService {
       });
     }
 
+    // Idempotent: already declined
+    if (invite.status === InviteStatus.DECLINED) {
+      return { ok: true };
+    }
+
     if (invite.status !== InviteStatus.PENDING) {
       throw new BadRequestException({
         statusCode: 400,
@@ -420,10 +465,21 @@ export class LeaguesService {
     invite.status = InviteStatus.DECLINED;
     await this.inviteRepo.save(invite);
 
+    // Mark the invite notification as read (fire-and-forget)
+    this.markInviteNotificationRead(invite.id, userId);
+
     // Notify league creator (fire-and-forget)
     this.sendInviteDeclinedNotification(invite, userId).catch((err) => {
-      this.logger.error(`failed to send invite-declined notification: ${err.message}`);
+      this.logger.error(
+        `failed to send invite-declined notification: ${err.message}`,
+      );
     });
+    this.logLeagueActivity(
+      invite.leagueId,
+      LeagueActivityType.MEMBER_DECLINED,
+      userId,
+      invite.id,
+    );
 
     return { ok: true };
   }
@@ -486,7 +542,8 @@ export class LeaguesService {
     }
     if (
       dto.includeSources !== undefined &&
-      JSON.stringify(dto.includeSources) !== JSON.stringify(current.includeSources)
+      JSON.stringify(dto.includeSources) !==
+        JSON.stringify(current.includeSources)
     ) {
       updatedFields.push('includeSources');
     }
@@ -529,7 +586,10 @@ export class LeaguesService {
     }
 
     // Prevent demoting the last OWNER
-    if (target.role === LeagueRole.OWNER && (dto.role as string) !== LeagueRole.OWNER) {
+    if (
+      target.role === LeagueRole.OWNER &&
+      (dto.role as string) !== LeagueRole.OWNER
+    ) {
       const ownerCount = await this.memberRepo.count({
         where: { leagueId, role: LeagueRole.OWNER },
       });
@@ -606,6 +666,7 @@ export class LeaguesService {
           ? `${inviterName} invited you to join their league.`
           : 'You have been invited to join a league.',
         data: {
+          inviteId: invite.id,
           leagueId: league.id,
           leagueName: league.name,
           inviteToken: invite.token,
@@ -619,6 +680,7 @@ export class LeaguesService {
   }
 
   private async sendInviteAcceptedNotification(
+    invite: LeagueInvite,
     league: League,
     member: LeagueMember,
   ): Promise<void> {
@@ -630,6 +692,7 @@ export class LeaguesService {
       title: `${displayName} joined ${league.name}`,
       body: `${displayName} accepted your league invite.`,
       data: {
+        inviteId: invite.id,
         leagueId: league.id,
         leagueName: league.name,
         invitedUserId: member.userId,
@@ -655,12 +718,22 @@ export class LeaguesService {
       title: `${displayName} declined your invite`,
       body: `${displayName} declined the invite to ${invite.league.name}.`,
       data: {
+        inviteId: invite.id,
         leagueId: invite.league.id,
         leagueName: invite.league.name,
         invitedDisplayName: displayName,
         link: `/leagues/${invite.league.id}`,
       },
     });
+  }
+
+  private markInviteNotificationRead(inviteId: string, userId: string): void {
+    void this.userNotifications
+      .markInviteNotificationReadByInviteId(inviteId, userId)
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'unknown';
+        this.logger.warn(`failed to mark invite notification read: ${msg}`);
+      });
   }
 
   // ── views ────────────────────────────────────────────────────────
@@ -683,7 +756,9 @@ export class LeaguesService {
         })
         .catch((err: unknown) => {
           const message =
-            err instanceof Error ? err.message : 'unknown league activity error';
+            err instanceof Error
+              ? err.message
+              : 'unknown league activity error';
           this.logger.warn(`failed to log league activity: ${message}`);
         });
     } catch (err: unknown) {

@@ -7,6 +7,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
+import { LeagueActivityService } from '../src/modules/leagues/league-activity.service';
 import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
 
 
@@ -50,6 +51,7 @@ describe('Leagues (e2e)', () => {
   let app: INestApplication<App>;
   let leaguesService: Partial<Record<keyof LeaguesService, jest.Mock>>;
   let standingsService: Partial<Record<keyof LeagueStandingsService, jest.Mock>>;
+  let activityService: Partial<Record<keyof LeagueActivityService, jest.Mock>>;
 
   const leagueView = {
     id: 'league-1',
@@ -89,11 +91,16 @@ describe('Leagues (e2e)', () => {
       recomputeLeague: jest.fn(),
     };
 
+    activityService = {
+      list: jest.fn(),
+    };
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [LeaguesController],
       providers: [
         { provide: LeaguesService, useValue: leaguesService },
         { provide: LeagueStandingsService, useValue: standingsService },
+        { provide: LeagueActivityService, useValue: activityService },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -308,6 +315,49 @@ describe('Leagues (e2e)', () => {
         .expect(201);
 
       expect(res.body.alreadyMember).toBe(true);
+    });
+  });
+
+  // ── POST /leagues/invites/:token/decline ─────────────────────
+
+  describe('POST /leagues/invites/:token/decline', () => {
+    it('should decline invite successfully', async () => {
+      leaguesService.declineInvite!.mockResolvedValue({ ok: true });
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues/invites/abc123/decline')
+        .set('x-test-user', 'invitee')
+        .expect(201);
+
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('should be idempotent on duplicate decline', async () => {
+      leaguesService.declineInvite!.mockResolvedValue({ ok: true });
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues/invites/abc123/decline')
+        .set('x-test-user', 'invitee')
+        .expect(201);
+
+      expect(res.body.ok).toBe(true);
+    });
+
+    it('should return 404 for invalid token', async () => {
+      leaguesService.declineInvite!.mockRejectedValue(
+        new NotFoundException({
+          statusCode: 404,
+          code: 'INVITE_INVALID',
+          message: 'Invite not found',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues/invites/bad-token/decline')
+        .set('x-test-user', 'invitee')
+        .expect(404);
+
+      expect(res.body.code).toBe('INVITE_INVALID');
     });
   });
 
