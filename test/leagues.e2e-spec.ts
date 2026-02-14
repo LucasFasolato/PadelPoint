@@ -3,13 +3,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
 import { LeagueActivityService } from '../src/modules/leagues/league-activity.service';
 import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',
@@ -50,7 +53,9 @@ function fakeGuard() {
 describe('Leagues (e2e)', () => {
   let app: INestApplication<App>;
   let leaguesService: Partial<Record<keyof LeaguesService, jest.Mock>>;
-  let standingsService: Partial<Record<keyof LeagueStandingsService, jest.Mock>>;
+  let standingsService: Partial<
+    Record<keyof LeagueStandingsService, jest.Mock>
+  >;
   let activityService: Partial<Record<keyof LeagueActivityService, jest.Mock>>;
 
   const leagueView = {
@@ -127,7 +132,7 @@ describe('Leagues (e2e)', () => {
 
   describe('POST /leagues', () => {
     it('should create a league with creator as first member', async () => {
-      leaguesService.createLeague!.mockResolvedValue(leagueView);
+      leaguesService.createLeague.mockResolvedValue(leagueView);
 
       const res = await request(app.getHttpServer())
         .post('/leagues')
@@ -175,7 +180,7 @@ describe('Leagues (e2e)', () => {
         endDate: null,
         status: 'active',
       };
-      leaguesService.createLeague!.mockResolvedValue(openView);
+      leaguesService.createLeague.mockResolvedValue(openView);
 
       const res = await request(app.getHttpServer())
         .post('/leagues')
@@ -188,7 +193,7 @@ describe('Leagues (e2e)', () => {
     });
 
     it('should create SCHEDULED league with dates fails 400 when dates missing', async () => {
-      leaguesService.createLeague!.mockRejectedValue(
+      leaguesService.createLeague.mockRejectedValue(
         new BadRequestException({
           statusCode: 400,
           code: 'LEAGUE_DATES_REQUIRED',
@@ -224,14 +229,13 @@ describe('Leagues (e2e)', () => {
         status: 'pending',
         expiresAt: '2025-01-08T12:00:00.000Z',
       };
-      leaguesService.createInvites!.mockResolvedValue([inviteView]);
+      leaguesService.createInvites.mockResolvedValue([inviteView]);
 
       const res = await request(app.getHttpServer())
         .post('/leagues/league-1/invites')
         .send({ userIds: [FAKE_INVITEE.userId] });
 
       if (res.status !== 201) {
-        // eslint-disable-next-line no-console
         console.log('Invite create response:', res.status, res.body);
       }
       expect(res.status).toBe(201);
@@ -257,7 +261,7 @@ describe('Leagues (e2e)', () => {
           endDate: '2025-06-30',
         },
       };
-      leaguesService.getInviteByToken!.mockResolvedValue(inviteDetail);
+      leaguesService.getInviteByToken.mockResolvedValue(inviteDetail);
 
       const res = await request(app.getHttpServer())
         .get('/leagues/invites/abc123')
@@ -267,11 +271,11 @@ describe('Leagues (e2e)', () => {
     });
   });
 
-  // ── POST /leagues/invites/:token/accept ───────────────────────
+  // ── POST /leagues/invites/:inviteId/accept ───────────────────────
 
-  describe('POST /leagues/invites/:token/accept', () => {
+  describe('POST /leagues/invites/:inviteId/accept', () => {
     it('should accept invite and add member', async () => {
-      leaguesService.acceptInvite!.mockResolvedValue({
+      leaguesService.acceptInvite.mockResolvedValue({
         member: {
           userId: FAKE_INVITEE.userId,
           displayName: 'Invitee Player',
@@ -286,16 +290,20 @@ describe('Leagues (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/abc123/accept')
+        .post('/leagues/invites/invite-1/accept')
         .set('x-test-user', 'invitee')
-        .expect(201);
+        .expect(200);
 
       expect(res.body.member.userId).toBe(FAKE_INVITEE.userId);
       expect(res.body.alreadyMember).toBe(false);
+      expect(leaguesService.acceptInvite).toHaveBeenCalledWith(
+        FAKE_INVITEE.userId,
+        'invite-1',
+      );
     });
 
     it('should be idempotent on duplicate accept', async () => {
-      leaguesService.acceptInvite!.mockResolvedValue({
+      leaguesService.acceptInvite.mockResolvedValue({
         member: {
           userId: FAKE_INVITEE.userId,
           displayName: 'Invitee Player',
@@ -310,41 +318,45 @@ describe('Leagues (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/abc123/accept')
+        .post('/leagues/invites/invite-1/accept')
         .set('x-test-user', 'invitee')
-        .expect(201);
+        .expect(200);
 
       expect(res.body.alreadyMember).toBe(true);
     });
   });
 
-  // ── POST /leagues/invites/:token/decline ─────────────────────
+  // ── POST /leagues/invites/:inviteId/decline ─────────────────────
 
-  describe('POST /leagues/invites/:token/decline', () => {
+  describe('POST /leagues/invites/:inviteId/decline', () => {
     it('should decline invite successfully', async () => {
-      leaguesService.declineInvite!.mockResolvedValue({ ok: true });
+      leaguesService.declineInvite.mockResolvedValue({ ok: true });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/abc123/decline')
+        .post('/leagues/invites/invite-1/decline')
         .set('x-test-user', 'invitee')
-        .expect(201);
+        .expect(200);
 
       expect(res.body.ok).toBe(true);
+      expect(leaguesService.declineInvite).toHaveBeenCalledWith(
+        FAKE_INVITEE.userId,
+        'invite-1',
+      );
     });
 
     it('should be idempotent on duplicate decline', async () => {
-      leaguesService.declineInvite!.mockResolvedValue({ ok: true });
+      leaguesService.declineInvite.mockResolvedValue({ ok: true });
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/abc123/decline')
+        .post('/leagues/invites/invite-1/decline')
         .set('x-test-user', 'invitee')
-        .expect(201);
+        .expect(200);
 
       expect(res.body.ok).toBe(true);
     });
 
-    it('should return 404 for invalid token', async () => {
-      leaguesService.declineInvite!.mockRejectedValue(
+    it('should return 404 for invalid invite id', async () => {
+      leaguesService.declineInvite.mockRejectedValue(
         new NotFoundException({
           statusCode: 404,
           code: 'INVITE_INVALID',
@@ -353,7 +365,7 @@ describe('Leagues (e2e)', () => {
       );
 
       const res = await request(app.getHttpServer())
-        .post('/leagues/invites/bad-token/decline')
+        .post('/leagues/invites/bad-invite-id/decline')
         .set('x-test-user', 'invitee')
         .expect(404);
 
@@ -381,7 +393,7 @@ describe('Leagues (e2e)', () => {
           },
         ],
       };
-      leaguesService.getLeagueDetail!.mockResolvedValue(detailWithTwoMembers);
+      leaguesService.getLeagueDetail.mockResolvedValue(detailWithTwoMembers);
 
       const res = await request(app.getHttpServer())
         .get('/leagues/league-1')
@@ -392,7 +404,7 @@ describe('Leagues (e2e)', () => {
     });
 
     it('should return LEAGUE_FORBIDDEN for non-member', async () => {
-      leaguesService.getLeagueDetail!.mockRejectedValue(
+      leaguesService.getLeagueDetail.mockRejectedValue(
         new ForbiddenException({
           statusCode: 403,
           code: 'LEAGUE_FORBIDDEN',
@@ -413,7 +425,7 @@ describe('Leagues (e2e)', () => {
 
   describe('GET /leagues', () => {
     it('should list leagues for authenticated user', async () => {
-      leaguesService.listMyLeagues!.mockResolvedValue([
+      leaguesService.listMyLeagues.mockResolvedValue([
         {
           id: 'league-1',
           name: 'Summer League',
@@ -439,7 +451,7 @@ describe('Leagues (e2e)', () => {
 
   describe('Cache-Control headers', () => {
     it('GET /leagues should include no-cache headers', async () => {
-      leaguesService.listMyLeagues!.mockResolvedValue([]);
+      leaguesService.listMyLeagues.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
         .get('/leagues')
@@ -450,7 +462,7 @@ describe('Leagues (e2e)', () => {
     });
 
     it('GET /leagues/:id should include no-cache headers', async () => {
-      leaguesService.getLeagueDetail!.mockResolvedValue(leagueView);
+      leaguesService.getLeagueDetail.mockResolvedValue(leagueView);
 
       const res = await request(app.getHttpServer())
         .get('/leagues/league-1')
