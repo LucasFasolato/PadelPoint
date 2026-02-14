@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isUUID } from 'class-validator';
 
 import { UserNotification } from './user-notification.entity';
 import { UserNotificationType } from './user-notification-type.enum';
@@ -35,6 +36,10 @@ export class UserNotificationsService {
   ) {}
 
   async create(input: CreateUserNotificationInput): Promise<NotificationView> {
+    if (input.type === UserNotificationType.LEAGUE_INVITE_RECEIVED) {
+      this.assertValidInviteNotificationPayload(input.data);
+    }
+
     // 1. Persist first (single source of truth)
     const entity = this.repo.create({
       userId: input.userId,
@@ -199,5 +204,85 @@ export class UserNotificationsService {
       readAt: n.readAt ? n.readAt.toISOString() : null,
       createdAt: n.createdAt.toISOString(),
     };
+  }
+
+  private assertValidInviteNotificationPayload(
+    payload: Record<string, unknown> | null | undefined,
+  ): void {
+    if (!payload || typeof payload !== 'object') {
+      throw this.invalidInvitePayloadError(
+        'Invite notification payload must be an object',
+      );
+    }
+
+    const requiredStringFields = [
+      'inviteId',
+      'leagueId',
+      'leagueName',
+      'inviterId',
+      'inviterName',
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      const value = payload[field];
+      if (
+        typeof value !== 'string' ||
+        value.trim().length === 0 ||
+        value === 'undefined'
+      ) {
+        throw this.invalidInvitePayloadError(
+          `Invalid invite notification payload: ${field} is required`,
+        );
+      }
+    }
+
+    const inviteId = payload.inviteId as string;
+    const leagueId = payload.leagueId as string;
+    const inviterId = payload.inviterId as string;
+
+    if (!isUUID(inviteId, '4')) {
+      throw this.invalidInvitePayloadError(
+        'Invalid invite notification payload: inviteId must be a UUID',
+      );
+    }
+    if (!isUUID(leagueId, '4')) {
+      throw this.invalidInvitePayloadError(
+        'Invalid invite notification payload: leagueId must be a UUID',
+      );
+    }
+    if (!isUUID(inviterId, '4')) {
+      throw this.invalidInvitePayloadError(
+        'Invalid invite notification payload: inviterId must be a UUID',
+      );
+    }
+
+    const optionalStringFields = [
+      'inviterDisplayName',
+      'startDate',
+      'endDate',
+      'link',
+    ] as const;
+
+    for (const field of optionalStringFields) {
+      const value = payload[field];
+      if (value === undefined || value === null) continue;
+      if (
+        typeof value !== 'string' ||
+        value.trim().length === 0 ||
+        value === 'undefined'
+      ) {
+        throw this.invalidInvitePayloadError(
+          `Invalid invite notification payload: ${field} must be a non-empty string when provided`,
+        );
+      }
+    }
+  }
+
+  private invalidInvitePayloadError(message: string): BadRequestException {
+    return new BadRequestException({
+      statusCode: 400,
+      code: 'INVITE_NOTIFICATION_PAYLOAD_INVALID',
+      message,
+    });
   }
 }

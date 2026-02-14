@@ -144,6 +144,66 @@ describe('UserNotificationsService', () => {
         createdAt: '2025-01-01T12:00:00.000Z',
       });
     });
+
+    it('should validate required invite notification payload fields', async () => {
+      await expect(
+        service.create({
+          userId: FAKE_USER_ID,
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          title: 'League invite',
+          data: {
+            leagueId: '11111111-1111-4111-8111-111111111111',
+            leagueName: 'Summer League',
+            inviterId: '22222222-2222-4222-8222-222222222222',
+            inviterName: 'Creator Player',
+          },
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'INVITE_NOTIFICATION_PAYLOAD_INVALID',
+        },
+      });
+    });
+
+    it('should accept valid invite notification payload', async () => {
+      const saved = fakeNotification({
+        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+        data: {
+          inviteId: '33333333-3333-4333-8333-333333333333',
+          leagueId: '11111111-1111-4111-8111-111111111111',
+          leagueName: 'Summer League',
+          inviterId: '22222222-2222-4222-8222-222222222222',
+          inviterName: 'Creator Player',
+          inviterDisplayName: 'Creator Player',
+          link: '/leagues/invites/33333333-3333-4333-8333-333333333333',
+        },
+      });
+      repo.create.mockReturnValue(saved);
+      repo.save.mockResolvedValue(saved);
+      repo.createQueryBuilder = jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(1),
+      });
+
+      const result = await service.create({
+        userId: FAKE_USER_ID,
+        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+        title: 'League invite',
+        data: {
+          inviteId: '33333333-3333-4333-8333-333333333333',
+          leagueId: '11111111-1111-4111-8111-111111111111',
+          leagueName: 'Summer League',
+          inviterId: '22222222-2222-4222-8222-222222222222',
+          inviterName: 'Creator Player',
+          inviterDisplayName: 'Creator Player',
+          link: '/leagues/invites/33333333-3333-4333-8333-333333333333',
+        },
+      });
+
+      expect(result.type).toBe(UserNotificationType.LEAGUE_INVITE_RECEIVED);
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── list ────────────────────────────────────────────────────────

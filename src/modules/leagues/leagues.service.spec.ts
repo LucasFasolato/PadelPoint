@@ -468,6 +468,8 @@ describe('LeaguesService', () => {
             inviteId: 'invite-1',
             leagueId: 'league-1',
             leagueName: 'Test League',
+            inviterId: FAKE_USER_ID,
+            inviterName: 'Creator Player',
             link: '/leagues/invites/invite-1',
           }),
         }),

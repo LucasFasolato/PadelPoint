@@ -4,11 +4,15 @@ import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
 import { LeagueActivityService } from '../src/modules/leagues/league-activity.service';
 import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
+import { UserNotificationsController } from '../src/notifications/user-notifications.controller';
+import { UserNotificationsService } from '../src/notifications/user-notifications.service';
+import { UserNotificationType } from '../src/notifications/user-notification-type.enum';
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',
@@ -56,6 +60,9 @@ describe('Leagues (e2e)', () => {
     Record<keyof LeagueStandingsService, jest.Mock>
   >;
   let activityService: Partial<Record<keyof LeagueActivityService, jest.Mock>>;
+  let notificationsService: Partial<
+    Record<keyof UserNotificationsService, jest.Mock>
+  >;
 
   const leagueView = {
     id: LEAGUE_ID,
@@ -98,13 +105,20 @@ describe('Leagues (e2e)', () => {
     activityService = {
       list: jest.fn(),
     };
+    notificationsService = {
+      list: jest.fn(),
+      getUnreadCount: jest.fn(),
+      markRead: jest.fn(),
+      markAllRead: jest.fn(),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [LeaguesController],
+      controllers: [LeaguesController, UserNotificationsController],
       providers: [
         { provide: LeaguesService, useValue: leaguesService },
         { provide: LeagueStandingsService, useValue: standingsService },
         { provide: LeagueActivityService, useValue: activityService },
+        { provide: UserNotificationsService, useValue: notificationsService },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -240,6 +254,58 @@ describe('Leagues (e2e)', () => {
       expect(res.status).toBe(201);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].token).toBe('abc123');
+    });
+
+    it('should expose canonical invite notification contract in notifications feed', async () => {
+      leaguesService.createInvites.mockResolvedValue([
+        {
+          id: INVITE_ID,
+          token: 'tok-invite',
+          invitedUserId: FAKE_INVITEE.userId,
+          invitedEmail: FAKE_INVITEE.email,
+          status: 'pending',
+          expiresAt: '2025-01-08T12:00:00.000Z',
+        },
+      ]);
+      notificationsService.list.mockResolvedValue({
+        items: [
+          {
+            id: 'notif-invite-1',
+            type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+            title: 'League invite',
+            body: 'Creator Player invited you to join their league.',
+            data: {
+              inviteId: INVITE_ID,
+              leagueId: LEAGUE_ID,
+              leagueName: 'Summer League',
+              inviterId: FAKE_CREATOR.userId,
+              inviterName: 'Creator Player',
+              inviterDisplayName: 'Creator Player',
+            },
+            readAt: null,
+            createdAt: '2025-06-01T12:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      });
+
+      await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/invites`)
+        .send({ emails: [FAKE_INVITEE.email] })
+        .expect(201);
+
+      const notificationsRes = await request(app.getHttpServer())
+        .get('/notifications')
+        .set('x-test-user', 'invitee')
+        .expect(200);
+
+      const inviteNotification = notificationsRes.body.items[0];
+      expect(inviteNotification.type).toBe(
+        UserNotificationType.LEAGUE_INVITE_RECEIVED,
+      );
+      expect(isUUID(inviteNotification.data.inviteId, '4')).toBe(true);
+      expect(isUUID(inviteNotification.data.leagueId, '4')).toBe(true);
+      expect(isUUID(inviteNotification.data.inviterId, '4')).toBe(true);
     });
   });
 

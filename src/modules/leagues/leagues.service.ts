@@ -812,30 +812,37 @@ export class LeaguesService {
       where: { id: inviterUserId },
       select: ['id', 'displayName'],
     });
-    const inviterName = inviter?.displayName ?? null;
+    const inviterDisplayName = inviter?.displayName?.trim() || undefined;
+    const inviterName = inviterDisplayName ?? 'Unknown player';
 
     for (const invite of invites) {
       if (!invite.invitedUserId) continue; // email-only invites — no in-app user to notify
 
       try {
+        const payload: Record<string, unknown> = {
+          inviteId: invite.id,
+          leagueId: league.id,
+          leagueName: league.name,
+          inviterId: inviterUserId,
+          inviterName,
+          link: `/leagues/invites/${invite.id}`,
+        };
+        if (inviterDisplayName) {
+          payload.inviterDisplayName = inviterDisplayName;
+        }
+        if (league.startDate) {
+          payload.startDate = league.startDate;
+        }
+        if (league.endDate) {
+          payload.endDate = league.endDate;
+        }
+
         await this.userNotifications.create({
           userId: invite.invitedUserId,
           type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
           title: `You've been invited to ${league.name}`,
-          body: inviterName
-            ? `${inviterName} invited you to join their league.`
-            : 'You have been invited to join a league.',
-          data: {
-            inviteId: invite.id,
-            leagueId: league.id,
-            leagueName: league.name,
-            inviterId: inviterUserId,
-            inviterName: inviterName,
-            inviterDisplayName: inviterName,
-            startDate: league.startDate,
-            endDate: league.endDate,
-            link: `/leagues/invites/${invite.id}`,
-          },
+          body: `${inviterName} invited you to join their league.`,
+          data: payload,
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'unknown';
