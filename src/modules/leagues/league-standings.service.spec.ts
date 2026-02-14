@@ -2,9 +2,13 @@ import { EntityManager, Repository } from 'typeorm';
 import { LeagueStandingsService } from './league-standings.service';
 import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
+import { LeagueStandingsSnapshot } from './league-standings-snapshot.entity';
 import { LeagueStatus } from './league-status.enum';
 import { MatchResultStatus, WinnerTeam } from '../matches/match-result.entity';
-import { DEFAULT_LEAGUE_SETTINGS, LeagueSettings } from './league-settings.type';
+import {
+  DEFAULT_LEAGUE_SETTINGS,
+  LeagueSettings,
+} from './league-settings.type';
 import { LeagueRole } from './league-role.enum';
 
 // ── helpers ──────────────────────────────────────────────────────
@@ -59,7 +63,10 @@ function fakeMatchResult(opts: {
   playedAt: string;
   sets?: { a: number; b: number }[];
 }) {
-  const sets = opts.sets ?? [{ a: 6, b: 3 }, { a: 6, b: 4 }];
+  const sets = opts.sets ?? [
+    { a: 6, b: 3 },
+    { a: 6, b: 4 },
+  ];
   return {
     id: `match-${Math.random().toString(36).slice(2, 8)}`,
     status: MatchResultStatus.CONFIRMED,
@@ -88,6 +95,7 @@ function createMockManager(data: {
   matches: any[];
 }): EntityManager {
   const savedMembers: LeagueMember[] = [];
+  const snapshots: Array<Record<string, unknown>> = [];
 
   const getRepository = jest.fn().mockImplementation((entity: any) => {
     const entityName =
@@ -99,7 +107,9 @@ function createMockManager(data: {
         createQueryBuilder: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
-          getMany: jest.fn().mockResolvedValue(data.league ? [data.league] : []),
+          getMany: jest
+            .fn()
+            .mockResolvedValue(data.league ? [data.league] : []),
         }),
       };
     }
@@ -135,10 +145,42 @@ function createMockManager(data: {
       };
     }
 
+    if (
+      entity === LeagueStandingsSnapshot ||
+      entityName === 'LeagueStandingsSnapshot'
+    ) {
+      return {
+        createQueryBuilder: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          getRawOne: jest
+            .fn()
+            .mockResolvedValue({ nextVersion: String(snapshots.length + 1) }),
+        }),
+        create: jest
+          .fn()
+          .mockImplementation((input: Record<string, unknown>) => input),
+        save: jest
+          .fn()
+          .mockImplementation(async (input: Record<string, unknown>) => {
+            const saved = {
+              id: `snapshot-${snapshots.length + 1}`,
+              computedAt: new Date(),
+              ...input,
+            };
+            snapshots.push(saved);
+            return saved;
+          }),
+      };
+    }
+
     return {};
   });
 
-  return { getRepository } as unknown as EntityManager;
+  return {
+    getRepository,
+    query: jest.fn().mockResolvedValue(undefined),
+  } as unknown as EntityManager;
 }
 
 // ── tests ───────────────────────────────────────────────────────
@@ -151,6 +193,7 @@ describe('LeagueStandingsService', () => {
     service = new LeagueStandingsService(
       {} as Repository<League>,
       {} as Repository<LeagueMember>,
+      {} as any,
       {} as any,
     );
   });
@@ -168,14 +211,20 @@ describe('LeagueStandingsService', () => {
       // Two matches: uid1+uid2 beat uid3+uid4 twice
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-15',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-15',
         }),
       ];
 
@@ -188,10 +237,10 @@ describe('LeagueStandingsService', () => {
       const result = await service.recomputeLeague(manager, league.id);
 
       // uid1 and uid2: 2 wins, 6 points
-      const p1 = result.find((m) => m.userId === uid(1))!;
-      const p2 = result.find((m) => m.userId === uid(2))!;
-      const p3 = result.find((m) => m.userId === uid(3))!;
-      const p4 = result.find((m) => m.userId === uid(4))!;
+      const p1 = result.find((m) => m.userId === uid(1));
+      const p2 = result.find((m) => m.userId === uid(2));
+      const p3 = result.find((m) => m.userId === uid(3));
+      const p4 = result.find((m) => m.userId === uid(4));
 
       expect(p1.wins).toBe(2);
       expect(p1.points).toBe(6);
@@ -222,19 +271,28 @@ describe('LeagueStandingsService', () => {
       // Result: uid1=2w/1l=6pts, uid3=2w/1l=6pts, uid2=1w/1l=3pts, uid4=1w/1l=3pts
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(3),
-          teamB1: uid(2), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-05',
+          teamA1: uid(1),
+          teamA2: uid(3),
+          teamB1: uid(2),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-05',
         }),
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
         fakeMatchResult({
-          teamA1: uid(3), teamA2: uid(4),
-          teamB1: uid(1), teamB2: uid(2),
-          winner: 'A', playedAt: '2025-06-15',
+          teamA1: uid(3),
+          teamA2: uid(4),
+          teamB1: uid(1),
+          teamB2: uid(2),
+          winner: 'A',
+          playedAt: '2025-06-15',
         }),
       ];
 
@@ -248,8 +306,8 @@ describe('LeagueStandingsService', () => {
 
       // uid1: 2W/1L = 6pts, uid3: 2W/1L = 6pts
       // Tie-break: points equal, wins equal → setsDiff/gamesDiff/userId fallback
-      const p1 = result.find((m) => m.userId === uid(1))!;
-      const p3 = result.find((m) => m.userId === uid(3))!;
+      const p1 = result.find((m) => m.userId === uid(1));
+      const p3 = result.find((m) => m.userId === uid(3));
 
       expect(p1.points).toBe(6);
       expect(p3.points).toBe(6);
@@ -276,10 +334,10 @@ describe('LeagueStandingsService', () => {
 
       const result = await service.recomputeLeague(manager, league.id);
 
-      expect(result.find((m) => m.userId === uid(1))!.position).toBe(1);
-      expect(result.find((m) => m.userId === uid(2))!.position).toBe(2);
-      expect(result.find((m) => m.userId === uid(3))!.position).toBe(3);
-      expect(result.find((m) => m.userId === uid(4))!.position).toBe(4);
+      expect(result.find((m) => m.userId === uid(1)).position).toBe(1);
+      expect(result.find((m) => m.userId === uid(2)).position).toBe(2);
+      expect(result.find((m) => m.userId === uid(3)).position).toBe(3);
+      expect(result.find((m) => m.userId === uid(4)).position).toBe(4);
     });
 
     it('should exclude matches outside league date range', async () => {
@@ -324,9 +382,12 @@ describe('LeagueStandingsService', () => {
       // Match includes uid(4) who is not a member — should be filtered out
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4), // uid(4) not a member
-          winner: 'A', playedAt: '2025-06-10',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4), // uid(4) not a member
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
       ];
 
@@ -347,7 +408,9 @@ describe('LeagueStandingsService', () => {
 
     it('should use custom scoring from league settings', async () => {
       const customSettings: LeagueSettings = {
-        winPoints: 2, drawPoints: 0, lossPoints: -1,
+        winPoints: 2,
+        drawPoints: 0,
+        lossPoints: -1,
         tieBreakers: ['points', 'wins', 'setsDiff', 'gamesDiff'],
         includeSources: { RESERVATION: true, MANUAL: true },
       };
@@ -361,9 +424,12 @@ describe('LeagueStandingsService', () => {
 
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
       ];
 
@@ -376,12 +442,12 @@ describe('LeagueStandingsService', () => {
       const result = await service.recomputeLeague(manager, league.id);
 
       // Winners get 2 points (winPoints=2)
-      const p1 = result.find((m) => m.userId === uid(1))!;
+      const p1 = result.find((m) => m.userId === uid(1));
       expect(p1.points).toBe(2);
       expect(p1.wins).toBe(1);
 
       // Losers get -1 points (lossPoints=-1)
-      const p3 = result.find((m) => m.userId === uid(3))!;
+      const p3 = result.find((m) => m.userId === uid(3));
       expect(p3.points).toBe(-1);
       expect(p3.losses).toBe(1);
     });
@@ -399,10 +465,17 @@ describe('LeagueStandingsService', () => {
       // games: A=17, B=14 → diff A=+3, B=-3
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
-          sets: [{ a: 6, b: 3 }, { a: 4, b: 6 }, { a: 7, b: 5 }],
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
+          sets: [
+            { a: 6, b: 3 },
+            { a: 4, b: 6 },
+            { a: 7, b: 5 },
+          ],
         }),
       ];
 
@@ -414,11 +487,11 @@ describe('LeagueStandingsService', () => {
 
       const result = await service.recomputeLeague(manager, league.id);
 
-      const p1 = result.find((m) => m.userId === uid(1))!;
-      const p3 = result.find((m) => m.userId === uid(3))!;
+      const p1 = result.find((m) => m.userId === uid(1));
+      const p3 = result.find((m) => m.userId === uid(3));
 
-      expect(p1.setsDiff).toBe(1);   // 2 sets won - 1 set lost
-      expect(p1.gamesDiff).toBe(3);   // 17 games - 14 games
+      expect(p1.setsDiff).toBe(1); // 2 sets won - 1 set lost
+      expect(p1.gamesDiff).toBe(3); // 17 games - 14 games
 
       expect(p3.setsDiff).toBe(-1);
       expect(p3.gamesDiff).toBe(-3);
@@ -426,7 +499,9 @@ describe('LeagueStandingsService', () => {
 
     it('should use custom tie-breaker order (setsDiff before wins)', async () => {
       const customSettings: LeagueSettings = {
-        winPoints: 3, drawPoints: 1, lossPoints: 0,
+        winPoints: 3,
+        drawPoints: 1,
+        lossPoints: 0,
         tieBreakers: ['points', 'setsDiff', 'gamesDiff'],
         includeSources: { RESERVATION: true, MANUAL: true },
       };
@@ -454,16 +529,28 @@ describe('LeagueStandingsService', () => {
       // Both uid1 and uid3 have 3pts (1W/1L), but uid3 has better setsDiff
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(3),
-          teamB1: uid(2), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
-          sets: [{ a: 6, b: 1 }, { a: 6, b: 0 }],
+          teamA1: uid(1),
+          teamA2: uid(3),
+          teamB1: uid(2),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
+          sets: [
+            { a: 6, b: 1 },
+            { a: 6, b: 0 },
+          ],
         }),
         fakeMatchResult({
-          teamA1: uid(3), teamA2: uid(4),
-          teamB1: uid(1), teamB2: uid(2),
-          winner: 'A', playedAt: '2025-06-15',
-          sets: [{ a: 7, b: 6 }, { a: 7, b: 6 }],
+          teamA1: uid(3),
+          teamA2: uid(4),
+          teamB1: uid(1),
+          teamB2: uid(2),
+          winner: 'A',
+          playedAt: '2025-06-15',
+          sets: [
+            { a: 7, b: 6 },
+            { a: 7, b: 6 },
+          ],
         }),
       ];
 
@@ -475,12 +562,12 @@ describe('LeagueStandingsService', () => {
 
       const result = await service.recomputeLeague(manager, league.id);
 
-      const p1 = result.find((m) => m.userId === uid(1))!;
-      const p3 = result.find((m) => m.userId === uid(3))!;
+      const p1 = result.find((m) => m.userId === uid(1));
+      const p3 = result.find((m) => m.userId === uid(3));
 
       // Both have 3 points (1W/1L each), tieBreaker is setsDiff
       // uid3 setsDiff=+4 > uid1 setsDiff=0, so uid3 should be ranked higher
-      expect(p3.position).toBeLessThan(p1.position!);
+      expect(p3.position).toBeLessThan(p1.position);
     });
 
     it('should fall back to default settings when league.settings is null', async () => {
@@ -494,9 +581,12 @@ describe('LeagueStandingsService', () => {
 
       const matches = [
         fakeMatchResult({
-          teamA1: uid(1), teamA2: uid(2),
-          teamB1: uid(3), teamB2: uid(4),
-          winner: 'A', playedAt: '2025-06-10',
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
       ];
 
@@ -509,7 +599,7 @@ describe('LeagueStandingsService', () => {
       const result = await service.recomputeLeague(manager, league.id);
 
       // Default: winPoints=3
-      const p1 = result.find((m) => m.userId === uid(1))!;
+      const p1 = result.find((m) => m.userId === uid(1));
       expect(p1.points).toBe(3);
     });
   });

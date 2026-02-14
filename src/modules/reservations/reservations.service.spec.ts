@@ -8,6 +8,7 @@ import { Court } from '../courts/court.entity';
 
 import { NotificationEventsService } from '@/notifications/notification-events.service';
 import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationService } from '@/notifications/notification.service';
 import {
   NotificationEventType,
   NotificationEventChannel,
@@ -85,6 +86,14 @@ describe('ReservationsService', () => {
         { provide: NotificationEventsService, useValue: notificationEvents },
         // si tu service llama dispatch, tipalo mejor; por ahora alcanza
         { provide: NotificationsService, useValue: { dispatch: jest.fn() } },
+        {
+          provide: NotificationService,
+          useValue: {
+            sendReservationConfirmedEmail: jest
+              .fn()
+              .mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -128,7 +137,6 @@ describe('ReservationsService', () => {
           return Promise.resolve([]);
         }),
         getRepository: jest.fn(
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           (..._args: [typeof Reservation]) => reservationRepo,
         ),
       };
@@ -372,7 +380,9 @@ describe('ReservationsService', () => {
     );
     const dataSource = moduleRef.get<DataSourceMock>(DataSource);
 
-    dataSource.query.mockResolvedValue([{ now: new Date('2026-02-03T10:00:00.000Z') }]);
+    dataSource.query.mockResolvedValue([
+      { now: new Date('2026-02-03T10:00:00.000Z') },
+    ]);
 
     reservaRepo.findOne.mockResolvedValue({
       id: 'res-1',

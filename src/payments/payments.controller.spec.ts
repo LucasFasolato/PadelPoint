@@ -20,7 +20,7 @@ describe('PaymentsController', () => {
     paymentsService = {
       createIntent: jest.fn(),
       getIntent: jest.fn(),
-      findByReference: jest.fn(),
+      findByReference: jest.fn().mockResolvedValue([]),
       listAdminIntents: jest.fn(),
       simulateSuccess: jest.fn(),
       simulateFailure: jest.fn(),
@@ -31,7 +31,10 @@ describe('PaymentsController', () => {
       controllers: [PaymentsController],
       providers: [
         { provide: PaymentsService, useValue: paymentsService },
-        { provide: JwtAuthGuard, useValue: { canActivate: jest.fn(() => true) } },
+        {
+          provide: JwtAuthGuard,
+          useValue: { canActivate: jest.fn(() => true) },
+        },
         { provide: RolesGuard, useValue: { canActivate: jest.fn(() => true) } },
       ],
     }).compile();
