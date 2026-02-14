@@ -165,12 +165,18 @@ export class UserNotificationsService {
     inviteId: string,
     userId: string,
   ): Promise<void> {
+    if (!inviteId) return;
+
     await this.repo
       .createQueryBuilder()
       .update(UserNotification)
       .set({ readAt: () => 'NOW()' })
       .where('userId = :userId', { userId })
+      .andWhere('type = :type', {
+        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+      })
       .andWhere('readAt IS NULL')
+      .andWhere("data ? 'inviteId'")
       .andWhere("data->>'inviteId' = :inviteId", { inviteId })
       .execute();
   }

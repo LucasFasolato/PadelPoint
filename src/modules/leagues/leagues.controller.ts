@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
   NotFoundException,
   Param,
   ParseIntPipe,
@@ -55,16 +56,18 @@ export class LeaguesController {
     return this.leaguesService.getInviteByToken(token);
   }
 
-  @Post('invites/:token/accept')
-  acceptInvite(@Req() req: Request, @Param('token') token: string) {
+  @Post('invites/:inviteId/accept')
+  @HttpCode(200)
+  acceptInvite(@Req() req: Request, @Param('inviteId') inviteId: string) {
     const user = req.user as AuthUser;
-    return this.leaguesService.acceptInvite(user.userId, token);
+    return this.leaguesService.acceptInvite(user.userId, inviteId);
   }
 
-  @Post('invites/:token/decline')
-  declineInvite(@Req() req: Request, @Param('token') token: string) {
+  @Post('invites/:inviteId/decline')
+  @HttpCode(200)
+  declineInvite(@Req() req: Request, @Param('inviteId') inviteId: string) {
     const user = req.user as AuthUser;
-    return this.leaguesService.declineInvite(user.userId, token);
+    return this.leaguesService.declineInvite(user.userId, inviteId);
   }
 
   @Get(':id')
@@ -99,12 +102,7 @@ export class LeaguesController {
     @Body() dto: UpdateMemberRoleDto,
   ) {
     const user = req.user as AuthUser;
-    return this.leaguesService.updateMemberRole(
-      user.userId,
-      id,
-      memberId,
-      dto,
-    );
+    return this.leaguesService.updateMemberRole(user.userId, id, memberId, dto);
   }
 
   @Get(':id/activity')

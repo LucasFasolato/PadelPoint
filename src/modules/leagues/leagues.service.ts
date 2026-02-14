@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 
 import { League } from './league.entity';
@@ -24,9 +24,11 @@ import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { User } from '../users/user.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { UserNotification } from '../../notifications/user-notification.entity';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';
 import { LeagueActivityType } from './league-activity-type.enum';
+import { LeagueActivity } from './league-activity.entity';
 
 const INVITE_EXPIRY_DAYS = 7;
 
@@ -315,119 +317,139 @@ export class LeaguesService {
     };
   }
 
-  async acceptInvite(userId: string, token: string) {
-    const invite = await this.inviteRepo.findOne({
-      where: { token },
-      relations: ['league'],
-    });
-
-    if (!invite) {
-      throw new NotFoundException({
-        statusCode: 404,
-        code: 'INVITE_INVALID',
-        message: 'Invite not found',
-      });
-    }
-
-    // Idempotency: if already accepted, check if member exists
-    if (invite.status === InviteStatus.ACCEPTED) {
-      const existing = await this.memberRepo.findOne({
-        where: { leagueId: invite.leagueId, userId },
-        relations: ['user'],
-      });
-      if (existing) {
-        return { member: this.toMemberView(existing), alreadyMember: true };
-      }
-    }
-
-    if (invite.status !== InviteStatus.PENDING) {
-      throw new BadRequestException({
-        statusCode: 400,
-        code: 'INVITE_ALREADY_USED',
-        message: `Invite has already been ${invite.status}`,
-      });
-    }
-
-    if (invite.expiresAt < new Date()) {
-      invite.status = InviteStatus.EXPIRED;
-      await this.inviteRepo.save(invite);
-      throw new BadRequestException({
-        statusCode: 400,
-        code: 'INVITE_EXPIRED',
-        message: 'This invite has expired',
-      });
-    }
-
-    // Idempotency: already a member via another invite
-    const existingMember = await this.memberRepo.findOne({
-      where: { leagueId: invite.leagueId, userId },
-      relations: ['user'],
-    });
-
-    if (existingMember) {
-      invite.status = InviteStatus.ACCEPTED;
-      await this.inviteRepo.save(invite);
-      return { member: this.toMemberView(existingMember), alreadyMember: true };
-    }
-
-    // Create member and mark invite accepted
-    const member = this.memberRepo.create({
-      leagueId: invite.leagueId,
-      userId,
-    });
-
-    invite.status = InviteStatus.ACCEPTED;
-
+  async acceptInvite(userId: string, inviteId: string) {
     try {
-      await this.dataSource.transaction(async (manager) => {
-        await manager.save(member);
-        await manager.save(invite);
+      const result = await this.dataSource.transaction(async (manager) => {
+        const inviteRepo = manager.getRepository(LeagueInvite);
+
+        const invite = await inviteRepo
+          .createQueryBuilder('invite')
+          .setLock('pessimistic_write')
+          .leftJoinAndSelect('invite.league', 'league')
+          .where('invite.id = :inviteId', { inviteId })
+          .getOne();
+
+        if (!invite) {
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'INVITE_INVALID',
+            message: 'Invite not found',
+          });
+        }
+
+        if (invite.invitedUserId !== userId) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'INVITE_FORBIDDEN',
+            message: 'This invite was not sent to you',
+          });
+        }
+
+        if (invite.status === InviteStatus.ACCEPTED) {
+          const existing = await this.ensureMemberInTransaction(
+            manager,
+            invite.leagueId,
+            userId,
+          );
+          await this.markInviteNotificationReadInTransaction(
+            manager,
+            invite.id,
+            userId,
+          );
+          return { invite, member: existing, alreadyMember: true };
+        }
+
+        if (invite.status !== InviteStatus.PENDING) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'INVITE_ALREADY_USED',
+            message: `Invite has already been ${invite.status}`,
+          });
+        }
+
+        if (invite.expiresAt < new Date()) {
+          invite.status = InviteStatus.EXPIRED;
+          await inviteRepo.save(invite);
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'INVITE_EXPIRED',
+            message: 'This invite has expired',
+          });
+        }
+
+        invite.status = InviteStatus.ACCEPTED;
+        await inviteRepo.save(invite);
+
+        const member = await this.ensureMemberInTransaction(
+          manager,
+          invite.leagueId,
+          userId,
+        );
+
+        const activityRepo = manager.getRepository(LeagueActivity);
+        await activityRepo.save(
+          activityRepo.create({
+            leagueId: invite.leagueId,
+            type: LeagueActivityType.MEMBER_JOINED,
+            actorId: userId,
+            entityId: member.userId,
+            payload: null,
+          }),
+        );
+
+        await this.markInviteNotificationReadInTransaction(
+          manager,
+          invite.id,
+          userId,
+        );
+
+        return { invite, member, alreadyMember: false };
       });
-    } catch (err: any) {
-      // Race condition: another request already created the member
-      if (String(err?.code) === '23505') {
-        const existing = await this.memberRepo.findOne({
-          where: { leagueId: invite.leagueId, userId },
-          relations: ['user'],
+
+      if (!result.alreadyMember) {
+        this.sendInviteAcceptedNotification(
+          result.invite,
+          result.invite.league,
+          result.member,
+        ).catch((err) => {
+          this.logger.error(
+            `failed to send invite-accepted notification: ${err.message}`,
+          );
         });
-        if (existing) {
-          this.markInviteNotificationRead(invite.id, userId);
-          return { member: this.toMemberView(existing), alreadyMember: true };
+      }
+
+      return {
+        member: this.toMemberView(result.member),
+        alreadyMember: result.alreadyMember,
+      };
+    } catch (err: any) {
+      if (String(err?.code) === '23505') {
+        const invite = await this.inviteRepo.findOne({
+          where: { id: inviteId },
+          relations: ['league'],
+        });
+        if (invite && invite.invitedUserId === userId) {
+          if (invite.status === InviteStatus.PENDING) {
+            invite.status = InviteStatus.ACCEPTED;
+            await this.inviteRepo.save(invite);
+          }
+          const existing = await this.memberRepo.findOne({
+            where: { leagueId: invite.leagueId, userId },
+            relations: ['user'],
+          });
+          if (existing) {
+            this.markInviteNotificationRead(invite.id, userId);
+            return { member: this.toMemberView(existing), alreadyMember: true };
+          }
         }
       }
       throw err;
     }
-
-    // Reload with user relation for displayName
-    const saved = await this.memberRepo.findOne({
-      where: { leagueId: invite.leagueId, userId },
-      relations: ['user'],
-    });
-
-    // Mark the invite notification as read (fire-and-forget)
-    this.markInviteNotificationRead(invite.id, userId);
-
-    // Notify league creator (fire-and-forget, non-blocking)
-    this.sendInviteAcceptedNotification(invite, invite.league, saved!).catch(
-      (err) => {
-        this.logger.error(
-          `failed to send invite-accepted notification: ${err.message}`,
-        );
-      },
-    );
-    this.logLeagueActivity(
-      invite.leagueId,
-      LeagueActivityType.MEMBER_JOINED,
-      userId,
-      saved!.userId,
-    );
-
-    return { member: this.toMemberView(saved!), alreadyMember: false };
   }
 
-  async declineInvite(userId: string, token: string) {
+  async declineInvite(userId: string, inviteId: string) {
     const invite = await this.inviteRepo.findOne({
-      where: { token },
+      where: { id: inviteId },
       relations: ['league'],
     });
 
@@ -439,8 +461,16 @@ export class LeaguesService {
       });
     }
 
-    // Idempotent: already declined
+    if (invite.invitedUserId !== userId) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'INVITE_FORBIDDEN',
+        message: 'This invite was not sent to you',
+      });
+    }
+
     if (invite.status === InviteStatus.DECLINED) {
+      this.markInviteNotificationRead(invite.id, userId);
       return { ok: true };
     }
 
@@ -482,6 +512,57 @@ export class LeaguesService {
     );
 
     return { ok: true };
+  }
+
+  private async ensureMemberInTransaction(
+    manager: EntityManager,
+    leagueId: string,
+    userId: string,
+  ): Promise<LeagueMember> {
+    const memberRepo = manager.getRepository(LeagueMember);
+    try {
+      const member = memberRepo.create({ leagueId, userId });
+      await memberRepo.save(member);
+    } catch (err: any) {
+      if (String(err?.code) !== '23505') {
+        throw err;
+      }
+    }
+
+    const saved = await memberRepo.findOne({
+      where: { leagueId, userId },
+      relations: ['user'],
+    });
+
+    if (!saved) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'MEMBER_NOT_FOUND',
+        message: 'Member not found in this league',
+      });
+    }
+
+    return saved;
+  }
+
+  private async markInviteNotificationReadInTransaction(
+    manager: EntityManager,
+    inviteId: string,
+    userId: string,
+  ): Promise<void> {
+    await manager
+      .getRepository(UserNotification)
+      .createQueryBuilder()
+      .update(UserNotification)
+      .set({ readAt: () => 'NOW()' })
+      .where('userId = :userId', { userId })
+      .andWhere('type = :type', {
+        type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+      })
+      .andWhere('readAt IS NULL')
+      .andWhere("data ? 'inviteId'")
+      .andWhere("data->>'inviteId' = :inviteId", { inviteId })
+      .execute();
   }
 
   // ── settings & roles ────────────────────────────────────────────
@@ -669,11 +750,10 @@ export class LeaguesService {
           inviteId: invite.id,
           leagueId: league.id,
           leagueName: league.name,
-          inviteToken: invite.token,
           inviterDisplayName: inviterName,
           startDate: league.startDate,
           endDate: league.endDate,
-          link: `/leagues/invite?token=${invite.token}`,
+          link: `/leagues/invites/${invite.id}`,
         },
       });
     }
