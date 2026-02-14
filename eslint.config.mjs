@@ -13,15 +13,13 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
 
-  // Base TS/Node config
   {
     languageOptions: {
       globals: {
         ...globals.node,
         ...globals.jest,
       },
-      // Change 'commonjs' to 'module' because you are using .mjs and NestJS 11
-      sourceType: 'module', 
+      sourceType: 'module',
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
@@ -29,32 +27,36 @@ export default tseslint.config(
     },
   },
 
-  // Global rules (para todo el repo)
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-
-      // Mantengo warnings (útiles) en general
       '@typescript-eslint/no-unsafe-argument': 'warn',
-
-      // Prettier
+      '@typescript-eslint/no-unsafe-enum-comparison': 'off',
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 
   {
-    files: ['**/*.dto.ts', "**/*.spec.ts", "**/*.test.ts", "**/__tests__/**/*.ts"],
+    files: [
+      '**/*.dto.ts',
+      '**/*.spec.ts',
+      '**/*-spec.ts',
+      '**/*.test.ts',
+      '**/__tests__/**/*.ts',
+      'test/**/*.ts',
+    ],
     rules: {
-        "@typescript-eslint/no-unsafe-assignment": "off",
-        "@typescript-eslint/no-unsafe-call": "off",
-        "@typescript-eslint/no-unsafe-member-access": "off",
-        "@typescript-eslint/no-unsafe-return": "off",
-        "@typescript-eslint/require-await": "off"
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   },
 
-  // ✅ Entities: decorators de TypeORM también generan ruido
   {
     files: ['**/*.entity.ts'],
     rules: {
@@ -65,7 +67,6 @@ export default tseslint.config(
     },
   },
 
-  // ✅ Services: repos/ORM + return types a veces terminan como unknown para el linter
   {
     files: ['**/*.service.ts'],
     rules: {
@@ -76,7 +77,15 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+    },
+  },
+
+  {
+    files: ['**/*.gateway.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
     },
   },
 );

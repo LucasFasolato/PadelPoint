@@ -34,6 +34,8 @@ lerna-debug.log*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+/.claude/
+/.codex-preexisting.patch
 
 # dotenv environment variable files
 .env
