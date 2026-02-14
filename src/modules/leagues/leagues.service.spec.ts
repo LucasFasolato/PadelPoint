@@ -182,6 +182,7 @@ describe('LeaguesService', () => {
       id: FAKE_USER_ID,
       displayName: 'Creator Player',
     });
+    userRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -509,6 +510,97 @@ describe('LeaguesService', () => {
           }),
         }),
       );
+    });
+
+    it('createInvites should resolve existing user by email and notify them', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
+      memberRepo.find.mockResolvedValue([]);
+      inviteRepo.find.mockResolvedValue([]);
+      userRepo.find.mockResolvedValue([
+        {
+          id: FAKE_USER_ID_2,
+          email: 'invitee@test.com',
+        } as User,
+      ]);
+
+      const savedInvites = [
+        fakeInvite({
+          id: 'invite-email-1',
+          invitedUserId: FAKE_USER_ID_2,
+          invitedEmail: 'invitee@test.com',
+          token: 'tok-email-1',
+        }),
+      ];
+      inviteRepo.create.mockReturnValue(savedInvites[0]);
+      inviteRepo.save.mockResolvedValue(savedInvites);
+
+      const result = await service.createInvites(FAKE_USER_ID, 'league-1', {
+        emails: ['  Invitee@Test.com  '],
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(result[0].invitedUserId).toBe(FAKE_USER_ID_2);
+      expect(inviteRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invitedUserId: FAKE_USER_ID_2,
+          invitedEmail: 'invitee@test.com',
+        }),
+      );
+      expect(userNotifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: FAKE_USER_ID_2,
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          data: expect.objectContaining({
+            inviteId: 'invite-email-1',
+            leagueId: 'league-1',
+            leagueName: 'Test League',
+            inviterId: FAKE_USER_ID,
+            inviterName: 'Creator Player',
+          }),
+        }),
+      );
+    });
+
+    it('createInvites should keep invitedUserId null for unknown email and skip notification', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
+      memberRepo.find.mockResolvedValue([]);
+      inviteRepo.find.mockResolvedValue([]);
+      userRepo.find.mockResolvedValue([]);
+
+      const savedInvites = [
+        fakeInvite({
+          id: 'invite-email-2',
+          invitedUserId: null,
+          invitedEmail: 'newuser@test.com',
+          token: 'tok-email-2',
+        }),
+      ];
+      inviteRepo.create.mockReturnValue(savedInvites[0]);
+      inviteRepo.save.mockResolvedValue(savedInvites);
+
+      const result = await service.createInvites(FAKE_USER_ID, 'league-1', {
+        emails: [' NewUser@Test.com '],
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(result[0].invitedUserId).toBeNull();
+      expect(inviteRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invitedUserId: null,
+          invitedEmail: 'newuser@test.com',
+        }),
+      );
+      expect(userNotifications.create).not.toHaveBeenCalled();
     });
 
     it('acceptInvite should persist LEAGUE_INVITE_ACCEPTED for the creator', async () => {

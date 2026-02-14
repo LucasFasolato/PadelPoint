@@ -209,29 +209,76 @@ export class LeaguesService {
     });
     const existingSet = new Set(existingMembers.map((m) => m.userId));
 
-    // Skip users who already have a pending invite
-    const userIds = dto.userIds ?? [];
-    const pendingSet = new Set<string>();
-    if (userIds.length > 0) {
-      const pendingInvites = await this.inviteRepo.find({
+    const requestedUserIds = Array.from(new Set(dto.userIds ?? []));
+    const normalizedEmails = Array.from(
+      new Set((dto.emails ?? []).map((email) => this.normalizeEmail(email))),
+    ).filter((email) => email.length > 0);
+
+    const usersByEmail = new Map<string, Pick<User, 'id' | 'email'>>();
+    if (normalizedEmails.length > 0) {
+      const existingUsers = await this.userRepo.find({
+        where: { email: In(normalizedEmails) },
+        select: ['id', 'email'],
+      });
+      for (const user of existingUsers) {
+        usersByEmail.set(this.normalizeEmail(user.email), user);
+      }
+    }
+
+    const resolvedUserIdsFromEmails = normalizedEmails
+      .map((email) => usersByEmail.get(email)?.id)
+      .filter((id): id is string => Boolean(id));
+
+    const candidateUserIds = Array.from(
+      new Set([...requestedUserIds, ...resolvedUserIdsFromEmails]),
+    );
+
+    const pendingUserSet = new Set<string>();
+    if (candidateUserIds.length > 0) {
+      const pendingInvitesByUser = await this.inviteRepo.find({
         where: {
           leagueId,
           status: InviteStatus.PENDING,
-          invitedUserId: In(userIds),
+          invitedUserId: In(candidateUserIds),
         },
         select: ['invitedUserId'],
       });
-      for (const inv of pendingInvites) {
-        if (inv.invitedUserId) pendingSet.add(inv.invitedUserId);
+      for (const inv of pendingInvitesByUser) {
+        if (inv.invitedUserId) pendingUserSet.add(inv.invitedUserId);
+      }
+    }
+
+    const pendingEmailSet = new Set<string>();
+    if (normalizedEmails.length > 0) {
+      const pendingInvitesByEmail = await this.inviteRepo.find({
+        where: {
+          leagueId,
+          status: InviteStatus.PENDING,
+          invitedEmail: In(normalizedEmails),
+        },
+        select: ['invitedEmail'],
+      });
+      for (const inv of pendingInvitesByEmail) {
+        if (inv.invitedEmail) {
+          pendingEmailSet.add(this.normalizeEmail(inv.invitedEmail));
+        }
       }
     }
 
     const invites: LeagueInvite[] = [];
+    const queuedUserIds = new Set<string>();
+    const queuedEmails = new Set<string>();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
 
-    for (const uid of userIds) {
-      if (existingSet.has(uid) || pendingSet.has(uid)) continue;
+    for (const uid of requestedUserIds) {
+      if (
+        existingSet.has(uid) ||
+        pendingUserSet.has(uid) ||
+        queuedUserIds.has(uid)
+      ) {
+        continue;
+      }
       invites.push(
         this.inviteRepo.create({
           leagueId,
@@ -242,9 +289,36 @@ export class LeaguesService {
           expiresAt,
         }),
       );
+      queuedUserIds.add(uid);
     }
 
-    for (const email of dto.emails ?? []) {
+    for (const email of normalizedEmails) {
+      const resolved = usersByEmail.get(email);
+      if (resolved) {
+        const resolvedUserId = resolved.id;
+        if (
+          existingSet.has(resolvedUserId) ||
+          pendingUserSet.has(resolvedUserId) ||
+          pendingEmailSet.has(email) ||
+          queuedUserIds.has(resolvedUserId)
+        ) {
+          continue;
+        }
+        invites.push(
+          this.inviteRepo.create({
+            leagueId,
+            invitedUserId: resolvedUserId,
+            invitedEmail: email,
+            token: crypto.randomBytes(32).toString('hex'),
+            status: InviteStatus.PENDING,
+            expiresAt,
+          }),
+        );
+        queuedUserIds.add(resolvedUserId);
+        continue;
+      }
+
+      if (pendingEmailSet.has(email) || queuedEmails.has(email)) continue;
       invites.push(
         this.inviteRepo.create({
           leagueId,
@@ -255,6 +329,7 @@ export class LeaguesService {
           expiresAt,
         }),
       );
+      queuedEmails.add(email);
     }
 
     if (invites.length === 0) return [];
@@ -754,6 +829,8 @@ export class LeaguesService {
             inviteId: invite.id,
             leagueId: league.id,
             leagueName: league.name,
+            inviterId: inviterUserId,
+            inviterName: inviterName,
             inviterDisplayName: inviterName,
             startDate: league.startDate,
             endDate: league.endDate,
@@ -898,5 +975,9 @@ export class LeaguesService {
       status: i.status,
       expiresAt: i.expiresAt.toISOString(),
     };
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
   }
 }
