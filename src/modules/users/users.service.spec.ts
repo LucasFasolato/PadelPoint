@@ -58,9 +58,7 @@ describe('UsersService', () => {
       createdAt: new Date('2026-02-01T10:00:00.000Z'),
     } as unknown as User);
 
-    userRepo.save.mockImplementation((input) =>
-      Promise.resolve(input as User),
-    );
+    userRepo.save.mockImplementation((input) => Promise.resolve(input as User));
 
     const result = await service.updatePlayerProfile('u1', {
       displayName: 'New Name',

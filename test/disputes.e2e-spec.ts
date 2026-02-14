@@ -70,9 +70,7 @@ describe('Disputes (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [MatchesController],
-      providers: [
-        { provide: MatchesService, useValue: matchesService },
-      ],
+      providers: [{ provide: MatchesService, useValue: matchesService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(fakeGuard())
@@ -98,7 +96,7 @@ describe('Disputes (e2e)', () => {
 
   describe('POST /matches/:id/dispute', () => {
     it('should dispute a confirmed match', async () => {
-      matchesService.disputeMatch!.mockResolvedValue({
+      matchesService.disputeMatch.mockResolvedValue({
         dispute: {
           id: 'dispute-1',
           matchId: 'match-1',
@@ -139,7 +137,7 @@ describe('Disputes (e2e)', () => {
     });
 
     it('should propagate MATCH_NOT_CONFIRMED error', async () => {
-      matchesService.disputeMatch!.mockRejectedValue(
+      matchesService.disputeMatch.mockRejectedValue(
         new BadRequestException({
           statusCode: 400,
           code: 'MATCH_NOT_CONFIRMED',
@@ -156,7 +154,7 @@ describe('Disputes (e2e)', () => {
     });
 
     it('should propagate DISPUTE_ALREADY_OPEN error', async () => {
-      matchesService.disputeMatch!.mockRejectedValue(
+      matchesService.disputeMatch.mockRejectedValue(
         new ConflictException({
           statusCode: 409,
           code: 'DISPUTE_ALREADY_OPEN',
@@ -173,7 +171,7 @@ describe('Disputes (e2e)', () => {
     });
 
     it('should propagate MATCH_FORBIDDEN for non-participant', async () => {
-      matchesService.disputeMatch!.mockRejectedValue(
+      matchesService.disputeMatch.mockRejectedValue(
         new ForbiddenException({
           statusCode: 403,
           code: 'MATCH_FORBIDDEN',
@@ -195,7 +193,7 @@ describe('Disputes (e2e)', () => {
 
   describe('POST /matches/:id/resolve', () => {
     it('should resolve a dispute as admin', async () => {
-      matchesService.resolveDispute!.mockResolvedValue({
+      matchesService.resolveDispute.mockResolvedValue({
         dispute: {
           id: 'dispute-1',
           matchId: 'match-1',
@@ -242,7 +240,7 @@ describe('Disputes (e2e)', () => {
     });
 
     it('should resolve with VOID_MATCH and note', async () => {
-      matchesService.resolveDispute!.mockResolvedValue({
+      matchesService.resolveDispute.mockResolvedValue({
         dispute: {
           id: 'dispute-1',
           matchId: 'match-1',

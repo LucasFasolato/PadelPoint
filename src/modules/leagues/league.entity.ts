@@ -14,7 +14,10 @@ import { LeagueStatus } from './league-status.enum';
 import { LeagueMode } from './league-mode.enum';
 import { LeagueMember } from './league-member.entity';
 import { LeagueInvite } from './league-invite.entity';
-import { LeagueSettings, DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
+import {
+  LeagueSettings,
+  DEFAULT_LEAGUE_SETTINGS,
+} from './league-settings.type';
 
 @Entity('leagues')
 export class League {

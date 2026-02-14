@@ -52,9 +52,7 @@ export class UserNotificationsV11769920000000 implements MigrationInterface {
       `DROP INDEX "IDX_user_notifications_userId_createdAt"`,
     );
 
-    await queryRunner.query(
-      `DROP INDEX "IDX_user_notifications_userId"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_user_notifications_userId"`);
 
     await queryRunner.query(`DROP TABLE "user_notifications"`);
 

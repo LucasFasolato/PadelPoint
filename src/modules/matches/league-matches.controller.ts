@@ -39,7 +39,11 @@ export class LeagueMatchesController {
     @Body() dto: ReportFromReservationDto,
   ) {
     const user = req.user as AuthUser;
-    return this.matchesService.reportFromReservation(user.userId, leagueId, dto);
+    return this.matchesService.reportFromReservation(
+      user.userId,
+      leagueId,
+      dto,
+    );
   }
 
   @Post(':leagueId/report-manual')

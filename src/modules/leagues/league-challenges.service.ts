@@ -59,7 +59,12 @@ export class LeagueChallengesService {
         });
       }
 
-      await this.assertBothLeagueMembers(manager, leagueId, userId, dto.opponentId);
+      await this.assertBothLeagueMembers(
+        manager,
+        leagueId,
+        userId,
+        dto.opponentId,
+      );
       const expired = await this.expirePairChallenges(
         manager,
         leagueId,
@@ -76,7 +81,10 @@ export class LeagueChallengesService {
           { me: userId, opp: dto.opponentId },
         )
         .andWhere('c.status IN (:...statuses)', {
-          statuses: [LeagueChallengeStatus.PENDING, LeagueChallengeStatus.ACCEPTED],
+          statuses: [
+            LeagueChallengeStatus.PENDING,
+            LeagueChallengeStatus.ACCEPTED,
+          ],
         })
         .getOne();
 
@@ -94,13 +102,17 @@ export class LeagueChallengesService {
         opponentId: dto.opponentId,
         status: LeagueChallengeStatus.PENDING,
         message: dto.message?.trim() || null,
-        expiresAt: new Date(Date.now() + CHALLENGE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(
+          Date.now() + CHALLENGE_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+        ),
         acceptedAt: null,
         completedAt: null,
         matchId: null,
       });
 
-      const saved = await manager.getRepository(LeagueChallenge).save(challenge);
+      const saved = await manager
+        .getRepository(LeagueChallenge)
+        .save(challenge);
       return { saved, expired };
     });
 
@@ -180,7 +192,9 @@ export class LeagueChallengesService {
 
       challenge.status = LeagueChallengeStatus.ACCEPTED;
       challenge.acceptedAt = new Date();
-      const saved = await manager.getRepository(LeagueChallenge).save(challenge);
+      const saved = await manager
+        .getRepository(LeagueChallenge)
+        .save(challenge);
       return { expired: null as LeagueChallenge | null, saved };
     });
 
@@ -193,7 +207,7 @@ export class LeagueChallengesService {
       });
     }
 
-    const saved = txResult.saved!;
+    const saved = txResult.saved;
     this.logLeagueActivity(
       saved.leagueId,
       LeagueActivityType.CHALLENGE_ACCEPTED,
@@ -267,7 +281,9 @@ export class LeagueChallengesService {
       }
 
       challenge.status = LeagueChallengeStatus.DECLINED;
-      const saved = await manager.getRepository(LeagueChallenge).save(challenge);
+      const saved = await manager
+        .getRepository(LeagueChallenge)
+        .save(challenge);
       return { expired: null as LeagueChallenge | null, saved };
     });
 
@@ -280,7 +296,7 @@ export class LeagueChallengesService {
       });
     }
 
-    const saved = txResult.saved!;
+    const saved = txResult.saved;
     this.logLeagueActivity(
       saved.leagueId,
       LeagueActivityType.CHALLENGE_DECLINED,
@@ -398,7 +414,9 @@ export class LeagueChallengesService {
       challenge.matchId = matchId;
       challenge.status = LeagueChallengeStatus.COMPLETED;
       challenge.completedAt = new Date();
-      const saved = await manager.getRepository(LeagueChallenge).save(challenge);
+      const saved = await manager
+        .getRepository(LeagueChallenge)
+        .save(challenge);
       return { expired: null as LeagueChallenge | null, saved };
     });
 
@@ -411,7 +429,7 @@ export class LeagueChallengesService {
       });
     }
 
-    return this.toView(txResult.saved!);
+    return this.toView(txResult.saved);
   }
 
   async listChallenges(
@@ -450,7 +468,10 @@ export class LeagueChallengesService {
       .createQueryBuilder('c')
       .where('c."leagueId" = :leagueId', { leagueId })
       .andWhere('c.status IN (:...statuses)', {
-        statuses: [LeagueChallengeStatus.PENDING, LeagueChallengeStatus.ACCEPTED],
+        statuses: [
+          LeagueChallengeStatus.PENDING,
+          LeagueChallengeStatus.ACCEPTED,
+        ],
       })
       .andWhere('c."expiresAt" < NOW()')
       .getMany();
@@ -479,7 +500,10 @@ export class LeagueChallengesService {
         { a: createdById, b: opponentId },
       )
       .andWhere('c.status IN (:...statuses)', {
-        statuses: [LeagueChallengeStatus.PENDING, LeagueChallengeStatus.ACCEPTED],
+        statuses: [
+          LeagueChallengeStatus.PENDING,
+          LeagueChallengeStatus.ACCEPTED,
+        ],
       })
       .andWhere('c."expiresAt" < NOW()')
       .getMany();
@@ -583,8 +607,12 @@ export class LeagueChallengesService {
         })
         .catch((err: unknown) => {
           const message =
-            err instanceof Error ? err.message : 'unknown league activity error';
-          this.logger.warn(`failed to log league challenge activity: ${message}`);
+            err instanceof Error
+              ? err.message
+              : 'unknown league activity error';
+          this.logger.warn(
+            `failed to log league challenge activity: ${message}`,
+          );
         });
     } catch (err: unknown) {
       const message =

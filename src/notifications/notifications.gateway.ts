@@ -41,7 +41,9 @@ export class NotificationsGateway
       const payload = verify(token, this.jwtSecret) as JwtPayload;
       const userId = payload.sub;
       if (!userId) {
-        this.logger.warn(`WS auth failed: no sub in JWT, clientId=${client.id}`);
+        this.logger.warn(
+          `WS auth failed: no sub in JWT, clientId=${client.id}`,
+        );
         client.disconnect(true);
         return;
       }
@@ -61,7 +63,9 @@ export class NotificationsGateway
   handleDisconnect(client: Socket) {
     const userId = (client as any).userId;
     if (userId) {
-      this.logger.log(`WS disconnected: userId=${userId} clientId=${client.id}`);
+      this.logger.log(
+        `WS disconnected: userId=${userId} clientId=${client.id}`,
+      );
     }
   }
 

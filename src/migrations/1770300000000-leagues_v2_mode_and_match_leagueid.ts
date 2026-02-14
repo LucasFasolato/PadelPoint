@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class LeaguesV2ModeAndMatchLeagueid1770300000000
-  implements MigrationInterface
-{
+export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInterface {
   name = 'LeaguesV2ModeAndMatchLeagueid1770300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -25,9 +23,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000
     );
 
     // 4. Add leagueId column to match_results
-    await queryRunner.query(
-      `ALTER TABLE "match_results" ADD "leagueId" uuid`,
-    );
+    await queryRunner.query(`ALTER TABLE "match_results" ADD "leagueId" uuid`);
 
     // 5. Add FK constraint for leagueId
     await queryRunner.query(
@@ -41,9 +37,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "IDX_match_results_leagueId"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_match_results_leagueId"`);
     await queryRunner.query(
       `ALTER TABLE "match_results" DROP CONSTRAINT "FK_match_results_leagueId"`,
     );
@@ -56,11 +50,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000
     await queryRunner.query(
       `ALTER TABLE "leagues" ALTER COLUMN "startDate" SET NOT NULL`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "leagues" DROP COLUMN "mode"`,
-    );
-    await queryRunner.query(
-      `DROP TYPE "leagues_mode_enum"`,
-    );
+    await queryRunner.query(`ALTER TABLE "leagues" DROP COLUMN "mode"`);
+    await queryRunner.query(`DROP TYPE "leagues_mode_enum"`);
   }
 }

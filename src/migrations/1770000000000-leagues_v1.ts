@@ -85,25 +85,17 @@ export class LeaguesV11770000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "IDX_league_invites_token"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_league_invites_token"`);
 
     await queryRunner.query(`DROP TABLE "league_invites"`);
 
-    await queryRunner.query(
-      `DROP INDEX "IDX_league_members_leagueId"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_league_members_leagueId"`);
 
-    await queryRunner.query(
-      `DROP INDEX "IDX_league_members_leagueId_userId"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_league_members_leagueId_userId"`);
 
     await queryRunner.query(`DROP TABLE "league_members"`);
 
-    await queryRunner.query(
-      `DROP INDEX "IDX_leagues_creatorId"`,
-    );
+    await queryRunner.query(`DROP INDEX "IDX_leagues_creatorId"`);
 
     await queryRunner.query(`DROP TABLE "leagues"`);
 

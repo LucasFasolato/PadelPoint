@@ -9,11 +9,11 @@ import {
 } from './league-standings-snapshot.entity';
 import { LeagueStatus } from './league-status.enum';
 import { LeagueMode } from './league-mode.enum';
+import { MatchResult, MatchResultStatus } from '../matches/match-result.entity';
 import {
-  MatchResult,
-  MatchResultStatus,
-} from '../matches/match-result.entity';
-import { DEFAULT_LEAGUE_SETTINGS, LeagueSettings } from './league-settings.type';
+  DEFAULT_LEAGUE_SETTINGS,
+  LeagueSettings,
+} from './league-settings.type';
 
 @Injectable()
 export class LeagueStandingsService {
@@ -118,7 +118,10 @@ export class LeagueStandingsService {
     // Read configurable settings (fallback to defaults)
     const settings: LeagueSettings = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
     const { winPoints, drawPoints, lossPoints } = settings;
-    const includeSources = settings.includeSources ?? { RESERVATION: true, MANUAL: true };
+    const includeSources = settings.includeSources ?? {
+      RESERVATION: true,
+      MANUAL: true,
+    };
 
     // Filter: all 4 participants must be league members + source filter
     const leagueMatches = matches.filter((mr) => {
@@ -127,9 +130,12 @@ export class LeagueStandingsService {
       // All 4 players must be league members
       if (
         !memberSet.has(ch.teamA1Id) ||
-        !ch.teamA2Id || !memberSet.has(ch.teamA2Id) ||
-        !ch.teamB1Id || !memberSet.has(ch.teamB1Id) ||
-        !ch.teamB2Id || !memberSet.has(ch.teamB2Id)
+        !ch.teamA2Id ||
+        !memberSet.has(ch.teamA2Id) ||
+        !ch.teamB1Id ||
+        !memberSet.has(ch.teamB1Id) ||
+        !ch.teamB2Id ||
+        !memberSet.has(ch.teamB2Id)
       ) {
         return false;
       }
@@ -145,16 +151,28 @@ export class LeagueStandingsService {
     // Aggregate stats per member
     const stats = new Map<
       string,
-      { wins: number; losses: number; draws: number; setsDiff: number; gamesDiff: number }
+      {
+        wins: number;
+        losses: number;
+        draws: number;
+        setsDiff: number;
+        gamesDiff: number;
+      }
     >();
     for (const uid of memberUserIds) {
-      stats.set(uid, { wins: 0, losses: 0, draws: 0, setsDiff: 0, gamesDiff: 0 });
+      stats.set(uid, {
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        setsDiff: 0,
+        gamesDiff: 0,
+      });
     }
 
     for (const mr of leagueMatches) {
       const ch = mr.challenge;
-      const teamA = [ch.teamA1Id, ch.teamA2Id!];
-      const teamB = [ch.teamB1Id!, ch.teamB2Id!];
+      const teamA = [ch.teamA1Id, ch.teamA2Id];
+      const teamB = [ch.teamB1Id, ch.teamB2Id];
       const winners = mr.winnerTeam === 'A' ? teamA : teamB;
       const losers = mr.winnerTeam === 'A' ? teamB : teamA;
 
@@ -205,7 +223,13 @@ export class LeagueStandingsService {
 
     // Compute points and sort using configurable tie-breakers
     const ranked = members.map((m) => {
-      const s = stats.get(m.userId) ?? { wins: 0, losses: 0, draws: 0, setsDiff: 0, gamesDiff: 0 };
+      const s = stats.get(m.userId) ?? {
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        setsDiff: 0,
+        gamesDiff: 0,
+      };
       return {
         member: m,
         wins: s.wins,
@@ -213,7 +237,8 @@ export class LeagueStandingsService {
         draws: s.draws,
         setsDiff: s.setsDiff,
         gamesDiff: s.gamesDiff,
-        points: s.wins * winPoints + s.draws * drawPoints + s.losses * lossPoints,
+        points:
+          s.wins * winPoints + s.draws * drawPoints + s.losses * lossPoints,
       };
     });
 
@@ -256,7 +281,11 @@ export class LeagueStandingsService {
 
     await memberRepo.save(ranked.map((r) => r.member));
 
-    const snapshot = await this.persistSnapshot(manager, leagueId, snapshotRows);
+    const snapshot = await this.persistSnapshot(
+      manager,
+      leagueId,
+      snapshotRows,
+    );
 
     this.logger.log(
       `standings recomputed: leagueId=${leagueId} members=${ranked.length} matches=${leagueMatches.length} snapshotVersion=${snapshot.version}`,
@@ -377,7 +406,9 @@ export class LeagueStandingsService {
       }
     }
 
-    throw new Error(`Unable to persist standings snapshot for league ${leagueId}`);
+    throw new Error(
+      `Unable to persist standings snapshot for league ${leagueId}`,
+    );
   }
 
   private async pruneSnapshots(
@@ -439,7 +470,8 @@ export class LeagueStandingsService {
     }
 
     for (const row of currentRows) {
-      const previousPosition = previousPositions.get(row.userId) ?? row.position;
+      const previousPosition =
+        previousPositions.get(row.userId) ?? row.position;
       movement[row.userId] = { delta: row.position - previousPosition };
     }
 

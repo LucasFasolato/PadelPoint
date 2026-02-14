@@ -45,14 +45,26 @@ const challengeView = {
   createdAt: '2025-06-01T12:00:00.000Z',
   updatedAt: '2025-06-01T12:00:00.000Z',
   teamA: {
-    p1: { userId: FAKE_CREATOR.userId, email: FAKE_CREATOR.email, displayName: 'Creator' },
+    p1: {
+      userId: FAKE_CREATOR.userId,
+      email: FAKE_CREATOR.email,
+      displayName: 'Creator',
+    },
     p2: null,
   },
   teamB: {
-    p1: { userId: FAKE_OPPONENT.userId, email: FAKE_OPPONENT.email, displayName: 'Opponent' },
+    p1: {
+      userId: FAKE_OPPONENT.userId,
+      email: FAKE_OPPONENT.email,
+      displayName: 'Opponent',
+    },
     p2: null,
   },
-  invitedOpponent: { userId: FAKE_OPPONENT.userId, email: FAKE_OPPONENT.email, displayName: 'Opponent' },
+  invitedOpponent: {
+    userId: FAKE_OPPONENT.userId,
+    email: FAKE_OPPONENT.email,
+    displayName: 'Opponent',
+  },
   isReady: false,
 };
 
@@ -77,9 +89,7 @@ describe('Challenges (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [ChallengesController],
-      providers: [
-        { provide: ChallengesService, useValue: challengesService },
-      ],
+      providers: [{ provide: ChallengesService, useValue: challengesService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(fakeGuard())
@@ -105,7 +115,7 @@ describe('Challenges (e2e)', () => {
 
   describe('POST /challenges/direct', () => {
     it('should create a direct challenge (triggers CHALLENGE_RECEIVED notification)', async () => {
-      challengesService.createDirect!.mockResolvedValue(challengeView);
+      challengesService.createDirect.mockResolvedValue(challengeView);
 
       const res = await request(app.getHttpServer())
         .post('/challenges/direct')
@@ -135,7 +145,7 @@ describe('Challenges (e2e)', () => {
   describe('PATCH /challenges/:id/accept', () => {
     it('should accept a direct challenge (triggers CHALLENGE_ACCEPTED notification)', async () => {
       const accepted = { ...challengeView, status: ChallengeStatus.ACCEPTED };
-      challengesService.acceptDirect!.mockResolvedValue(accepted);
+      challengesService.acceptDirect.mockResolvedValue(accepted);
 
       const res = await request(app.getHttpServer())
         .patch('/challenges/ch-1/accept')
@@ -155,7 +165,7 @@ describe('Challenges (e2e)', () => {
   describe('PATCH /challenges/:id/reject', () => {
     it('should reject a direct challenge (triggers CHALLENGE_REJECTED notification)', async () => {
       const rejected = { ...challengeView, status: ChallengeStatus.REJECTED };
-      challengesService.rejectDirect!.mockResolvedValue(rejected);
+      challengesService.rejectDirect.mockResolvedValue(rejected);
 
       const res = await request(app.getHttpServer())
         .patch('/challenges/ch-1/reject')
@@ -174,7 +184,7 @@ describe('Challenges (e2e)', () => {
 
   describe('GET /challenges/inbox', () => {
     it('should return pending challenges for opponent', async () => {
-      challengesService.inbox!.mockResolvedValue([challengeView]);
+      challengesService.inbox.mockResolvedValue([challengeView]);
 
       const res = await request(app.getHttpServer())
         .get('/challenges/inbox')
@@ -182,7 +192,9 @@ describe('Challenges (e2e)', () => {
         .expect(200);
 
       expect(res.body).toHaveLength(1);
-      expect(challengesService.inbox).toHaveBeenCalledWith(FAKE_OPPONENT.userId);
+      expect(challengesService.inbox).toHaveBeenCalledWith(
+        FAKE_OPPONENT.userId,
+      );
     });
   });
 });

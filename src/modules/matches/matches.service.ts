@@ -24,7 +24,10 @@ import { LeagueStandingsService } from '../leagues/league-standings.service';
 import { League } from '../leagues/league.entity';
 import { LeagueMember } from '../leagues/league-member.entity';
 import { LeagueStatus } from '../leagues/league-status.enum';
-import { Reservation, ReservationStatus } from '../reservations/reservation.entity';
+import {
+  Reservation,
+  ReservationStatus,
+} from '../reservations/reservation.entity';
 import { Court } from '../courts/court.entity';
 import { ChallengeType } from '../challenges/challenge-type.enum';
 import { MatchDispute } from './match-dispute.entity';
@@ -245,8 +248,7 @@ export class MatchesService {
           throw new BadRequestException({
             statusCode: 400,
             code: 'LEAGUE_MEMBERS_MISSING',
-            message:
-              'All 4 match participants must be members of the league',
+            message: 'All 4 match participants must be members of the league',
           });
         }
 
@@ -383,7 +385,12 @@ export class MatchesService {
       }
 
       // 4. All 4 participants must be league members
-      const playerIds = [dto.teamA1Id, dto.teamA2Id, dto.teamB1Id, dto.teamB2Id];
+      const playerIds = [
+        dto.teamA1Id,
+        dto.teamA2Id,
+        dto.teamB1Id,
+        dto.teamB2Id,
+      ];
       const memberCount = await memberRepo
         .createQueryBuilder('m')
         .where('m."leagueId" = :leagueId', { leagueId })
@@ -412,7 +419,8 @@ export class MatchesService {
         throw new ConflictException({
           statusCode: 409,
           code: 'MATCH_ALREADY_REPORTED',
-          message: 'A match has already been reported for this reservation and league',
+          message:
+            'A match has already been reported for this reservation and league',
         });
       }
 
@@ -568,7 +576,12 @@ export class MatchesService {
       }
 
       // 3. Prevent duplicate player selection
-      const playerIds = [dto.teamA1Id, dto.teamA2Id, dto.teamB1Id, dto.teamB2Id];
+      const playerIds = [
+        dto.teamA1Id,
+        dto.teamA2Id,
+        dto.teamB1Id,
+        dto.teamB2Id,
+      ];
       if (new Set(playerIds).size !== 4) {
         throw new BadRequestException({
           statusCode: 400,
@@ -941,7 +954,9 @@ export class MatchesService {
       // Notify other participants (fire-and-forget)
       this.notifyDispute(match, challenge, userId, dto.reasonCode).catch(
         (err) =>
-          this.logger.error(`failed to send dispute notifications: ${err.message}`),
+          this.logger.error(
+            `failed to send dispute notifications: ${err.message}`,
+          ),
       );
 
       // League activity (fire-and-forget)
@@ -1041,7 +1056,9 @@ export class MatchesService {
 
       // Notify participants (fire-and-forget)
       this.notifyResolution(match, dto.resolution).catch((err) =>
-        this.logger.error(`failed to send resolve notifications: ${err.message}`),
+        this.logger.error(
+          `failed to send resolve notifications: ${err.message}`,
+        ),
       );
 
       // League activity (fire-and-forget)
@@ -1057,7 +1074,7 @@ export class MatchesService {
           id: dispute.id,
           matchId: dispute.matchId,
           status: dispute.status,
-          resolvedAt: dispute.resolvedAt!.toISOString(),
+          resolvedAt: dispute.resolvedAt.toISOString(),
         },
         matchStatus: match.status,
         resolution: dto.resolution,
@@ -1232,7 +1249,9 @@ export class MatchesService {
     const raiserName = raiser?.displayName ?? 'A player';
 
     const participants = this.getParticipantsOrThrow(challenge);
-    const othersToNotify = participants.all.filter((id) => id !== raisedByUserId);
+    const othersToNotify = participants.all.filter(
+      (id) => id !== raisedByUserId,
+    );
 
     // Collect league OWNER/ADMIN user IDs to also notify
     const leagueAdminIds: string[] = [];
@@ -1246,7 +1265,10 @@ export class MatchesService {
         })
         .getMany();
       for (const a of admins) {
-        if (!participants.all.includes(a.userId) && a.userId !== raisedByUserId) {
+        if (
+          !participants.all.includes(a.userId) &&
+          a.userId !== raisedByUserId
+        ) {
           leagueAdminIds.push(a.userId);
         }
       }
@@ -1360,10 +1382,8 @@ export class MatchesService {
     });
     const memberEmails = users
       .map((u) => u.email?.toLowerCase())
-      .filter(Boolean) as string[];
-    const userByEmail = new Map(
-      users.map((u) => [u.email?.toLowerCase(), u]),
-    );
+      .filter(Boolean);
+    const userByEmail = new Map(users.map((u) => [u.email?.toLowerCase(), u]));
 
     if (memberEmails.length === 0) return [];
 
@@ -1378,7 +1398,9 @@ export class MatchesService {
       .where('r.status = :status', { status: ReservationStatus.CONFIRMED })
       .andWhere('r."startAt" < NOW()')
       .andWhere('r."startAt" > :since', { since: thirtyDaysAgo })
-      .andWhere('LOWER(r."clienteEmail") IN (:...emails)', { emails: memberEmails })
+      .andWhere('LOWER(r."clienteEmail") IN (:...emails)', {
+        emails: memberEmails,
+      })
       .orderBy('r."startAt"', 'DESC')
       .getMany();
 
@@ -1396,14 +1418,21 @@ export class MatchesService {
       .getRawMany()
       .then((rows) => new Set(rows.map((r) => r.reservationId)));
 
-    const eligible = reservations.filter((r) => !reportedReservationIds.has(r.id));
+    const eligible = reservations.filter(
+      (r) => !reportedReservationIds.has(r.id),
+    );
 
     // 6. Map to response shape
     return eligible.map((r) => {
-      const court = r.court as Court & { club?: { id: string; nombre: string } };
+      const court = r.court as Court & {
+        club?: { id: string; nombre: string };
+      };
       const bookerUser = userByEmail.get(r.clienteEmail?.toLowerCase() ?? '');
 
-      const participants: Array<{ userId: string; displayName: string | null }> = [];
+      const participants: Array<{
+        userId: string;
+        displayName: string | null;
+      }> = [];
       if (bookerUser) {
         participants.push({
           userId: bookerUser.id,
@@ -1458,7 +1487,9 @@ export class MatchesService {
         })
         .catch((err: unknown) => {
           const message =
-            err instanceof Error ? err.message : 'unknown league activity error';
+            err instanceof Error
+              ? err.message
+              : 'unknown league activity error';
           this.logger.warn(`failed to log league activity: ${message}`);
         });
     } catch (err: unknown) {

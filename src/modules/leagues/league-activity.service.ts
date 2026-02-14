@@ -55,13 +55,10 @@ export class LeagueActivityService {
       .take(limit + 1);
 
     if (opts.cursor) {
-      qb.andWhere(
-        '(a."createdAt", a.id) < (:cursorDate, :cursorId)',
-        {
-          cursorDate: new Date(opts.cursor.split('|')[0]),
-          cursorId: opts.cursor.split('|')[1],
-        },
-      );
+      qb.andWhere('(a."createdAt", a.id) < (:cursorDate, :cursorId)', {
+        cursorDate: new Date(opts.cursor.split('|')[0]),
+        cursorId: opts.cursor.split('|')[1],
+      });
     }
 
     const rows = await qb.getMany();

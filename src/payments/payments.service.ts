@@ -200,7 +200,9 @@ export class PaymentsService {
 
         if (existing && reservation.receiptToken) {
           // “hack” controlado: agregamos receiptToken al response sin tocar schema
-          Object.assign(existing as any, { receiptToken: reservation.receiptToken });
+          Object.assign(existing as any, {
+            receiptToken: reservation.receiptToken,
+          });
           return { intent: existing, isNew: false };
         }
 

@@ -1,11 +1,4 @@
-import {
-  IsEnum,
-  IsInt,
-  IsObject,
-  IsOptional,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
 import { CompetitiveGoal } from '../competitive-goal.enum';
 import { PlayingFrequency } from '../playing-frequency.enum';
 

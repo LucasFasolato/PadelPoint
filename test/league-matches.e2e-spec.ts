@@ -49,7 +49,10 @@ const validBody = {
   teamA2Id: 'a2222222-2222-4222-a222-222222222222',
   teamB1Id: 'b1111111-1111-4111-b111-111111111111',
   teamB2Id: 'b2222222-2222-4222-b222-222222222222',
-  sets: [{ a: 6, b: 3 }, { a: 6, b: 4 }],
+  sets: [
+    { a: 6, b: 3 },
+    { a: 6, b: 4 },
+  ],
 };
 
 describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2e)', () => {
@@ -64,9 +67,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [LeagueMatchesController],
-      providers: [
-        { provide: MatchesService, useValue: matchesService },
-      ],
+      providers: [{ provide: MatchesService, useValue: matchesService }],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(fakeGuard())
@@ -89,7 +90,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   it('should create a match and return matchId', async () => {
-    matchesService.reportFromReservation!.mockResolvedValue({
+    matchesService.reportFromReservation.mockResolvedValue({
       id: 'match-new',
       leagueId: LEAGUE_ID,
       challengeId: 'ch-auto',
@@ -117,7 +118,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   it('should return 403 when non-member reports', async () => {
-    matchesService.reportFromReservation!.mockRejectedValue(
+    matchesService.reportFromReservation.mockRejectedValue(
       new ForbiddenException({
         statusCode: 403,
         code: 'LEAGUE_FORBIDDEN',
@@ -135,7 +136,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   it('should return 400 RESERVATION_NOT_ELIGIBLE for ineligible reservation', async () => {
-    matchesService.reportFromReservation!.mockRejectedValue(
+    matchesService.reportFromReservation.mockRejectedValue(
       new BadRequestException({
         statusCode: 400,
         code: 'RESERVATION_NOT_ELIGIBLE',
@@ -152,11 +153,12 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   it('should return 409 MATCH_ALREADY_REPORTED for duplicate', async () => {
-    matchesService.reportFromReservation!.mockRejectedValue(
+    matchesService.reportFromReservation.mockRejectedValue(
       new ConflictException({
         statusCode: 409,
         code: 'MATCH_ALREADY_REPORTED',
-        message: 'A match has already been reported for this reservation and league',
+        message:
+          'A match has already been reported for this reservation and league',
       }),
     );
 
@@ -206,7 +208,9 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     };
 
     it('should return eligible reservations for league member', async () => {
-      matchesService.getEligibleReservations!.mockResolvedValue([eligibleReservation]);
+      matchesService.getEligibleReservations.mockResolvedValue([
+        eligibleReservation,
+      ]);
 
       const res = await request(app.getHttpServer())
         .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
@@ -225,7 +229,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     });
 
     it('should return 403 for non-member', async () => {
-      matchesService.getEligibleReservations!.mockRejectedValue(
+      matchesService.getEligibleReservations.mockRejectedValue(
         new ForbiddenException({
           statusCode: 403,
           code: 'LEAGUE_FORBIDDEN',
@@ -242,7 +246,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     });
 
     it('should return empty array when no eligible reservations exist', async () => {
-      matchesService.getEligibleReservations!.mockResolvedValue([]);
+      matchesService.getEligibleReservations.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
         .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)
@@ -253,7 +257,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
     it('should exclude already-reported reservations (service filters them)', async () => {
       // Service returns only non-reported reservations
-      matchesService.getEligibleReservations!.mockResolvedValue([]);
+      matchesService.getEligibleReservations.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
         .get(`/leagues/${LEAGUE_ID}/eligible-reservations`)

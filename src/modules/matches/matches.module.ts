@@ -18,7 +18,17 @@ import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MatchResult, MatchDispute, MatchAuditLog, Challenge, User, League, LeagueMember, Reservation, Court]),
+    TypeOrmModule.forFeature([
+      MatchResult,
+      MatchDispute,
+      MatchAuditLog,
+      Challenge,
+      User,
+      League,
+      LeagueMember,
+      Reservation,
+      Court,
+    ]),
     CompetitiveModule,
     LeaguesModule,
     NotificationsModule,

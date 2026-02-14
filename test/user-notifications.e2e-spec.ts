@@ -94,7 +94,7 @@ describe('User Notifications (e2e)', () => {
         ],
         nextCursor: null,
       };
-      notificationsService.list!.mockResolvedValue(result);
+      notificationsService.list.mockResolvedValue(result);
 
       const res = await request(app.getHttpServer())
         .get('/notifications')
@@ -112,7 +112,7 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should accept cursor and limit query params', async () => {
-      notificationsService.list!.mockResolvedValue({
+      notificationsService.list.mockResolvedValue({
         items: [],
         nextCursor: null,
       });
@@ -135,7 +135,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('GET /notifications/unread-count', () => {
     it('should return the unread count with no-store headers', async () => {
-      notificationsService.getUnreadCount!.mockResolvedValue(5);
+      notificationsService.getUnreadCount.mockResolvedValue(5);
 
       const res = await request(app.getHttpServer())
         .get('/notifications/unread-count')
@@ -147,14 +147,14 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should reflect incremented count after new notifications', async () => {
-      notificationsService.getUnreadCount!.mockResolvedValue(0);
+      notificationsService.getUnreadCount.mockResolvedValue(0);
       const res1 = await request(app.getHttpServer())
         .get('/notifications/unread-count')
         .expect(200);
       expect(res1.body.count).toBe(0);
 
       // Simulate new notifications arriving
-      notificationsService.getUnreadCount!.mockResolvedValue(3);
+      notificationsService.getUnreadCount.mockResolvedValue(3);
       const res2 = await request(app.getHttpServer())
         .get('/notifications/unread-count')
         .expect(200);
@@ -166,7 +166,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('Notification types in GET /notifications', () => {
     it('should return league invite notification for invited user', async () => {
-      notificationsService.list!.mockResolvedValue({
+      notificationsService.list.mockResolvedValue({
         items: [
           {
             id: 'n-league-1',
@@ -191,7 +191,7 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should return challenge received notification for opponent', async () => {
-      notificationsService.list!.mockResolvedValue({
+      notificationsService.list.mockResolvedValue({
         items: [
           {
             id: 'n-ch-1',
@@ -216,7 +216,7 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should return newest first (sort order)', async () => {
-      notificationsService.list!.mockResolvedValue({
+      notificationsService.list.mockResolvedValue({
         items: [
           {
             id: 'n2',
@@ -254,7 +254,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('POST /notifications/:id/read', () => {
     it('should mark a notification as read', async () => {
-      notificationsService.markRead!.mockResolvedValue(true);
+      notificationsService.markRead.mockResolvedValue(true);
 
       const res = await request(app.getHttpServer())
         .post('/notifications/some-uuid/read')
@@ -272,7 +272,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('POST /notifications/read-all', () => {
     it('should mark all notifications as read', async () => {
-      notificationsService.markAllRead!.mockResolvedValue({ updated: 3 });
+      notificationsService.markAllRead.mockResolvedValue({ updated: 3 });
 
       const res = await request(app.getHttpServer())
         .post('/notifications/read-all')
@@ -286,9 +286,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('GET /health', () => {
     it('should return service status', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/health')
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/health').expect(200);
 
       expect(res.body.status).toBe('ok');
       expect(res.body.services.email).toEqual({
@@ -300,15 +298,13 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should reflect disabled email', async () => {
-      notificationService.getEmailStatus!.mockReturnValue({
+      notificationService.getEmailStatus.mockReturnValue({
         enabled: false,
         provider: 'NONE',
         logOnly: false,
       });
 
-      const res = await request(app.getHttpServer())
-        .get('/health')
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/health').expect(200);
 
       expect(res.body.services.email.enabled).toBe(false);
       expect(res.body.services.email.provider).toBe('NONE');

@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { CompetitiveController } from '../src/modules/competitive/competitive.controller';
@@ -75,7 +79,7 @@ describe('Competitive Onboarding (e2e)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      competitiveService.getOnboarding!.mockResolvedValue(onboarding);
+      competitiveService.getOnboarding.mockResolvedValue(onboarding);
 
       const res = await request(app.getHttpServer())
         .get('/competitive/onboarding')
@@ -100,7 +104,7 @@ describe('Competitive Onboarding (e2e)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      competitiveService.getOnboarding!.mockResolvedValue(onboarding);
+      competitiveService.getOnboarding.mockResolvedValue(onboarding);
 
       const res = await request(app.getHttpServer())
         .get('/competitive/onboarding')
@@ -125,7 +129,7 @@ describe('Competitive Onboarding (e2e)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      competitiveService.upsertOnboarding!.mockResolvedValue(result);
+      competitiveService.upsertOnboarding.mockResolvedValue(result);
 
       const res = await request(app.getHttpServer())
         .put('/competitive/onboarding')
@@ -181,7 +185,7 @@ describe('Competitive Onboarding (e2e)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      competitiveService.upsertOnboarding!.mockResolvedValue(result);
+      competitiveService.upsertOnboarding.mockResolvedValue(result);
 
       const res = await request(app.getHttpServer())
         .put('/competitive/onboarding')
@@ -203,7 +207,7 @@ describe('Competitive Onboarding (e2e)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      competitiveService.upsertOnboarding!.mockResolvedValue(result);
+      competitiveService.upsertOnboarding.mockResolvedValue(result);
 
       await request(app.getHttpServer())
         .put('/competitive/onboarding')
@@ -214,7 +218,7 @@ describe('Competitive Onboarding (e2e)', () => {
     // ── Category guard e2e ────────────────────────────────────────
 
     it('should return CATEGORY_LOCKED error code when category is locked', async () => {
-      competitiveService.upsertOnboarding!.mockRejectedValue(
+      competitiveService.upsertOnboarding.mockRejectedValue(
         new BadRequestException({
           statusCode: 400,
           code: 'CATEGORY_LOCKED',

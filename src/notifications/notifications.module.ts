@@ -15,7 +15,11 @@ import { HealthController } from './health.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, NotificationEvent, UserNotification]),
+    TypeOrmModule.forFeature([
+      Notification,
+      NotificationEvent,
+      UserNotification,
+    ]),
   ],
   controllers: [
     NotificationsAdminController,

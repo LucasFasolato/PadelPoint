@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CompetitiveOnboardingFields1769910000000
-  implements MigrationInterface
-{
+export class CompetitiveOnboardingFields1769910000000 implements MigrationInterface {
   name = 'CompetitiveOnboardingFields1769910000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
