@@ -57,7 +57,7 @@ export class LeaguesService {
     private readonly leagueActivityService: LeagueActivityService,
   ) {}
 
-  // ── create ───────────────────────────────────────────────────────
+  // -- create -------------------------------------------------------
 
   async createLeague(userId: string, dto: CreateLeagueDto) {
     const mode = dto.mode ?? LeagueMode.SCHEDULED;
@@ -126,7 +126,7 @@ export class LeaguesService {
     return this.toLeagueView(saved, [member]);
   }
 
-  // ── list ─────────────────────────────────────────────────────────
+  // -- list ---------------------------------------------------------
 
   async listMyLeagues(userId: string) {
     const leagues = await this.leagueRepo
@@ -152,7 +152,7 @@ export class LeaguesService {
     }));
   }
 
-  // ── detail ───────────────────────────────────────────────────────
+  // -- detail -------------------------------------------------------
 
   async getLeagueDetail(userId: string, leagueId: string) {
     const league = await this.leagueRepo.findOne({
@@ -185,7 +185,7 @@ export class LeaguesService {
     return this.toLeagueView(league, members);
   }
 
-  // ── invites ──────────────────────────────────────────────────────
+  // -- invites ------------------------------------------------------
 
   async createInvites(userId: string, leagueId: string, dto: CreateInvitesDto) {
     const league = await this.leagueRepo.findOne({
@@ -565,7 +565,7 @@ export class LeaguesService {
       .execute();
   }
 
-  // ── settings & roles ────────────────────────────────────────────
+  // -- settings & roles --------------------------------------------
 
   async getLeagueSettings(userId: string, leagueId: string) {
     const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
@@ -688,7 +688,7 @@ export class LeaguesService {
     return this.toMemberView(target);
   }
 
-  // ── auth helpers ───────────────────────────────────────────────
+  // -- auth helpers -----------------------------------------------
 
   private async assertMembership(
     leagueId: string,
@@ -723,7 +723,7 @@ export class LeaguesService {
     return member;
   }
 
-  // ── notification helpers ─────────────────────────────────────────
+  // -- notification helpers -----------------------------------------
 
   private async sendInviteReceivedNotifications(
     invites: LeagueInvite[],
@@ -816,7 +816,7 @@ export class LeaguesService {
       });
   }
 
-  // ── views ────────────────────────────────────────────────────────
+  // -- views --------------------------------------------------------
 
   private logLeagueActivity(
     leagueId: string,

@@ -86,7 +86,7 @@ export class MatchesService {
   // ------------------------
 
   private getParticipantsOrThrow(ch: Challenge): ParticipantIds {
-    // ✅ TU MODELO REAL
+    // ? TU MODELO REAL
     const a1 = ch.teamA1Id ?? (ch as any).teamA1?.id ?? null;
     const a2 = ch.teamA2Id ?? (ch as any).teamA2?.id ?? null;
     const b1 = ch.teamB1Id ?? (ch as any).teamB1?.id ?? null;
@@ -179,7 +179,7 @@ export class MatchesService {
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
 
-      // 🔒 lock challenge
+      // ?? lock challenge
       const challenge = await chRepo
         .createQueryBuilder('c')
         .setLock('pessimistic_write')
@@ -721,7 +721,7 @@ export class MatchesService {
 
       if (!match) throw new NotFoundException('Match result not found');
 
-      // Idempotent: already CONFIRMED or RESOLVED → return ok
+      // Idempotent: already CONFIRMED or RESOLVED ? return ok
       if (
         match.status === MatchResultStatus.CONFIRMED ||
         match.status === MatchResultStatus.RESOLVED
@@ -856,7 +856,7 @@ export class MatchesService {
         });
       }
 
-      // Idempotent: already disputed → return existing dispute
+      // Idempotent: already disputed ? return existing dispute
       if (match.status === MatchResultStatus.DISPUTED) {
         const openDispute = await disputeRepo.findOne({
           where: { matchId, status: DisputeStatus.OPEN },

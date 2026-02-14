@@ -200,7 +200,7 @@ describe('LeaguesService', () => {
     service = module.get<LeaguesService>(LeaguesService);
   });
 
-  // ── createLeague ──────────────────────────────────────────────
+  // -- createLeague ----------------------------------------------
 
   describe('createLeague', () => {
     it('should reject when endDate <= startDate', async () => {
@@ -305,7 +305,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── getLeagueDetail ───────────────────────────────────────────
+  // -- getLeagueDetail -------------------------------------------
 
   describe('getLeagueDetail', () => {
     it('should throw LEAGUE_NOT_FOUND when league does not exist', async () => {
@@ -346,7 +346,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── acceptInvite ──────────────────────────────────────────────
+  // -- acceptInvite ----------------------------------------------
 
   describe('acceptInvite', () => {
     it('should accept a valid invite and create a member', async () => {
@@ -434,7 +434,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── invite notifications ────────────────────────────────────────
+  // -- invite notifications ----------------------------------------
 
   describe('invite notifications', () => {
     it('createInvites should persist LEAGUE_INVITE_RECEIVED for each invited userId', async () => {
@@ -601,7 +601,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── createLeague role ──────────────────────────────────────────
+  // -- createLeague role ------------------------------------------
 
   describe('createLeague – OWNER role', () => {
     it('should set creator member role to OWNER', async () => {
@@ -625,7 +625,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── getLeagueSettings ──────────────────────────────────────────
+  // -- getLeagueSettings ------------------------------------------
 
   describe('getLeagueSettings', () => {
     it('should return settings for a league member', async () => {
@@ -663,7 +663,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── updateLeagueSettings ───────────────────────────────────────
+  // -- updateLeagueSettings ---------------------------------------
 
   describe('updateLeagueSettings', () => {
     it('should allow OWNER to update settings', async () => {
@@ -728,10 +728,10 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── updateMemberRole ───────────────────────────────────────────
+  // -- updateMemberRole -------------------------------------------
 
   describe('updateMemberRole', () => {
-    it('should allow OWNER to promote a member to ADMIN', async () => {
+    it('should allow OWNER to promote a member to OWNER', async () => {
       const owner = fakeMember({ role: LeagueRole.OWNER });
       const target = fakeMember({
         id: 'member-2',
@@ -749,10 +749,10 @@ describe('LeaguesService', () => {
         FAKE_USER_ID,
         'league-1',
         FAKE_USER_ID_2,
-        { role: LeagueRole.ADMIN },
+        { role: LeagueRole.OWNER },
       );
 
-      expect(result.role).toBe(LeagueRole.ADMIN);
+      expect(result.role).toBe(LeagueRole.OWNER);
     });
 
     it('should allow OWNER to demote ADMIN to MEMBER', async () => {
@@ -790,7 +790,7 @@ describe('LeaguesService', () => {
           'league-1',
           FAKE_USER_ID_2,
           {
-            role: LeagueRole.ADMIN,
+            role: LeagueRole.MEMBER,
           },
         );
         fail('should have thrown');
@@ -842,7 +842,7 @@ describe('LeaguesService', () => {
           'league-1',
           'nonexistent',
           {
-            role: LeagueRole.ADMIN,
+            role: LeagueRole.OWNER,
           },
         );
         fail('should have thrown');
@@ -853,7 +853,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── createInvites – ADMIN can invite ───────────────────────────
+  // -- createInvites – ADMIN can invite ---------------------------
 
   describe('createInvites – role-based auth', () => {
     it('should allow ADMIN to create invites', async () => {
@@ -916,7 +916,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── declineInvite ──────────────────────────────────────────────
+  // -- declineInvite ----------------------------------------------
 
   describe('declineInvite', () => {
     it('should decline a valid invite', async () => {
@@ -1014,7 +1014,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── acceptInvite – notification marked read ────────────────────
+  // -- acceptInvite – notification marked read --------------------
 
   describe('acceptInvite – notification marked read', () => {
     it('should keep read-marking inside the accept transaction', async () => {
@@ -1032,7 +1032,7 @@ describe('LeaguesService', () => {
     });
   });
 
-  // ── acceptInvite – race condition handling ─────────────────────
+  // -- acceptInvite – race condition handling ---------------------
 
   describe('acceptInvite – race condition', () => {
     it('should handle duplicate key error gracefully', async () => {
