@@ -17,6 +17,7 @@ import { LeagueStatus } from './league-status.enum';
 import { LeagueMode } from './league-mode.enum';
 import { InviteStatus } from './invite-status.enum';
 import { CreateLeagueDto } from './dto/create-league.dto';
+import { CreateMiniLeagueDto } from './dto/create-mini-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
 import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
@@ -32,6 +33,15 @@ import { LeagueActivityType } from './league-activity-type.enum';
 import { LeagueActivity } from './league-activity.entity';
 
 const INVITE_EXPIRY_DAYS = 7;
+const MINI_MAX_PLAYERS = 6;
+const MINI_MAX_INVITE_EMAILS = 10;
+const MINI_LEAGUE_SETTINGS = {
+  ...DEFAULT_LEAGUE_SETTINGS,
+  maxPlayers: MINI_MAX_PLAYERS,
+  scoringPreset: 'MINI_V1',
+  tieBreakPreset: 'STANDARD_V1',
+  allowLateJoin: true,
+};
 
 /** Map internal status to frontend-compatible values: draft -> upcoming */
 function toApiStatus(status: LeagueStatus): string {
@@ -61,6 +71,15 @@ export class LeaguesService {
   // -- create -------------------------------------------------------
 
   async createLeague(userId: string, dto: CreateLeagueDto) {
+    const normalizedName = (dto.name ?? '').trim();
+    if (!normalizedName) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_NAME_REQUIRED',
+        message: 'name is required',
+      });
+    }
+
     const mode = dto.mode ?? LeagueMode.SCHEDULED;
 
     if (mode === LeagueMode.SCHEDULED) {
@@ -94,7 +113,7 @@ export class LeaguesService {
 
     const today = new Date().toISOString().slice(0, 10);
     let status: LeagueStatus;
-    if (mode === LeagueMode.OPEN) {
+    if (mode === LeagueMode.OPEN || mode === LeagueMode.MINI) {
       status = LeagueStatus.ACTIVE;
     } else {
       status =
@@ -104,13 +123,16 @@ export class LeaguesService {
     }
 
     const league = this.leagueRepo.create({
-      name: dto.name,
+      name: normalizedName,
       creatorId: userId,
       mode,
       startDate,
       endDate,
       status,
-      settings: DEFAULT_LEAGUE_SETTINGS,
+      settings:
+        mode === LeagueMode.MINI
+          ? { ...MINI_LEAGUE_SETTINGS }
+          : DEFAULT_LEAGUE_SETTINGS,
     });
 
     const saved = await this.leagueRepo.save(league);
@@ -125,6 +147,56 @@ export class LeaguesService {
     await this.memberRepo.save(member);
 
     return this.toLeagueView(saved, [member]);
+  }
+
+  async createMiniLeague(userId: string, dto: CreateMiniLeagueDto) {
+    const normalizedName = (dto.name ?? '').trim();
+    if (!normalizedName) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_NAME_REQUIRED',
+        message: 'name is required',
+      });
+    }
+
+    const normalizedEmails = (dto.inviteEmails ?? [])
+      .map((email) => this.normalizeEmail(email))
+      .filter((email) => email.length > 0);
+    const normalizedUniqueEmails = Array.from(new Set(normalizedEmails));
+
+    const cappedEmails = normalizedUniqueEmails.slice(0, MINI_MAX_INVITE_EMAILS);
+    const slotLimitedEmails = cappedEmails.slice(0, MINI_MAX_PLAYERS - 1);
+
+    const league = await this.createLeague(userId, {
+      name: normalizedName,
+      mode: LeagueMode.MINI,
+    });
+
+    const createdInvites =
+      slotLimitedEmails.length > 0
+        ? await this.createInvites(userId, league.id, { emails: slotLimitedEmails })
+        : [];
+
+    const invitedExistingUsers = createdInvites.filter(
+      (invite) => Boolean(invite.invitedUserId),
+    ).length;
+    const invitedByEmailOnly = createdInvites.filter(
+      (invite) => !invite.invitedUserId && Boolean(invite.invitedEmail),
+    ).length;
+    const skipped =
+      (normalizedEmails.length - normalizedUniqueEmails.length) +
+      (normalizedUniqueEmails.length - slotLimitedEmails.length) +
+      (slotLimitedEmails.length - createdInvites.length);
+
+    return {
+      leagueId: league.id,
+      name: league.name,
+      mode: league.mode,
+      status: league.status,
+      invitedExistingUsers,
+      invitedByEmailOnly,
+      skipped,
+    };
   }
 
   // -- list ---------------------------------------------------------
@@ -209,6 +281,20 @@ export class LeaguesService {
       select: ['userId'],
     });
     const existingSet = new Set(existingMembers.map((m) => m.userId));
+    const maxPlayers =
+      typeof league.settings?.maxPlayers === 'number'
+        ? league.settings.maxPlayers
+        : null;
+    let remainingInviteSlots: number | null = null;
+    if (maxPlayers && maxPlayers > 0) {
+      const pendingInvitesCount = await this.inviteRepo.count({
+        where: { leagueId, status: InviteStatus.PENDING },
+      });
+      remainingInviteSlots = Math.max(
+        0,
+        maxPlayers - existingSet.size - pendingInvitesCount,
+      );
+    }
 
     const requestedUserIds = Array.from(new Set(dto.userIds ?? []));
     const normalizedEmails = Array.from(
@@ -273,6 +359,9 @@ export class LeaguesService {
     expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
 
     for (const uid of requestedUserIds) {
+      if (remainingInviteSlots !== null && remainingInviteSlots <= 0) {
+        break;
+      }
       if (
         existingSet.has(uid) ||
         pendingUserSet.has(uid) ||
@@ -291,9 +380,13 @@ export class LeaguesService {
         }),
       );
       queuedUserIds.add(uid);
+      if (remainingInviteSlots !== null) remainingInviteSlots--;
     }
 
     for (const email of normalizedEmails) {
+      if (remainingInviteSlots !== null && remainingInviteSlots <= 0) {
+        break;
+      }
       const resolved = usersByEmail.get(email);
       if (resolved) {
         const resolvedUserId = resolved.id;
@@ -316,6 +409,7 @@ export class LeaguesService {
           }),
         );
         queuedUserIds.add(resolvedUserId);
+        if (remainingInviteSlots !== null) remainingInviteSlots--;
         continue;
       }
 
@@ -331,6 +425,7 @@ export class LeaguesService {
         }),
       );
       queuedEmails.add(email);
+      if (remainingInviteSlots !== null) remainingInviteSlots--;
     }
 
     if (invites.length === 0) return [];

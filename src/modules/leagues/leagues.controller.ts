@@ -20,6 +20,7 @@ import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';
 import { CreateLeagueDto } from './dto/create-league.dto';
+import { CreateMiniLeagueDto } from './dto/create-mini-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
 import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
@@ -41,6 +42,12 @@ export class LeaguesController {
   create(@Req() req: Request, @Body() dto: CreateLeagueDto) {
     const user = req.user as AuthUser;
     return this.leaguesService.createLeague(user.userId, dto);
+  }
+
+  @Post('mini')
+  createMini(@Req() req: Request, @Body() dto: CreateMiniLeagueDto) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.createMiniLeague(user.userId, dto);
   }
 
   @Get()

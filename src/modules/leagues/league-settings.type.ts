@@ -5,6 +5,10 @@ export interface LeagueSettings {
   drawPoints: number;
   lossPoints: number;
   tieBreakers: TieBreaker[];
+  maxPlayers?: number;
+  scoringPreset?: string;
+  tieBreakPreset?: string;
+  allowLateJoin?: boolean;
   includeSources: {
     RESERVATION: boolean;
     MANUAL: boolean;

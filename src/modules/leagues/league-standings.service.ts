@@ -66,14 +66,17 @@ export class LeagueStandingsService {
 
     // Find ACTIVE leagues where ALL 4 players are members
     // For SCHEDULED: match playedAt must fall within [startDate, endDate]
-    // For OPEN: no date restriction
+    // For OPEN/MINI: no date restriction
     const qb = manager
       .getRepository(League)
       .createQueryBuilder('l')
       .where('l.status = :status', { status: LeagueStatus.ACTIVE })
       .andWhere(
-        '(l.mode = :open OR (l."startDate" <= :playedAt AND l."endDate" >= :playedAt))',
-        { open: LeagueMode.OPEN, playedAt: match.playedAt },
+        '(l.mode IN (:...alwaysActiveModes) OR (l."startDate" <= :playedAt AND l."endDate" >= :playedAt))',
+        {
+          alwaysActiveModes: [LeagueMode.OPEN, LeagueMode.MINI],
+          playedAt: match.playedAt,
+        },
       );
 
     const leagues = await qb.getMany();
@@ -121,7 +124,7 @@ export class LeagueStandingsService {
       .innerJoinAndSelect('mr.challenge', 'c')
       .where('mr.status = :status', { status: MatchResultStatus.CONFIRMED });
 
-    if (league.mode !== LeagueMode.OPEN && league.startDate && league.endDate) {
+    if (league.mode === LeagueMode.SCHEDULED && league.startDate && league.endDate) {
       matchQb
         .andWhere('mr."playedAt" >= :start', { start: league.startDate })
         .andWhere('mr."playedAt" <= :end', { end: league.endDate });
