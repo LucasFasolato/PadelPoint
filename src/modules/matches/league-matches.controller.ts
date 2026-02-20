@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Patch,
   Param,
   Post,
   Req,
@@ -13,6 +14,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MatchesService } from './matches.service';
 import { ReportFromReservationDto } from './dto/report-from-reservation.dto';
 import { ReportManualDto } from './dto/report-manual.dto';
+import { CreateLeagueMatchDto } from './dto/create-league-match.dto';
+import { SubmitLeagueMatchResultDto } from './dto/submit-league-match-result.dto';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 
 type AuthUser = { userId: string; email: string; role: string };
@@ -21,6 +24,43 @@ type AuthUser = { userId: string; email: string; role: string };
 @UseGuards(JwtAuthGuard)
 export class LeagueMatchesController {
   constructor(private readonly matchesService: MatchesService) {}
+
+  @Get(':leagueId/matches')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  listLeagueMatches(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.matchesService.listLeagueMatches(user.userId, leagueId);
+  }
+
+  @Post(':leagueId/matches')
+  createLeagueMatch(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Body() dto: CreateLeagueMatchDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.matchesService.createLeagueMatch(user.userId, leagueId, dto);
+  }
+
+  @Patch(':leagueId/matches/:matchId/result')
+  submitLeagueMatchResult(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Param('matchId', new ParseRequiredUuidPipe('matchId')) matchId: string,
+    @Body() dto: SubmitLeagueMatchResultDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.matchesService.submitLeagueMatchResult(
+      user.userId,
+      leagueId,
+      matchId,
+      dto,
+    );
+  }
 
   @Get(':leagueId/eligible-reservations')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')

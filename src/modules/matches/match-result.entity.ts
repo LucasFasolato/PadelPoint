@@ -15,6 +15,7 @@ import { User } from '../users/user.entity';
 import { MatchSource } from './match-source.enum';
 
 export enum MatchResultStatus {
+  SCHEDULED = 'scheduled',
   PENDING_CONFIRM = 'pending_confirm',
   CONFIRMED = 'confirmed',
   REJECTED = 'rejected',
@@ -48,21 +49,24 @@ export class MatchResult {
   @JoinColumn({ name: 'leagueId' })
   league!: League | null;
 
-  @Column({ type: 'timestamptz', default: () => 'now()' })
-  playedAt!: Date;
+  @Column({ type: 'timestamptz', nullable: true })
+  scheduledAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  playedAt!: Date | null;
 
   // Sets (best of 3)
-  @Column({ type: 'int' })
-  teamASet1!: number;
+  @Column({ type: 'int', nullable: true })
+  teamASet1!: number | null;
 
-  @Column({ type: 'int' })
-  teamBSet1!: number;
+  @Column({ type: 'int', nullable: true })
+  teamBSet1!: number | null;
 
-  @Column({ type: 'int' })
-  teamASet2!: number;
+  @Column({ type: 'int', nullable: true })
+  teamASet2!: number | null;
 
-  @Column({ type: 'int' })
-  teamBSet2!: number;
+  @Column({ type: 'int', nullable: true })
+  teamBSet2!: number | null;
 
   @Column({ type: 'int', nullable: true })
   teamASet3!: number | null;
@@ -70,8 +74,8 @@ export class MatchResult {
   @Column({ type: 'int', nullable: true })
   teamBSet3!: number | null;
 
-  @Column({ type: 'enum', enum: WinnerTeam })
-  winnerTeam!: WinnerTeam;
+  @Column({ type: 'enum', enum: WinnerTeam, nullable: true })
+  winnerTeam!: WinnerTeam | null;
 
   @Column({
     type: 'enum',

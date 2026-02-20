@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
 
 import {
@@ -36,6 +36,11 @@ import { DisputeStatus } from './dispute-status.enum';
 import { DisputeReasonCode } from './dispute-reason.enum';
 import { MatchAuditAction } from './match-audit-action.enum';
 import { DisputeResolution } from './dto/resolve-dispute.dto';
+import {
+  CreateLeagueMatchDto,
+  LeagueMatchType,
+} from './dto/create-league-match.dto';
+import { SubmitLeagueMatchResultDto } from './dto/submit-league-match-result.dto';
 import { User } from '../users/user.entity';
 import { MatchSource } from './match-source.enum';
 import { LeagueRole } from '../leagues/league-role.enum';
@@ -160,6 +165,201 @@ export class MatchesService {
 
     const winnerTeam: WinnerTeam = winsA > winsB ? WinnerTeam.A : WinnerTeam.B;
     return { winnerTeam };
+  }
+
+  private validateLeagueSets(sets: Array<{ a: number; b: number }>) {
+    if (!Array.isArray(sets) || sets.length < 1 || sets.length > 3) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'MATCH_INVALID_SCORE',
+        message: 'score.sets must contain between 1 and 3 sets',
+      });
+    }
+
+    let winsA = 0;
+    let winsB = 0;
+
+    for (const s of sets) {
+      if (!Number.isInteger(s.a) || !Number.isInteger(s.b)) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: 'Set scores must be integers',
+        });
+      }
+      if (s.a < 0 || s.b < 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: 'Set scores cannot be negative',
+        });
+      }
+      if (s.a === s.b) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: 'Set cannot be tied',
+        });
+      }
+      const max = Math.max(s.a, s.b);
+      const min = Math.min(s.a, s.b);
+      if (max < 6 || max > 7) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: 'Set winner must have between 6 and 7 games',
+        });
+      }
+      if (max === 6 && min > 4) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: '6-x is only valid up to 6-4',
+        });
+      }
+      if (max === 7 && (min < 5 || min > 6)) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_SCORE',
+          message: '7-x is only valid as 7-5 or 7-6',
+        });
+      }
+      if (max !== 7 || min !== 6) {
+        if (max - min < 2) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'MATCH_INVALID_SCORE',
+            message: 'Set winner must lead by 2 games',
+          });
+        }
+      }
+
+      if (s.a > s.b) winsA++;
+      else winsB++;
+    }
+
+    if (winsA === winsB) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'MATCH_INVALID_SCORE',
+        message: 'Match must have a winner',
+      });
+    }
+
+    return {
+      winnerTeam: winsA > winsB ? WinnerTeam.A : WinnerTeam.B,
+    };
+  }
+
+  private parseMatchDateOrThrow(value: string, field: 'playedAt' | 'scheduledAt') {
+    const parsed = DateTime.fromISO(value, { zone: TZ });
+    if (!parsed.isValid) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'MATCH_INVALID_DATE',
+        message: `Invalid ${field}`,
+      });
+    }
+    return parsed.toJSDate();
+  }
+
+  private async assertLeagueMember(
+    manager: EntityManager,
+    leagueId: string,
+    userId: string,
+    allowedRoles?: LeagueRole[],
+  ): Promise<LeagueMember> {
+    const league = await manager.getRepository(League).findOne({
+      where: { id: leagueId },
+    });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    const member = await manager.getRepository(LeagueMember).findOne({
+      where: { leagueId, userId },
+    });
+    if (!member) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      });
+    }
+
+    if (allowedRoles && allowedRoles.length > 0) {
+      if (!allowedRoles.includes(member.role)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You do not have permission to perform this action',
+        });
+      }
+    }
+
+    return member;
+  }
+
+  private async assertLeaguePlayers(
+    manager: EntityManager,
+    leagueId: string,
+    playerIds: string[],
+  ): Promise<void> {
+    if (new Set(playerIds).size !== playerIds.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'DUPLICATE_PLAYERS',
+        message: 'All players must be different',
+      });
+    }
+
+    const memberCount = await manager
+      .getRepository(LeagueMember)
+      .createQueryBuilder('m')
+      .where('m."leagueId" = :leagueId', { leagueId })
+      .andWhere('m."userId" IN (:...playerIds)', { playerIds })
+      .getCount();
+
+    if (memberCount !== playerIds.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_MEMBERS_MISSING',
+        message: 'All provided players must be members of the league',
+      });
+    }
+  }
+
+  private toLeagueMatchView(match: MatchResult) {
+    const sets: Array<{ a: number; b: number }> = [];
+    if (match.teamASet1 != null && match.teamBSet1 != null) {
+      sets.push({ a: match.teamASet1, b: match.teamBSet1 });
+    }
+    if (match.teamASet2 != null && match.teamBSet2 != null) {
+      sets.push({ a: match.teamASet2, b: match.teamBSet2 });
+    }
+    if (match.teamASet3 != null && match.teamBSet3 != null) {
+      sets.push({ a: match.teamASet3, b: match.teamBSet3 });
+    }
+
+    return {
+      id: match.id,
+      leagueId: match.leagueId,
+      challengeId: match.challengeId,
+      status: match.status,
+      scheduledAt: match.scheduledAt ? match.scheduledAt.toISOString() : null,
+      playedAt: match.playedAt ? match.playedAt.toISOString() : null,
+      teamA1Id: match.challenge?.teamA1Id ?? null,
+      teamA2Id: match.challenge?.teamA2Id ?? null,
+      teamB1Id: match.challenge?.teamB1Id ?? null,
+      teamB2Id: match.challenge?.teamB2Id ?? null,
+      score: sets.length > 0 ? { sets } : null,
+      createdAt: match.createdAt.toISOString(),
+      updatedAt: match.updatedAt.toISOString(),
+    };
   }
 
   // ------------------------
@@ -677,6 +877,216 @@ export class MatchesService {
     });
   }
 
+  async createLeagueMatch(
+    userId: string,
+    leagueId: string,
+    dto: CreateLeagueMatchDto,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueMember(manager, leagueId, userId);
+
+      const teamA2Id = dto.teamA2Id ?? null;
+      const teamB2Id = dto.teamB2Id ?? null;
+      if (!teamA2Id || !teamB2Id) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_PLAYERS_REQUIRED',
+          message: 'teamA2Id and teamB2Id are required',
+        });
+      }
+
+      const playerIds = [dto.teamA1Id, teamA2Id, dto.teamB1Id, teamB2Id];
+      await this.assertLeaguePlayers(manager, leagueId, playerIds);
+
+      const challenge = manager.getRepository(Challenge).create({
+        type: ChallengeType.DIRECT,
+        status: ChallengeStatus.READY,
+        teamA1Id: dto.teamA1Id,
+        teamA2Id,
+        teamB1Id: dto.teamB1Id,
+        teamB2Id,
+        reservationId: null,
+      });
+      await manager.getRepository(Challenge).save(challenge);
+
+      const scheduledAt = dto.scheduledAt
+        ? this.parseMatchDateOrThrow(dto.scheduledAt, 'scheduledAt')
+        : null;
+
+      if (dto.type === LeagueMatchType.PLAYED) {
+        if (!dto.playedAt) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'MATCH_PLAYED_AT_REQUIRED',
+            message: 'playedAt is required for PLAYED matches',
+          });
+        }
+        if (!dto.score?.sets?.length) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'MATCH_SCORE_REQUIRED',
+            message: 'score.sets is required for PLAYED matches',
+          });
+        }
+
+        const playedAt = this.parseMatchDateOrThrow(dto.playedAt, 'playedAt');
+        const { winnerTeam } = this.validateLeagueSets(dto.score.sets);
+        const [s1, s2, s3] = dto.score.sets;
+
+        const playedMatch = manager.getRepository(MatchResult).create({
+          challengeId: challenge.id,
+          challenge,
+          leagueId,
+          scheduledAt,
+          playedAt,
+          teamASet1: s1?.a ?? null,
+          teamBSet1: s1?.b ?? null,
+          teamASet2: s2?.a ?? null,
+          teamBSet2: s2?.b ?? null,
+          teamASet3: s3?.a ?? null,
+          teamBSet3: s3?.b ?? null,
+          winnerTeam,
+          status: MatchResultStatus.CONFIRMED,
+          reportedByUserId: userId,
+          confirmedByUserId: userId,
+          rejectionReason: null,
+          source: MatchSource.MANUAL,
+          eloApplied: false,
+        });
+
+        const saved = await manager.getRepository(MatchResult).save(playedMatch);
+        await this.eloService.applyForMatchTx(manager, saved.id);
+        await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
+
+        return this.toLeagueMatchView({
+          ...saved,
+          challenge,
+        });
+      }
+
+      if (dto.playedAt || dto.score) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_SCHEDULED_INVALID_FIELDS',
+          message: 'playedAt and score are only allowed for PLAYED matches',
+        });
+      }
+
+      const scheduledMatch = manager.getRepository(MatchResult).create({
+        challengeId: challenge.id,
+        challenge,
+        leagueId,
+        scheduledAt,
+        playedAt: null,
+        teamASet1: null,
+        teamBSet1: null,
+        teamASet2: null,
+        teamBSet2: null,
+        teamASet3: null,
+        teamBSet3: null,
+        winnerTeam: null,
+        status: MatchResultStatus.SCHEDULED,
+        reportedByUserId: userId,
+        confirmedByUserId: null,
+        rejectionReason: null,
+        source: MatchSource.MANUAL,
+        eloApplied: false,
+      });
+
+      const saved = await manager.getRepository(MatchResult).save(scheduledMatch);
+      return this.toLeagueMatchView({
+        ...saved,
+        challenge,
+      });
+    });
+  }
+
+  async submitLeagueMatchResult(
+    userId: string,
+    leagueId: string,
+    matchId: string,
+    dto: SubmitLeagueMatchResultDto,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueMember(manager, leagueId, userId, [
+        LeagueRole.OWNER,
+        LeagueRole.ADMIN,
+      ]);
+
+      const matchRepo = manager.getRepository(MatchResult);
+      const match = await matchRepo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('m.challenge', 'challenge')
+        .where('m.id = :matchId', { matchId })
+        .andWhere('m."leagueId" = :leagueId', { leagueId })
+        .getOne();
+
+      if (!match) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'MATCH_NOT_FOUND',
+          message: 'Match not found in this league',
+        });
+      }
+
+      if (match.status === MatchResultStatus.CONFIRMED) {
+        return this.toLeagueMatchView(match);
+      }
+
+      if (match.status !== MatchResultStatus.SCHEDULED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_STATE',
+          message: `Cannot submit result for match in status ${match.status}`,
+        });
+      }
+      if (!dto.score?.sets?.length) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_SCORE_REQUIRED',
+          message: 'score.sets is required',
+        });
+      }
+
+      const playedAt = this.parseMatchDateOrThrow(dto.playedAt, 'playedAt');
+      const { winnerTeam } = this.validateLeagueSets(dto.score.sets);
+      const [s1, s2, s3] = dto.score.sets;
+
+      match.playedAt = playedAt;
+      match.teamASet1 = s1?.a ?? null;
+      match.teamBSet1 = s1?.b ?? null;
+      match.teamASet2 = s2?.a ?? null;
+      match.teamBSet2 = s2?.b ?? null;
+      match.teamASet3 = s3?.a ?? null;
+      match.teamBSet3 = s3?.b ?? null;
+      match.winnerTeam = winnerTeam;
+      match.status = MatchResultStatus.CONFIRMED;
+      match.confirmedByUserId = userId;
+      match.rejectionReason = null;
+
+      const saved = await matchRepo.save(match);
+      await this.eloService.applyForMatchTx(manager, saved.id);
+      await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
+
+      return this.toLeagueMatchView(saved);
+    });
+  }
+
+  async listLeagueMatches(userId: string, leagueId: string) {
+    await this.assertLeagueMember(this.dataSource.manager, leagueId, userId);
+
+    const matches = await this.matchRepo
+      .createQueryBuilder('m')
+      .leftJoinAndSelect('m.challenge', 'challenge')
+      .where('m."leagueId" = :leagueId', { leagueId })
+      .orderBy('COALESCE(m."scheduledAt", m."playedAt", m."createdAt")', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .getMany();
+
+    return matches.map((m) => this.toLeagueMatchView(m));
+  }
+
   async getMyMatches(userId: string) {
     // Obtener challenges donde participo
     const challenges = await this.challengeRepo.find({
@@ -732,6 +1142,13 @@ export class MatchesService {
 
       if (match.status === MatchResultStatus.REJECTED)
         throw new BadRequestException('Match result was rejected');
+      if (match.status === MatchResultStatus.SCHEDULED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_RESULT_REQUIRED',
+          message: 'Scheduled matches must receive a result before confirmation',
+        });
+      }
 
       const challenge = await chRepo.findOne({
         where: { id: match.challengeId as any },
