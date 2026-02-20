@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, QueryFailedError, Repository } from 'typeorm';
@@ -157,6 +158,7 @@ export class LeagueStandingsService {
         draws: number;
         setsDiff: number;
         gamesDiff: number;
+        lastWinAt: Date | null;
       }
     >();
     for (const uid of memberUserIds) {
@@ -166,6 +168,7 @@ export class LeagueStandingsService {
         draws: 0,
         setsDiff: 0,
         gamesDiff: 0,
+        lastWinAt: null,
       });
     }
 
@@ -178,17 +181,23 @@ export class LeagueStandingsService {
 
       for (const uid of winners) {
         const s = stats.get(uid);
-        if (s) s.wins++;
+        if (s) {
+          s.wins++;
+          // Track most recent win timestamp for tie-breaking
+          if (!s.lastWinAt || mr.playedAt > s.lastWinAt) {
+            s.lastWinAt = mr.playedAt;
+          }
+        }
       }
       for (const uid of losers) {
         const s = stats.get(uid);
         if (s) s.losses++;
       }
 
-      // Compute set and game differentials
+      // Compute set and game differentials (defensive ?? 0 for DB null safety)
       const sets = [
-        { a: mr.teamASet1, b: mr.teamBSet1 },
-        { a: mr.teamASet2, b: mr.teamBSet2 },
+        { a: mr.teamASet1 ?? 0, b: mr.teamBSet1 ?? 0 },
+        { a: mr.teamASet2 ?? 0, b: mr.teamBSet2 ?? 0 },
       ];
       if (mr.teamASet3 != null && mr.teamBSet3 != null) {
         sets.push({ a: mr.teamASet3, b: mr.teamBSet3 });
@@ -229,6 +238,7 @@ export class LeagueStandingsService {
         draws: 0,
         setsDiff: 0,
         gamesDiff: 0,
+        lastWinAt: null,
       };
       return {
         member: m,
@@ -237,18 +247,27 @@ export class LeagueStandingsService {
         draws: s.draws,
         setsDiff: s.setsDiff,
         gamesDiff: s.gamesDiff,
+        lastWinAt: s.lastWinAt,
         points:
           s.wins * winPoints + s.draws * drawPoints + s.losses * lossPoints,
       };
     });
 
+    // Explicit deterministic sort chain:
+    // (1-4) configurable tiebreakers (default: points → wins → setsDiff → gamesDiff)
+    // (5) lastWinAt DESC — more recent win ranks higher
+    // (6) userId ASC — stable final tiebreaker
     const tieBreakers = settings.tieBreakers;
     ranked.sort((a, b) => {
       for (const tb of tieBreakers) {
         const diff = (b[tb] ?? 0) - (a[tb] ?? 0);
         if (diff !== 0) return diff;
       }
-      // Deterministic fallback: userId ASC (stable ordering)
+      // lastWinAt DESC: player who won more recently ranks higher when stats are equal
+      const aLWA = a.lastWinAt?.getTime() ?? 0;
+      const bLWA = b.lastWinAt?.getTime() ?? 0;
+      if (bLWA !== aLWA) return bLWA - aLWA;
+      // userId ASC: final stable deterministic tiebreaker
       return a.member.userId.localeCompare(b.member.userId);
     });
 
@@ -276,6 +295,7 @@ export class LeagueStandingsService {
         setsDiff: r.setsDiff,
         gamesDiff: r.gamesDiff,
         position,
+        ...(r.lastWinAt ? { lastWinAt: r.lastWinAt.toISOString() } : {}),
       });
     }
 
@@ -285,10 +305,11 @@ export class LeagueStandingsService {
       manager,
       leagueId,
       snapshotRows,
+      leagueMatches.length,
     );
 
     this.logger.log(
-      `standings recomputed: leagueId=${leagueId} members=${ranked.length} matches=${leagueMatches.length} snapshotVersion=${snapshot.version}`,
+      `standings recomputed: leagueId=${leagueId} members=${ranked.length} matches=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum}`,
     );
 
     return ranked.map((r) => r.member);
@@ -375,7 +396,23 @@ export class LeagueStandingsService {
     manager: EntityManager,
     leagueId: string,
     rows: LeagueStandingsSnapshotRow[],
-  ): Promise<LeagueStandingsSnapshot> {
+    totalMatchesUsed: number,
+  ): Promise<LeagueStandingsSnapshot & { checksum: string }> {
+    // Stable JSON ordering: rows sorted by position ASC then userId ASC before persistence
+    const stableRows = [...rows].sort(
+      (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
+    );
+
+    // Deterministic checksum over the stable row payload for integrity assertions
+    const checksum = createHash('sha256')
+      .update(JSON.stringify(stableRows))
+      .digest('hex')
+      .slice(0, 16);
+
+    this.logger.debug(
+      `snapshot integrity: leagueId=${leagueId} totalMatchesUsed=${totalMatchesUsed} checksum=${checksum}`,
+    );
+
     const repo = manager.getRepository(LeagueStandingsSnapshot);
 
     for (let attempt = 0; attempt < this.snapshotInsertRetries; attempt++) {
@@ -392,12 +429,12 @@ export class LeagueStandingsService {
           repo.create({
             leagueId,
             version: nextVersion,
-            rows,
+            rows: stableRows,
           }),
         );
 
         await this.pruneSnapshots(manager, leagueId, this.snapshotsToKeep);
-        return saved;
+        return { ...saved, checksum };
       } catch (err) {
         if (this.isLeagueVersionUniqueConflict(err)) {
           continue;

@@ -14,10 +14,12 @@ export type LeagueStandingsSnapshotRow = {
   points: number;
   wins: number;
   losses: number;
-  draws?: number;
+  draws: number;
   setsDiff: number;
   gamesDiff: number;
   position: number;
+  /** ISO 8601 timestamp of the player's most recent winning match in this league. */
+  lastWinAt?: string;
 };
 
 @Entity('league_standings_snapshots')
