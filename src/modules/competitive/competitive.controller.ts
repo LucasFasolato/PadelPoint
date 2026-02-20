@@ -24,6 +24,12 @@ type AuthUser = { userId: string; email: string; role: string };
 export class CompetitiveController {
   constructor(private readonly competitive: CompetitiveService) {}
 
+  @Get('me')
+  meV2(@Req() req: Request) {
+    const user = req.user as AuthUser;
+    return this.competitive.getOrCreateProfile(user.userId);
+  }
+
   @Get('profile/me')
   me(@Req() req: Request) {
     const user = req.user as AuthUser;
