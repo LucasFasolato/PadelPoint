@@ -194,6 +194,27 @@ export class UserNotificationsService {
       .getCount();
   }
 
+  /**
+   * Returns true if at least one 'league.ranking_moved' notification already
+   * exists for the given league + computedAt timestamp.  Used as a
+   * best-effort idempotency guard before emitting a ranking snapshot batch.
+   */
+  async hasRankingMovedForSnapshot(
+    leagueId: string,
+    computedAt: string,
+  ): Promise<boolean> {
+    const count = await this.repo
+      .createQueryBuilder('n')
+      .where('n.type = :type', {
+        type: UserNotificationType.LEAGUE_RANKING_MOVED,
+      })
+      .andWhere("n.data->>'leagueId' = :leagueId", { leagueId })
+      .andWhere("n.data->>'computedAt' = :computedAt", { computedAt })
+      .limit(1)
+      .getCount();
+    return count > 0;
+  }
+
   private toView(n: UserNotification): NotificationView {
     return {
       id: n.id,

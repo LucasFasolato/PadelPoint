@@ -10,4 +10,5 @@ export enum LeagueActivityType {
   CHALLENGE_ACCEPTED = 'challenge_accepted',
   CHALLENGE_DECLINED = 'challenge_declined',
   CHALLENGE_EXPIRED = 'challenge_expired',
+  RANKINGS_UPDATED = 'rankings_updated',
 }

@@ -19,6 +19,13 @@ import {
   computeStandingsDiff,
   StandingsMovement,
 } from './standings/standings-diff';
+import { LeagueActivityService } from './league-activity.service';
+import { LeagueActivityType } from './league-activity-type.enum';
+import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+
+/** Max user notifications emitted per league per snapshot. */
+const MAX_NOTIFICATIONS_PER_SNAPSHOT = 10;
 
 @Injectable()
 export class LeagueStandingsService {
@@ -35,6 +42,8 @@ export class LeagueStandingsService {
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(LeagueStandingsSnapshot)
     private readonly snapshotRepo: Repository<LeagueStandingsSnapshot>,
+    private readonly activityService: LeagueActivityService,
+    private readonly userNotificationsService: UserNotificationsService,
   ) {}
 
   /**
@@ -316,6 +325,20 @@ export class LeagueStandingsService {
       `standings recomputed: leagueId=${leagueId} members=${ranked.length} matches=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum}`,
     );
 
+    // Emit activity + per-player notifications (best-effort; failures are logged, not thrown)
+    try {
+      await this.emitSnapshotEvents(
+        leagueId,
+        league.name,
+        snapshot.computedAt,
+        snapshot.movements,
+      );
+    } catch (err) {
+      this.logger.error(
+        `emitSnapshotEvents failed: leagueId=${leagueId} error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     return ranked.map((r) => r.member);
   }
 
@@ -449,7 +472,7 @@ export class LeagueStandingsService {
     leagueId: string,
     rows: LeagueStandingsSnapshotRow[],
     totalMatchesUsed: number,
-  ): Promise<LeagueStandingsSnapshot & { checksum: string }> {
+  ): Promise<LeagueStandingsSnapshot & { checksum: string; movements: StandingsMovement[] }> {
     // Stable JSON ordering: rows sorted by position ASC then userId ASC before persistence
     const stableRows = [...rows].sort(
       (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
@@ -514,7 +537,7 @@ export class LeagueStandingsService {
         );
 
         await this.pruneSnapshots(manager, leagueId, this.snapshotsToKeep);
-        return { ...saved, checksum };
+        return { ...saved, checksum, movements };
       } catch (err) {
         if (this.isLeagueVersionUniqueConflict(err)) {
           continue;
@@ -593,6 +616,125 @@ export class LeagueStandingsService {
     }
 
     return movement;
+  }
+
+  /**
+   * Emit one league activity entry and one user notification per eligible
+   * mover after a new standings snapshot is created.
+   *
+   * Runs outside the snapshot transaction — failures are logged but never
+   * propagate back to the caller.
+   */
+  private async emitSnapshotEvents(
+    leagueId: string,
+    leagueName: string,
+    computedAt: Date,
+    movements: StandingsMovement[],
+  ): Promise<void> {
+    const computedAtISO = computedAt.toISOString();
+
+    // ── League activity: one compact entry per snapshot ──────────────────────
+    const topMovers = {
+      up: movements
+        .filter((m) => m.movementType === 'UP')
+        .slice(0, 3)
+        .map(({ userId, delta, newPosition }) => ({ userId, delta, newPosition })),
+      down: movements
+        .filter((m) => m.movementType === 'DOWN')
+        .slice(0, 3)
+        .map(({ userId, delta, newPosition }) => ({ userId, delta, newPosition })),
+    };
+
+    try {
+      await this.activityService.create({
+        leagueId,
+        type: LeagueActivityType.RANKINGS_UPDATED,
+        actorId: null,
+        entityId: null,
+        payload: { computedAt: computedAtISO, topMovers },
+      });
+    } catch (err) {
+      this.logger.error(
+        `league activity emit failed: leagueId=${leagueId} error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // ── User notifications ────────────────────────────────────────────────────
+    // Eligible: UP or DOWN with |delta| >= 1, or NEW.
+    // movements is already sorted by |delta| DESC then userId ASC.
+    const eligible = movements.filter(
+      (m) =>
+        m.movementType === 'NEW' ||
+        ((m.movementType === 'UP' || m.movementType === 'DOWN') &&
+          m.delta !== null &&
+          Math.abs(m.delta) >= 1),
+    );
+
+    if (eligible.length === 0) return;
+
+    // Idempotency: skip entire batch if already sent for this snapshot
+    try {
+      const alreadySent =
+        await this.userNotificationsService.hasRankingMovedForSnapshot(
+          leagueId,
+          computedAtISO,
+        );
+      if (alreadySent) {
+        this.logger.debug(
+          `ranking notifications already sent: leagueId=${leagueId} computedAt=${computedAtISO}`,
+        );
+        return;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `idempotency check failed, proceeding: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Cap at MAX_NOTIFICATIONS_PER_SNAPSHOT (deterministic: biggest movers first)
+    const capped = eligible.slice(0, MAX_NOTIFICATIONS_PER_SNAPSHOT);
+
+    for (const mv of capped) {
+      try {
+        await this.userNotificationsService.create({
+          userId: mv.userId,
+          type: UserNotificationType.LEAGUE_RANKING_MOVED,
+          title: this.buildRankingTitle(mv),
+          body: null,
+          data: {
+            leagueId,
+            leagueName,
+            userId: mv.userId,
+            oldPosition: mv.oldPosition,
+            newPosition: mv.newPosition,
+            delta: mv.delta,
+            movementType: mv.movementType,
+            reason: 'standings_snapshot',
+            computedAt: computedAtISO,
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `ranking notification failed: userId=${mv.userId} leagueId=${leagueId} error=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  private buildRankingTitle(mv: StandingsMovement): string {
+    if (mv.movementType === 'NEW') {
+      return `You entered the rankings at position #${mv.newPosition}`;
+    }
+    if (mv.movementType === 'UP') {
+      const places = mv.delta === 1 ? '1 place' : `${mv.delta} places`;
+      return `You moved up ${places} to #${mv.newPosition}`;
+    }
+    if (mv.movementType === 'DOWN') {
+      const n = Math.abs(mv.delta!);
+      const places = n === 1 ? '1 place' : `${n} places`;
+      return `You moved down ${places} to #${mv.newPosition}`;
+    }
+    return `Your ranking is now #${mv.newPosition}`;
   }
 
   private isLeagueVersionUniqueConflict(err: unknown): boolean {
