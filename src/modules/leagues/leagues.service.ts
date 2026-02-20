@@ -1025,6 +1025,14 @@ export class LeaguesService {
   }
 
   private toLeagueView(league: League, members: LeagueMember[]) {
+    const status = this.resolveLeagueStatusForView(league, members.length);
+    const canRecordMatches = this.canRecordMatches(league, members.length);
+    const reason = canRecordMatches
+      ? undefined
+      : league.mode === LeagueMode.MINI
+        ? 'MINI league needs at least 2 members to record matches'
+        : 'League is not active';
+
     return {
       id: league.id,
       name: league.name,
@@ -1032,11 +1040,33 @@ export class LeaguesService {
       creatorId: league.creatorId,
       startDate: league.startDate,
       endDate: league.endDate,
-      status: toApiStatus(league.status),
+      status: toApiStatus(status),
+      canRecordMatches,
+      ...(reason ? { reason } : {}),
       settings: league.settings ?? DEFAULT_LEAGUE_SETTINGS,
       createdAt: league.createdAt.toISOString(),
       members: members.map((m) => this.toMemberView(m)),
     };
+  }
+
+  private resolveLeagueStatusForView(
+    league: League,
+    memberCount: number,
+  ): LeagueStatus {
+    if (league.mode !== LeagueMode.MINI) {
+      return league.status;
+    }
+    if (league.status === LeagueStatus.FINISHED) {
+      return league.status;
+    }
+    return memberCount >= 2 ? LeagueStatus.ACTIVE : LeagueStatus.DRAFT;
+  }
+
+  private canRecordMatches(league: League, memberCount: number): boolean {
+    if (league.mode === LeagueMode.MINI) {
+      return memberCount >= 2 && league.status !== LeagueStatus.FINISHED;
+    }
+    return league.status === LeagueStatus.ACTIVE;
   }
 
   private toMemberView(m: LeagueMember) {

@@ -24,6 +24,7 @@ import { LeagueStandingsService } from '../leagues/league-standings.service';
 import { League } from '../leagues/league.entity';
 import { LeagueMember } from '../leagues/league-member.entity';
 import { LeagueStatus } from '../leagues/league-status.enum';
+import { LeagueMode } from '../leagues/league-mode.enum';
 import {
   Reservation,
   ReservationStatus,
@@ -333,6 +334,46 @@ export class MatchesService {
     }
   }
 
+  private async assertLeagueReadyForMatchUsage(
+    manager: EntityManager,
+    leagueId: string,
+    allowDraftForNonMini = false,
+  ): Promise<League> {
+    const league = await manager.getRepository(League).findOne({
+      where: { id: leagueId },
+    });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    const memberCount = await manager.getRepository(LeagueMember).count({
+      where: { leagueId },
+    });
+
+    const miniReady =
+      league.mode === LeagueMode.MINI &&
+      memberCount >= 2 &&
+      league.status !== LeagueStatus.FINISHED;
+    const nonMiniReady = allowDraftForNonMini
+      ? league.status === LeagueStatus.ACTIVE ||
+        league.status === LeagueStatus.DRAFT
+      : league.status === LeagueStatus.ACTIVE;
+
+    if (!miniReady && !nonMiniReady) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_NOT_ACTIVE',
+        message: 'League is not active',
+      });
+    }
+
+    return league;
+  }
+
   private toLeagueMatchView(match: MatchResult) {
     const sets: Array<{ a: number; b: number }> = [];
     if (match.teamASet1 != null && match.teamBSet1 != null) {
@@ -412,27 +453,11 @@ export class MatchesService {
           });
         }
 
-        const league = await manager
-          .getRepository(League)
-          .findOne({ where: { id: dto.leagueId } });
-        if (!league) {
-          throw new NotFoundException({
-            statusCode: 404,
-            code: 'LEAGUE_NOT_FOUND',
-            message: 'League not found',
-          });
-        }
-
-        if (
-          league.status !== LeagueStatus.ACTIVE &&
-          league.status !== LeagueStatus.DRAFT
-        ) {
-          throw new BadRequestException({
-            statusCode: 400,
-            code: 'LEAGUE_NOT_ACTIVE',
-            message: 'League is not active',
-          });
-        }
+        await this.assertLeagueReadyForMatchUsage(
+          manager,
+          dto.leagueId,
+          true,
+        );
 
         // All participants must be league members
         const memberCount = await manager
@@ -523,28 +548,13 @@ export class MatchesService {
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
-      const leagueRepo = manager.getRepository(League);
       const memberRepo = manager.getRepository(LeagueMember);
       const reservationRepo = manager.getRepository(Reservation);
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
 
       // 1. Validate league exists and is ACTIVE
-      const league = await leagueRepo.findOne({ where: { id: leagueId } });
-      if (!league) {
-        throw new NotFoundException({
-          statusCode: 404,
-          code: 'LEAGUE_NOT_FOUND',
-          message: 'League not found',
-        });
-      }
-      if (league.status !== LeagueStatus.ACTIVE) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'LEAGUE_NOT_ACTIVE',
-          message: 'League is not active',
-        });
-      }
+      await this.assertLeagueReadyForMatchUsage(manager, leagueId);
 
       // 2. Caller must be a league member
       const callerMember = await memberRepo.findOne({
@@ -741,27 +751,12 @@ export class MatchesService {
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
-      const leagueRepo = manager.getRepository(League);
       const memberRepo = manager.getRepository(LeagueMember);
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
 
       // 1. Validate league
-      const league = await leagueRepo.findOne({ where: { id: leagueId } });
-      if (!league) {
-        throw new NotFoundException({
-          statusCode: 404,
-          code: 'LEAGUE_NOT_FOUND',
-          message: 'League not found',
-        });
-      }
-      if (league.status !== LeagueStatus.ACTIVE) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'LEAGUE_NOT_ACTIVE',
-          message: 'League is not active',
-        });
-      }
+      await this.assertLeagueReadyForMatchUsage(manager, leagueId);
 
       // 2. Caller must be a league member
       const callerMember = await memberRepo.findOne({
@@ -883,6 +878,7 @@ export class MatchesService {
     dto: CreateLeagueMatchDto,
   ) {
     return this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueReadyForMatchUsage(manager, leagueId);
       await this.assertLeagueMember(manager, leagueId, userId);
 
       const teamA2Id = dto.teamA2Id ?? null;
