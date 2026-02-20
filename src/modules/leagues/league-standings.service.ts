@@ -15,6 +15,10 @@ import {
   DEFAULT_LEAGUE_SETTINGS,
   LeagueSettings,
 } from './league-settings.type';
+import {
+  computeStandingsDiff,
+  StandingsMovement,
+} from './standings/standings-diff';
 
 @Injectable()
 export class LeagueStandingsService {
@@ -392,6 +396,54 @@ export class LeagueStandingsService {
     };
   }
 
+  /**
+   * Returns the latest standings snapshot enriched with full movement detail
+   * and a top-movers summary.  Safe to call even before the first snapshot
+   * exists (falls back to live member data with all-NEW movements).
+   */
+  async getLatestStandings(leagueId: string): Promise<{
+    computedAt: string | null;
+    table: LeagueStandingsSnapshotRow[];
+    movements: StandingsMovement[];
+    topMovers: { up: StandingsMovement[]; down: StandingsMovement[] };
+  }> {
+    const latest = await this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s."leagueId" = :leagueId', { leagueId })
+      .orderBy('s.version', 'DESC')
+      .getOne();
+
+    if (!latest) {
+      const table = await this.getCurrentRowsFromMembers(leagueId);
+      const movements = computeStandingsDiff([], table);
+      return { computedAt: null, table, movements, topMovers: { up: [], down: [] } };
+    }
+
+    const prevSnapshot = await this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s."leagueId" = :leagueId', { leagueId })
+      .andWhere('s.version < :version', { version: latest.version })
+      .orderBy('s.version', 'DESC')
+      .getOne();
+
+    const table = latest.rows ?? [];
+    // Re-compute movements from persisted row positions for full accuracy
+    // (handles snapshots written before movement embedding was introduced)
+    const movements = computeStandingsDiff(prevSnapshot?.rows ?? [], table);
+
+    const topMovers = {
+      up: movements.filter((m) => m.movementType === 'UP').slice(0, 3),
+      down: movements.filter((m) => m.movementType === 'DOWN').slice(0, 3),
+    };
+
+    return {
+      computedAt: latest.computedAt.toISOString(),
+      table,
+      movements,
+      topMovers,
+    };
+  }
+
   private async persistSnapshot(
     manager: EntityManager,
     leagueId: string,
@@ -403,7 +455,37 @@ export class LeagueStandingsService {
       (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
     );
 
-    // Deterministic checksum over the stable row payload for integrity assertions
+    const repo = manager.getRepository(LeagueStandingsSnapshot);
+
+    // Fetch the most recent snapshot BEFORE writing the new one so we can
+    // compute ranking movements and embed them into each persisted row.
+    const prevSnapshot = await repo
+      .createQueryBuilder('s')
+      .where('s."leagueId" = :leagueId', { leagueId })
+      .orderBy('s.version', 'DESC')
+      .getOne();
+
+    const movements = computeStandingsDiff(
+      prevSnapshot?.rows ?? [],
+      stableRows,
+    );
+    const movementByUser = new Map(movements.map((m) => [m.userId, m]));
+
+    // Enrich each row with movement metadata for direct consumers
+    const enrichedRows: LeagueStandingsSnapshotRow[] = stableRows.map(
+      (row) => {
+        const mv = movementByUser.get(row.userId);
+        if (!mv) return row;
+        return {
+          ...row,
+          delta: mv.delta,
+          oldPosition: mv.oldPosition,
+          movementType: mv.movementType,
+        };
+      },
+    );
+
+    // Deterministic checksum over the pure stats payload (movement is derived)
     const checksum = createHash('sha256')
       .update(JSON.stringify(stableRows))
       .digest('hex')
@@ -412,8 +494,6 @@ export class LeagueStandingsService {
     this.logger.debug(
       `snapshot integrity: leagueId=${leagueId} totalMatchesUsed=${totalMatchesUsed} checksum=${checksum}`,
     );
-
-    const repo = manager.getRepository(LeagueStandingsSnapshot);
 
     for (let attempt = 0; attempt < this.snapshotInsertRetries; attempt++) {
       const raw = await repo
@@ -429,7 +509,7 @@ export class LeagueStandingsService {
           repo.create({
             leagueId,
             version: nextVersion,
-            rows: stableRows,
+            rows: enrichedRows,
           }),
         );
 

@@ -146,6 +146,18 @@ export class LeaguesController {
     return this.standingsService.getStandingsWithMovement(id);
   }
 
+  @Get(':id/standings/latest')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  async getLatestStandings(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    await this.leaguesService.getLeagueDetail(user.userId, id);
+    return this.standingsService.getLatestStandings(id);
+  }
+
   @Get(':id/standings/history')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')

@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { League } from './league.entity';
+import { MovementType } from './standings/standings-diff';
 
 export type LeagueStandingsSnapshotRow = {
   userId: string;
@@ -20,6 +21,13 @@ export type LeagueStandingsSnapshotRow = {
   position: number;
   /** ISO 8601 timestamp of the player's most recent winning match in this league. */
   lastWinAt?: string;
+  // Movement fields — populated when a prior snapshot exists; absent on the first snapshot.
+  /** oldPosition - newPosition. Positive = moved up. null = new player. */
+  delta?: number | null;
+  /** Position in the immediately preceding snapshot. */
+  oldPosition?: number | null;
+  /** Direction of ranking movement since the last snapshot. */
+  movementType?: MovementType;
 };
 
 @Entity('league_standings_snapshots')
