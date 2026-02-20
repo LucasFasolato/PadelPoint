@@ -883,24 +883,29 @@ export class MatchesService {
 
       const teamA2Id = dto.teamA2Id ?? null;
       const teamB2Id = dto.teamB2Id ?? null;
-      if (!teamA2Id || !teamB2Id) {
+      const hasA2 = Boolean(teamA2Id);
+      const hasB2 = Boolean(teamB2Id);
+      if (hasA2 !== hasB2) {
         throw new BadRequestException({
           statusCode: 400,
-          code: 'MATCH_PLAYERS_REQUIRED',
-          message: 'teamA2Id and teamB2Id are required',
+          code: 'MATCH_INVALID_TEAM_STRUCTURE',
+          message: 'Use either 1v1 (no teamA2Id/teamB2Id) or 2v2 (both set)',
         });
       }
 
-      const playerIds = [dto.teamA1Id, teamA2Id, dto.teamB1Id, teamB2Id];
+      const playerIds = [dto.teamA1Id, dto.teamB1Id];
+      if (hasA2 && hasB2) {
+        playerIds.push(teamA2Id as string, teamB2Id as string);
+      }
       await this.assertLeaguePlayers(manager, leagueId, playerIds);
 
       const challenge = manager.getRepository(Challenge).create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
         teamA1Id: dto.teamA1Id,
-        teamA2Id,
+        teamA2Id: hasA2 ? teamA2Id : null,
         teamB1Id: dto.teamB1Id,
-        teamB2Id,
+        teamB2Id: hasB2 ? teamB2Id : null,
         reservationId: null,
       });
       await manager.getRepository(Challenge).save(challenge);
@@ -951,7 +956,9 @@ export class MatchesService {
         });
 
         const saved = await manager.getRepository(MatchResult).save(playedMatch);
-        await this.eloService.applyForMatchTx(manager, saved.id);
+        if (hasA2 && hasB2) {
+          await this.eloService.applyForMatchTx(manager, saved.id);
+        }
         await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
 
         return this.toLeagueMatchView({
@@ -1037,6 +1044,17 @@ export class MatchesService {
           message: `Cannot submit result for match in status ${match.status}`,
         });
       }
+
+      const hasA2 = Boolean(match.challenge?.teamA2Id);
+      const hasB2 = Boolean(match.challenge?.teamB2Id);
+      if (hasA2 !== hasB2) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_TEAM_STRUCTURE',
+          message: 'Match has invalid team structure',
+        });
+      }
+
       if (!dto.score?.sets?.length) {
         throw new BadRequestException({
           statusCode: 400,
@@ -1062,7 +1080,9 @@ export class MatchesService {
       match.rejectionReason = null;
 
       const saved = await matchRepo.save(match);
-      await this.eloService.applyForMatchTx(manager, saved.id);
+      if (hasA2 && hasB2) {
+        await this.eloService.applyForMatchTx(manager, saved.id);
+      }
       await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
 
       return this.toLeagueMatchView(saved);
