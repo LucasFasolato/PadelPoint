@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
+import { PublicLeaguesController } from '../src/modules/leagues/public-leagues.controller';
 import { LeaguesService } from '../src/modules/leagues/leagues.service';
 import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
 import { LeagueActivityService } from '../src/modules/leagues/league-activity.service';
@@ -96,6 +97,9 @@ describe('Leagues (e2e)', () => {
       getInviteByToken: jest.fn(),
       acceptInvite: jest.fn(),
       declineInvite: jest.fn(),
+      enableShare: jest.fn(),
+      disableShare: jest.fn(),
+      getPublicStandingsByShareToken: jest.fn(),
     };
 
     standingsService = {
@@ -113,7 +117,11 @@ describe('Leagues (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [LeaguesController, UserNotificationsController],
+      controllers: [
+        LeaguesController,
+        PublicLeaguesController,
+        UserNotificationsController,
+      ],
       providers: [
         { provide: LeaguesService, useValue: leaguesService },
         { provide: LeagueStandingsService, useValue: standingsService },
@@ -231,6 +239,104 @@ describe('Leagues (e2e)', () => {
   });
 
   // ── POST /leagues/:id/invites ─────────────────────────────────
+
+  describe('POST /leagues/:id/share/enable', () => {
+    it('should enable league sharing and return token + URL path', async () => {
+      leaguesService.enableShare.mockResolvedValue({
+        shareToken: 'share-token-abc',
+        shareUrlPath: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/share/enable`)
+        .expect(201);
+
+      expect(res.body.shareToken).toBe('share-token-abc');
+      expect(res.body.shareUrlPath).toContain(
+        `/public/leagues/${LEAGUE_ID}/standings`,
+      );
+      expect(leaguesService.enableShare).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        LEAGUE_ID,
+      );
+    });
+  });
+
+  describe('POST /leagues/:id/share/disable', () => {
+    it('should disable league sharing', async () => {
+      leaguesService.disableShare.mockResolvedValue({ ok: true });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/share/disable`)
+        .expect(201);
+
+      expect(res.body).toEqual({ ok: true });
+      expect(leaguesService.disableShare).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        LEAGUE_ID,
+      );
+    });
+  });
+
+  describe('GET /public/leagues/:id/standings', () => {
+    it('should return public standings with valid token and no emails leaked', async () => {
+      leaguesService.getPublicStandingsByShareToken.mockResolvedValue({
+        league: { id: LEAGUE_ID, name: 'Summer League' },
+        standings: [
+          {
+            userId: FAKE_CREATOR.userId,
+            position: 1,
+            points: 9,
+            wins: 3,
+            losses: 0,
+            draws: 0,
+            setsDiff: 4,
+            gamesDiff: 11,
+            displayName: 'Creator Player',
+            avatarUrl: null,
+          },
+        ],
+        version: 2,
+        computedAt: '2026-02-23T20:00:00.000Z',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`)
+        .expect(200);
+
+      expect(res.body.league.name).toBe('Summer League');
+      expect(res.body.standings[0].displayName).toBe('Creator Player');
+      expect(res.body.standings[0].email).toBeUndefined();
+      expect(leaguesService.getPublicStandingsByShareToken).toHaveBeenCalledWith(
+        LEAGUE_ID,
+        'share-token-abc',
+      );
+    });
+
+    it('should return 403 when token is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/standings`)
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');
+    });
+
+    it('should return 403 when token is invalid', async () => {
+      leaguesService.getPublicStandingsByShareToken.mockRejectedValue(
+        new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_SHARE_INVALID_TOKEN',
+          message: 'Invalid share token',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/standings?token=wrong`)
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');
+    });
+  });
 
   describe('POST /leagues/:id/invites', () => {
     it('should create invites with tokens', async () => {

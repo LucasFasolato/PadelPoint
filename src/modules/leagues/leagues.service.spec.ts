@@ -37,6 +37,7 @@ function fakeLeague(overrides: Partial<League> = {}): League {
     endDate: '2025-06-30',
     status: LeagueStatus.DRAFT,
     settings: DEFAULT_LEAGUE_SETTINGS,
+    shareToken: null,
     createdAt: new Date('2025-01-01T12:00:00Z'),
     updatedAt: new Date('2025-01-01T12:00:00Z'),
     members: [],
@@ -89,7 +90,11 @@ describe('LeaguesService', () => {
     create: jest.Mock;
     markInviteNotificationReadByInviteId: jest.Mock;
   };
-  let leagueStandingsService: { recomputeLeague: jest.Mock };
+  let leagueStandingsService: {
+    recomputeLeague: jest.Mock;
+    getStandingsHistory: jest.Mock;
+    getStandingsSnapshotByVersion: jest.Mock;
+  };
   let leagueActivityService: { create: jest.Mock; list: jest.Mock };
   let dataSource: { transaction: jest.Mock; manager: any };
   let inviteLockQb: {
@@ -112,6 +117,8 @@ describe('LeaguesService', () => {
     };
     leagueStandingsService = {
       recomputeLeague: jest.fn().mockResolvedValue([]),
+      getStandingsHistory: jest.fn().mockResolvedValue([]),
+      getStandingsSnapshotByVersion: jest.fn().mockResolvedValue(null),
     };
     leagueActivityService = {
       create: jest.fn().mockResolvedValue({}),
@@ -356,6 +363,113 @@ describe('LeaguesService', () => {
 
       expect(result.id).toBe('league-1');
       expect(result.members).toHaveLength(1);
+    });
+  });
+
+  describe('league share token', () => {
+    it('enableShare should generate and persist a share token', async () => {
+      const league = fakeLeague({ id: 'league-share-1', shareToken: null });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      leagueRepo.save.mockImplementation(async (l: any) => l);
+
+      const result = await service.enableShare(FAKE_USER_ID, league.id);
+
+      expect(leagueRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: league.id, shareToken: expect.any(String) }),
+      );
+      expect(result.shareToken).toEqual(expect.any(String));
+      expect(result.shareToken.length).toBeGreaterThanOrEqual(40);
+      expect(result.shareUrlPath).toContain(`/public/leagues/${league.id}/standings?token=`);
+    });
+
+    it('enableShare should return the existing token when already enabled', async () => {
+      const league = fakeLeague({
+        id: 'league-share-2',
+        shareToken: 'existing-share-token',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+
+      const result = await service.enableShare(FAKE_USER_ID, league.id);
+
+      expect(result.shareToken).toBe('existing-share-token');
+      expect(leagueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('disableShare should clear the token and persist', async () => {
+      const league = fakeLeague({
+        id: 'league-share-3',
+        shareToken: 'token-to-clear',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      leagueRepo.save.mockImplementation(async (l: any) => l);
+
+      const result = await service.disableShare(FAKE_USER_ID, league.id);
+
+      expect(result).toEqual({ ok: true });
+      expect(leagueRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: league.id, shareToken: null }),
+      );
+    });
+  });
+
+  describe('public shared standings', () => {
+    it('returns latest snapshot standings without leaking emails', async () => {
+      const league = fakeLeague({
+        id: 'league-public-1',
+        name: 'Shared League',
+        shareToken: 'share-token-123',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      leagueStandingsService.getStandingsHistory.mockResolvedValue([
+        { version: 3, computedAt: '2026-02-23T10:00:00.000Z' },
+      ]);
+      leagueStandingsService.getStandingsSnapshotByVersion.mockResolvedValue({
+        version: 3,
+        computedAt: '2026-02-23T10:00:00.000Z',
+        rows: [
+          {
+            userId: FAKE_USER_ID,
+            points: 10,
+            wins: 3,
+            losses: 1,
+            draws: 1,
+            setsDiff: 5,
+            gamesDiff: 12,
+            position: 1,
+          },
+        ],
+      });
+      memberRepo.find.mockResolvedValue([
+        fakeMember({
+          userId: FAKE_USER_ID,
+          leagueId: league.id,
+          user: {
+            id: FAKE_USER_ID,
+            displayName: 'Public Player',
+            email: 'private@test.com',
+          } as any,
+        }),
+      ]);
+
+      const result = await service.getPublicStandingsByShareToken(
+        league.id,
+        'share-token-123',
+      );
+
+      expect(result.league).toEqual({ id: league.id, name: 'Shared League' });
+      expect(result.version).toBe(3);
+      expect(result.computedAt).toBe('2026-02-23T10:00:00.000Z');
+      expect(result.standings[0]).toEqual(
+        expect.objectContaining({
+          userId: FAKE_USER_ID,
+          displayName: 'Public Player',
+          avatarUrl: null,
+        }),
+      );
+      expect(result.standings[0]).not.toHaveProperty('email');
     });
   });
 

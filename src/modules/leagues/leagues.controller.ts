@@ -114,6 +114,24 @@ export class LeaguesController {
     return this.leaguesService.updateLeagueSettings(user.userId, id, dto);
   }
 
+  @Post(':id/share/enable')
+  enableShare(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.enableShare(user.userId, id);
+  }
+
+  @Post(':id/share/disable')
+  disableShare(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.disableShare(user.userId, id);
+  }
+
   @Patch(':id/members/:memberId/role')
   updateMemberRole(
     @Req() req: Request,

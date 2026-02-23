@@ -35,6 +35,8 @@ import { LeagueActivity } from './league-activity.entity';
 const INVITE_EXPIRY_DAYS = 7;
 const MINI_MAX_PLAYERS = 6;
 const MINI_MAX_INVITE_EMAILS = 10;
+const LEAGUE_SHARE_TOKEN_BYTES = 32;
+const LEAGUE_SHARE_TOKEN_GENERATE_RETRIES = 5;
 const MINI_LEAGUE_SETTINGS = {
   ...DEFAULT_LEAGUE_SETTINGS,
   maxPlayers: MINI_MAX_PLAYERS,
@@ -256,6 +258,149 @@ export class LeaguesService {
     }
 
     return this.toLeagueView(league, members);
+  }
+
+  async enableShare(userId: string, leagueId: string) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    if (league.shareToken) {
+      return this.toShareEnableView(leagueId, league.shareToken);
+    }
+
+    for (let attempt = 0; attempt < LEAGUE_SHARE_TOKEN_GENERATE_RETRIES; attempt++) {
+      league.shareToken = this.generateLeagueShareToken();
+      try {
+        await this.leagueRepo.save(league);
+        return this.toShareEnableView(leagueId, league.shareToken);
+      } catch (err: any) {
+        if (String(err?.code) !== '23505') {
+          throw err;
+        }
+      }
+    }
+
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'LEAGUE_SHARE_TOKEN_GENERATION_FAILED',
+      message: 'Could not generate a unique share token',
+    });
+  }
+
+  async disableShare(userId: string, leagueId: string) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    if (league.shareToken !== null) {
+      league.shareToken = null;
+      await this.leagueRepo.save(league);
+    }
+
+    return { ok: true };
+  }
+
+  async getPublicStandingsByShareToken(leagueId: string, token: string) {
+    const league = await this.leagueRepo.findOne({
+      where: { id: leagueId },
+      select: ['id', 'name', 'shareToken'],
+    });
+
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    if (!league.shareToken || league.shareToken !== token) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_SHARE_INVALID_TOKEN',
+        message: 'Invalid share token',
+      });
+    }
+
+    const latestHistory = await this.leagueStandingsService.getStandingsHistory(
+      leagueId,
+      1,
+    );
+
+    if (latestHistory.length === 0) {
+      return {
+        league: {
+          id: league.id,
+          name: league.name,
+        },
+        standings: [],
+        version: 0,
+        computedAt: null,
+      };
+    }
+
+    const latestVersion = latestHistory[0].version;
+    const snapshot = await this.leagueStandingsService.getStandingsSnapshotByVersion(
+      leagueId,
+      latestVersion,
+    );
+
+    if (!snapshot) {
+      return {
+        league: {
+          id: league.id,
+          name: league.name,
+        },
+        standings: [],
+        version: 0,
+        computedAt: null,
+      };
+    }
+
+    const members = await this.memberRepo.find({
+      where: { leagueId },
+      relations: ['user'],
+    });
+    const publicUserById = new Map(
+      members.map((m) => [
+        m.userId,
+        {
+          displayName: m.user?.displayName ?? null,
+          avatarUrl: null as string | null,
+        },
+      ]),
+    );
+
+    const standings = (snapshot.rows ?? []).map((row) => ({
+      ...row,
+      displayName: publicUserById.get(row.userId)?.displayName ?? null,
+      avatarUrl: publicUserById.get(row.userId)?.avatarUrl ?? null,
+    }));
+
+    return {
+      league: {
+        id: league.id,
+        name: league.name,
+      },
+      standings,
+      version: snapshot.version,
+      computedAt: snapshot.computedAt,
+    };
   }
 
   // -- invites ------------------------------------------------------
@@ -1098,5 +1243,16 @@ export class LeaguesService {
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private generateLeagueShareToken(): string {
+    return crypto.randomBytes(LEAGUE_SHARE_TOKEN_BYTES).toString('base64url');
+  }
+
+  private toShareEnableView(leagueId: string, shareToken: string) {
+    return {
+      shareToken,
+      shareUrlPath: `/public/leagues/${leagueId}/standings?token=${encodeURIComponent(shareToken)}`,
+    };
   }
 }

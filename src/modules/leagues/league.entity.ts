@@ -61,6 +61,10 @@ export class League {
   })
   settings!: LeagueSettings;
 
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  shareToken!: string | null;
+
   @OneToMany(() => LeagueMember, (m) => m.league)
   members!: LeagueMember[];
 

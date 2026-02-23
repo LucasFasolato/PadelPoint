@@ -12,6 +12,7 @@ import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';
 import { LeaguesController } from './leagues.controller';
+import { PublicLeaguesController } from './public-leagues.controller';
 import { LeagueChallengesController } from './league-challenges.controller';
 import { LeagueChallengeActionsController } from './league-challenge-actions.controller';
 import { LeagueChallengesService } from './league-challenges.service';
@@ -33,6 +34,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
   ],
   controllers: [
     LeaguesController,
+    PublicLeaguesController,
     LeagueChallengesController,
     LeagueChallengeActionsController,
   ],
