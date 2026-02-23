@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,6 +11,7 @@ import { Repository, In, DataSource } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { CompetitiveService } from '../competitive/competitive.service';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
+import { NotificationsGateway } from '../../notifications/notifications.gateway';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { Challenge } from './challenge.entity';
 import { ChallengeStatus } from './challenge-status.enum';
@@ -29,6 +31,7 @@ export class ChallengesService {
     private readonly users: UsersService,
     private readonly competitive: CompetitiveService,
     private readonly userNotifications: UserNotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
     @InjectRepository(Challenge)
     private readonly repo: Repository<Challenge>,
   ) {}
@@ -209,19 +212,19 @@ export class ChallengesService {
     const rows = await this.repo.find({
       where: { invitedOpponentId: userId } as any,
       relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2', 'invitedOpponent'],
-      order: { createdAt: 'DESC' },
-      take: 100,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      take: 50,
     });
 
-    return rows.map((c) => this.toView(c));
+    return rows.map((c) => this.toInboxView(c, userId));
   }
 
   async outbox(userId: string) {
     const rows = await this.repo.find({
       where: { teamA1: { id: userId } as any },
       relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2', 'invitedOpponent'],
-      order: { createdAt: 'DESC' },
-      take: 100,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      take: 50,
     });
 
     return rows.map((c) => this.toView(c));
@@ -282,8 +285,18 @@ export class ChallengesService {
       );
     if (ch.invitedOpponent.id !== meUserId)
       throw new BadRequestException('Not allowed');
-    if (ch.status !== ChallengeStatus.PENDING)
-      throw new BadRequestException('Challenge is not pending');
+    if (
+      ch.status === ChallengeStatus.ACCEPTED ||
+      ch.status === ChallengeStatus.READY
+    ) {
+      return this.toView(ch);
+    }
+    if (ch.status !== ChallengeStatus.PENDING) {
+      throw this.invalidDirectTransitionError(
+        'CHALLENGE_ACCEPT_INVALID_STATE',
+        `Cannot accept challenge from state '${ch.status}'`,
+      );
+    }
 
     ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
     const saved = await this.repo.save(ch);
@@ -308,6 +321,7 @@ export class ChallengesService {
         ),
       );
 
+    this.emitChallengeUpdatedToParticipants(saved);
     return this.toView(saved);
   }
 
@@ -320,8 +334,15 @@ export class ChallengesService {
       throw new BadRequestException('Invalid direct challenge');
     if (ch.invitedOpponent.id !== meUserId)
       throw new BadRequestException('Not allowed');
-    if (ch.status !== ChallengeStatus.PENDING)
-      throw new BadRequestException('Challenge is not pending');
+    if (ch.status === ChallengeStatus.REJECTED) {
+      return this.toView(ch);
+    }
+    if (ch.status !== ChallengeStatus.PENDING) {
+      throw this.invalidDirectTransitionError(
+        'CHALLENGE_REJECT_INVALID_STATE',
+        `Cannot reject challenge from state '${ch.status}'`,
+      );
+    }
 
     ch.status = ChallengeStatus.REJECTED;
     const saved = await this.repo.save(ch);
@@ -346,6 +367,7 @@ export class ChallengesService {
         ),
       );
 
+    this.emitChallengeUpdatedToParticipants(saved);
     return this.toView(saved);
   }
 
@@ -604,11 +626,83 @@ export class ChallengesService {
     };
   }
 
+  private toInboxView(c: Challenge, viewerUserId: string) {
+    const base = this.toView(c);
+    const challenger = this.inboxUserView(c.teamA1);
+    const directOpponent = c.invitedOpponent ?? c.teamB1 ?? null;
+    const fallbackOpponent =
+      c.teamA1Id === viewerUserId ? c.teamB1 ?? c.invitedOpponent : c.teamA1;
+    const opponent = this.inboxUserView(directOpponent ?? fallbackOpponent ?? null);
+    const extra = c as Challenge & {
+      leagueId?: string | null;
+      suggestedAt?: Date | string | null;
+      expiresAt?: Date | string | null;
+    };
+
+    return {
+      ...base,
+      challenger,
+      opponent,
+      ...(extra.leagueId ? { leagueId: extra.leagueId } : {}),
+      ...(c.reservationId ? { reservationId: c.reservationId } : {}),
+      ...(extra.suggestedAt
+        ? { suggestedAt: this.toIsoOrNull(extra.suggestedAt) }
+        : {}),
+      ...(extra.expiresAt ? { expiresAt: this.toIsoOrNull(extra.expiresAt) } : {}),
+    };
+  }
+
   private userView(u: User) {
     return {
       userId: u.id,
       email: u.email,
       displayName: u.displayName,
     };
+  }
+
+  private inboxUserView(u: User | null) {
+    if (!u) return null;
+    return {
+      userId: u.id,
+      displayName: u.displayName,
+      avatarUrl: null as string | null,
+    };
+  }
+
+  private invalidDirectTransitionError(code: string, message: string) {
+    return new ConflictException({
+      statusCode: 409,
+      code,
+      message,
+    });
+  }
+
+  private emitChallengeUpdatedToParticipants(challenge: Challenge): void {
+    const payload = this.toView(challenge);
+    const userIds = [
+      challenge.teamA1Id,
+      challenge.teamA2Id,
+      challenge.teamB1Id,
+      challenge.teamB2Id,
+      challenge.invitedOpponentId,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    for (const userId of new Set(userIds)) {
+      try {
+        this.notificationsGateway.emitToUser(userId, 'challenge:updated', payload);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'unknown';
+        this.logger.error(
+          `failed to emit challenge:updated: challengeId=${challenge.id} userId=${userId} error=${msg}`,
+        );
+      }
+    }
+  }
+
+  private toIsoOrNull(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 }

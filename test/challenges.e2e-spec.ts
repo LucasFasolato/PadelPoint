@@ -65,6 +65,16 @@ const challengeView = {
     email: FAKE_OPPONENT.email,
     displayName: 'Opponent',
   },
+  challenger: {
+    userId: FAKE_CREATOR.userId,
+    displayName: 'Creator',
+    avatarUrl: null,
+  },
+  opponent: {
+    userId: FAKE_OPPONENT.userId,
+    displayName: 'Opponent',
+    avatarUrl: null,
+  },
   isReady: false,
 };
 
@@ -192,9 +202,54 @@ describe('Challenges (e2e)', () => {
         .expect(200);
 
       expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toEqual(
+        expect.objectContaining({
+          id: 'ch-1',
+          status: 'pending',
+          createdAt: challengeView.createdAt,
+          challenger: challengeView.challenger,
+          opponent: challengeView.opponent,
+        }),
+      );
       expect(challengesService.inbox).toHaveBeenCalledWith(
         FAKE_OPPONENT.userId,
       );
+    });
+
+    it('create -> inbox contains pending -> accept -> inbox no longer contains pending', async () => {
+      let current = { ...challengeView };
+
+      challengesService.createDirect.mockImplementation(async () => current);
+      challengesService.acceptDirect.mockImplementation(async () => {
+        current = { ...current, status: ChallengeStatus.ACCEPTED };
+        return current;
+      });
+      challengesService.inbox.mockImplementation(async () =>
+        current.status === ChallengeStatus.PENDING ? [current] : [],
+      );
+
+      await request(app.getHttpServer())
+        .post('/challenges/direct')
+        .send({ opponentUserId: FAKE_OPPONENT.userId })
+        .expect(201);
+
+      const inboxBefore = await request(app.getHttpServer())
+        .get('/challenges/inbox')
+        .set('x-test-user', 'opponent')
+        .expect(200);
+      expect(inboxBefore.body).toHaveLength(1);
+      expect(inboxBefore.body[0].status).toBe('pending');
+
+      await request(app.getHttpServer())
+        .patch('/challenges/ch-1/accept')
+        .set('x-test-user', 'opponent')
+        .expect(200);
+
+      const inboxAfter = await request(app.getHttpServer())
+        .get('/challenges/inbox')
+        .set('x-test-user', 'opponent')
+        .expect(200);
+      expect(inboxAfter.body).toEqual([]);
     });
   });
 });
