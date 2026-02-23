@@ -20,6 +20,26 @@ export class PublicLeaguesController {
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Query('token') token?: string,
   ) {
+    return this.leaguesService.getPublicStandingsByShareToken(
+      id,
+      this.requireShareToken(token),
+    );
+  }
+
+  @Get(':id/og')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  getPublicOgData(
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Query('token') token?: string,
+  ) {
+    return this.leaguesService.getPublicStandingsOgByShareToken(
+      id,
+      this.requireShareToken(token),
+    );
+  }
+
+  private requireShareToken(token?: string): string {
     if (!token || typeof token !== 'string' || token.trim().length === 0) {
       throw new ForbiddenException({
         statusCode: 403,
@@ -27,7 +47,6 @@ export class PublicLeaguesController {
         message: 'A valid share token is required',
       });
     }
-
-    return this.leaguesService.getPublicStandingsByShareToken(id, token);
+    return token;
   }
 }

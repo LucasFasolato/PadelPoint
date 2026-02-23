@@ -100,6 +100,7 @@ describe('Leagues (e2e)', () => {
       enableShare: jest.fn(),
       disableShare: jest.fn(),
       getPublicStandingsByShareToken: jest.fn(),
+      getPublicStandingsOgByShareToken: jest.fn(),
     };
 
     standingsService = {
@@ -332,6 +333,74 @@ describe('Leagues (e2e)', () => {
 
       const res = await request(app.getHttpServer())
         .get(`/public/leagues/${LEAGUE_ID}/standings?token=wrong`)
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');
+    });
+  });
+
+  describe('GET /public/leagues/:id/og', () => {
+    it('should return OG data with valid token and no emails', async () => {
+      leaguesService.getPublicStandingsOgByShareToken.mockResolvedValue({
+        league: { id: LEAGUE_ID, name: 'Summer League' },
+        computedAt: '2026-02-23T21:30:00.000Z',
+        top: [
+          {
+            position: 1,
+            displayName: 'Creator Player',
+            points: 12,
+            delta: 1,
+          },
+        ],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/og?token=share-token-abc`)
+        .expect(200);
+
+      expect(res.body.league.name).toBe('Summer League');
+      expect(res.body.top).toHaveLength(1);
+      expect(res.body.top[0].displayName).toBe('Creator Player');
+      expect(res.body.top[0].email).toBeUndefined();
+      expect(leaguesService.getPublicStandingsOgByShareToken).toHaveBeenCalledWith(
+        LEAGUE_ID,
+        'share-token-abc',
+      );
+    });
+
+    it('should return empty top when no snapshot exists', async () => {
+      leaguesService.getPublicStandingsOgByShareToken.mockResolvedValue({
+        league: { id: LEAGUE_ID, name: 'Summer League' },
+        computedAt: null,
+        top: [],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/og?token=share-token-abc`)
+        .expect(200);
+
+      expect(res.body.top).toEqual([]);
+    });
+
+    it('should return 403 when token is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/og`)
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');
+    });
+
+    it('should return 403 when token is invalid', async () => {
+      leaguesService.getPublicStandingsOgByShareToken.mockRejectedValue(
+        new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_SHARE_INVALID_TOKEN',
+          message: 'Invalid share token',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get(`/public/leagues/${LEAGUE_ID}/og?token=wrong`)
         .expect(403);
 
       expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');

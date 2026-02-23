@@ -473,6 +473,91 @@ describe('LeaguesService', () => {
     });
   });
 
+  describe('public shared OG data', () => {
+    it('returns empty top when no snapshot exists', async () => {
+      const league = fakeLeague({
+        id: 'league-public-og-empty',
+        name: 'Empty Shared League',
+        shareToken: 'share-token-og-empty',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      leagueStandingsService.getStandingsHistory.mockResolvedValue([]);
+
+      const result = await service.getPublicStandingsOgByShareToken(
+        league.id,
+        'share-token-og-empty',
+      );
+
+      expect(result).toEqual({
+        league: { id: league.id, name: 'Empty Shared League' },
+        computedAt: null,
+        top: [],
+      });
+    });
+
+    it('returns top 5 only and never includes emails', async () => {
+      const league = fakeLeague({
+        id: 'league-public-og-1',
+        name: 'OG Shared League',
+        shareToken: 'share-token-og-1',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      leagueStandingsService.getStandingsHistory.mockResolvedValue([
+        { version: 7, computedAt: '2026-02-23T22:00:00.000Z' },
+      ]);
+      leagueStandingsService.getStandingsSnapshotByVersion.mockResolvedValue({
+        version: 7,
+        computedAt: '2026-02-23T22:00:00.000Z',
+        rows: Array.from({ length: 6 }).map((_, i) => ({
+          userId: `user-${i + 1}`,
+          position: i + 1,
+          points: 20 - i,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          setsDiff: 0,
+          gamesDiff: 0,
+          ...(i === 0 ? { delta: 2 } : {}),
+        })),
+      });
+      memberRepo.find.mockResolvedValue(
+        Array.from({ length: 6 }).map((_, i) =>
+          fakeMember({
+            id: `member-${i + 1}`,
+            leagueId: league.id,
+            userId: `user-${i + 1}`,
+            user: {
+              id: `user-${i + 1}`,
+              displayName: `Player ${i + 1}`,
+              email: `player${i + 1}@test.com`,
+            } as any,
+          }),
+        ),
+      );
+
+      const result = await service.getPublicStandingsOgByShareToken(
+        league.id,
+        'share-token-og-1',
+      );
+
+      expect(result.league).toEqual({ id: league.id, name: league.name });
+      expect(result.computedAt).toBe('2026-02-23T22:00:00.000Z');
+      expect(result.top).toHaveLength(5);
+      expect(result.top[0]).toEqual({
+        position: 1,
+        displayName: 'Player 1',
+        points: 20,
+        delta: 2,
+      });
+      expect(result.top[0]).not.toHaveProperty('email');
+      expect(result.top[4]).toEqual({
+        position: 5,
+        displayName: 'Player 5',
+        points: 16,
+      });
+    });
+  });
+
   // -- acceptInvite ----------------------------------------------
 
   describe('acceptInvite', () => {

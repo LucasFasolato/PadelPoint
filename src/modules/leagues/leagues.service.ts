@@ -403,6 +403,21 @@ export class LeaguesService {
     };
   }
 
+  async getPublicStandingsOgByShareToken(leagueId: string, token: string) {
+    const shared = await this.getPublicStandingsByShareToken(leagueId, token);
+
+    return {
+      league: shared.league,
+      computedAt: shared.computedAt,
+      top: (shared.standings ?? []).slice(0, 5).map((row: any) => ({
+        position: row.position,
+        displayName: row.displayName,
+        points: row.points,
+        ...(row.delta !== undefined ? { delta: row.delta } : {}),
+      })),
+    };
+  }
+
   // -- invites ------------------------------------------------------
 
   async createInvites(userId: string, leagueId: string, dto: CreateInvitesDto) {
