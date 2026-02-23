@@ -1,13 +1,18 @@
 import { Logger } from '@nestjs/common';
 import {
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { ConfigService } from '@nestjs/config';
 import { verify } from 'jsonwebtoken';
+import { LeagueMember } from '../modules/leagues/league-member.entity';
 
 type JwtPayload = { sub: string; email: string; role: string };
 
@@ -25,7 +30,11 @@ export class NotificationsGateway
 
   private readonly jwtSecret: string;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    @InjectRepository(LeagueMember)
+    private readonly leagueMemberRepo: Repository<LeagueMember>,
+  ) {
     this.jwtSecret = config.get<string>('JWT_SECRET') ?? '';
   }
 
@@ -82,6 +91,69 @@ export class NotificationsGateway
     this.server.to(room).emit(event, payload);
     this.logger.log(`WS emit: event=${event} room=${room}`);
     return true;
+  }
+
+  /**
+   * Emit a league-scoped event to all sockets subscribed to that league's room.
+   * Best-effort: never throws.
+   */
+  emitToLeague(leagueId: string, event: string, payload: unknown): boolean {
+    const room = `league:${leagueId}`;
+    if (!this.server?.sockets) {
+      this.logger.warn(
+        `WS league emit skipped: server not ready, event=${event} leagueId=${leagueId}`,
+      );
+      return false;
+    }
+    this.server.to(room).emit(event, payload);
+    this.logger.log(`WS league emit: event=${event} room=${room}`);
+    return true;
+  }
+
+  /**
+   * Client emits { leagueId } to subscribe to live league activity.
+   * Validates JWT (already done on connect) and league membership.
+   * On success: socket joins room `league:{leagueId}`.
+   * On failure: emits error event back to the socket.
+   */
+  @SubscribeMessage('league:subscribe')
+  async handleLeagueSubscribe(
+    client: Socket,
+    @MessageBody() data: { leagueId?: string },
+  ): Promise<void> {
+    const userId = (client as any).userId as string | undefined;
+    const leagueId = data?.leagueId;
+
+    if (!userId) {
+      client.emit('error', { code: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+    if (!leagueId || typeof leagueId !== 'string') {
+      client.emit('error', { code: 'BAD_REQUEST', message: 'leagueId is required' });
+      return;
+    }
+
+    try {
+      const member = await this.leagueMemberRepo.findOne({
+        where: { leagueId, userId },
+      });
+
+      if (!member) {
+        client.emit('error', {
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You are not a member of this league',
+        });
+        return;
+      }
+
+      await client.join(`league:${leagueId}`);
+      client.emit('league:subscribed', { leagueId });
+      this.logger.log(`WS league subscribe: userId=${userId} leagueId=${leagueId}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      this.logger.error(`WS league subscribe error: ${msg}`);
+      client.emit('error', { code: 'INTERNAL_ERROR', message: 'Subscription failed' });
+    }
   }
 
   private extractToken(client: Socket): string | null {

@@ -4,6 +4,7 @@ import { BadRequestException } from '@nestjs/common';
 import { CompetitiveService } from './competitive.service';
 import { CompetitiveProfile } from './competitive-profile.entity';
 import { EloHistory } from './elo-history.entity';
+import { MatchResult } from '../matches/match-result.entity';
 import { UsersService } from '../users/users.service';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { CompetitiveGoal } from './competitive-goal.enum';
@@ -39,12 +40,37 @@ describe('CompetitiveService', () => {
   let service: CompetitiveService;
   let profileRepo: MockRepo<CompetitiveProfile>;
   let historyRepo: MockRepo<EloHistory>;
+  let matchRepo: MockRepo<MatchResult>;
   let usersService: { findById: jest.Mock };
+
+  // Build a chainable query-builder stub that always resolves to empty/null
+  function makeQb(resolveWith: any = null) {
+    const qb: any = {
+      innerJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getRawOne: jest.fn().mockResolvedValue(resolveWith),
+    };
+    return qb;
+  }
 
   beforeEach(async () => {
     usersService = { findById: jest.fn() };
     profileRepo = createMockRepo<CompetitiveProfile>();
     historyRepo = createMockRepo<EloHistory>();
+    matchRepo = createMockRepo<MatchResult>();
+
+    // getConfirmedMatchOutcomes uses matchRepo.createQueryBuilder
+    matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+    // getEloStats uses historyRepo.createQueryBuilder (multiple calls)
+    historyRepo.createQueryBuilder.mockReturnValue(makeQb(null));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -55,6 +81,7 @@ describe('CompetitiveService', () => {
           useValue: profileRepo,
         },
         { provide: getRepositoryToken(EloHistory), useValue: historyRepo },
+        { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
       ],
     }).compile();
 

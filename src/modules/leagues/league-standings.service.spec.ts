@@ -149,14 +149,23 @@ function createMockManager(data: {
       entity === LeagueStandingsSnapshot ||
       entityName === 'LeagueStandingsSnapshot'
     ) {
-      return {
-        createQueryBuilder: jest.fn().mockReturnValue({
+      // Build a chainable QBmock that handles both:
+      // 1. .where().orderBy().getOne()  → previous snapshot lookup
+      // 2. .select().where().getRawOne() → next version number lookup
+      const makeSnapshotQb = () => {
+        const qb: any = {
           select: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
-          getRawOne: jest
-            .fn()
-            .mockResolvedValue({ nextVersion: String(snapshots.length + 1) }),
-        }),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue(null),
+          getRawOne: jest.fn().mockResolvedValue({ nextVersion: String(snapshots.length + 1) }),
+        };
+        return qb;
+      };
+      return {
+        createQueryBuilder: jest.fn().mockImplementation(() => makeSnapshotQb()),
         create: jest
           .fn()
           .mockImplementation((input: Record<string, unknown>) => input),
@@ -190,11 +199,21 @@ describe('LeagueStandingsService', () => {
 
   beforeEach(() => {
     // Create service with dummy repos (recomputeLeague uses manager, not injected repos)
+    // activityService and userNotificationsService are best-effort; pass no-op mocks
+    const noopActivityService = {
+      create: jest.fn().mockResolvedValue(undefined),
+    } as any;
+    const noopNotificationsService = {
+      hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
+      create: jest.fn().mockResolvedValue(undefined),
+    } as any;
     service = new LeagueStandingsService(
       {} as Repository<League>,
       {} as Repository<LeagueMember>,
       {} as any,
       {} as any,
+      noopActivityService,
+      noopNotificationsService,
     );
   });
 

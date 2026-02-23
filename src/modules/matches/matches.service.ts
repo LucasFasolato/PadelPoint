@@ -517,7 +517,7 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
-        source: MatchSource.RESERVATION,
+        source: challenge.reservationId ? MatchSource.RESERVATION : MatchSource.MANUAL,
         status: MatchResultStatus.PENDING_CONFIRM,
 
         reportedByUserId: userId,
@@ -1471,7 +1471,8 @@ export class MatchesService {
       } else if (dto.resolution === DisputeResolution.VOID_MATCH) {
         match.status = MatchResultStatus.RESOLVED;
         await matchRepo.save(match);
-        // Voided: standings will exclude this match (status != CONFIRMED)
+        // Recompute standings so the voided match is excluded (status != CONFIRMED)
+        await this.leagueStandingsService.recomputeForMatch(manager, match.id);
       }
 
       // Audit log

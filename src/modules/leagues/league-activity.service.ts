@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { LeagueActivity } from './league-activity.entity';
 import { LeagueActivityType } from './league-activity-type.enum';
+import { User } from '../users/user.entity';
+import { NotificationsGateway } from '../../notifications/notifications.gateway';
 
 export type CreateLeagueActivityInput = {
   leagueId: string;
@@ -13,11 +15,12 @@ export type CreateLeagueActivityInput = {
   payload?: Record<string, unknown> | null;
 };
 
-type ActivityView = {
+export type ActivityView = {
   id: string;
   leagueId: string;
   type: LeagueActivityType;
   actorId: string | null;
+  actorName: string | null;
   entityId: string | null;
   payload: Record<string, unknown> | null;
   createdAt: string;
@@ -28,6 +31,9 @@ export class LeagueActivityService {
   constructor(
     @InjectRepository(LeagueActivity)
     private readonly repo: Repository<LeagueActivity>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    private readonly gateway: NotificationsGateway,
   ) {}
 
   async create(input: CreateLeagueActivityInput): Promise<LeagueActivity> {
@@ -38,14 +44,32 @@ export class LeagueActivityService {
       entityId: input.entityId ?? null,
       payload: input.payload ?? null,
     });
-    return this.repo.save(entity);
+    const saved = await this.repo.save(entity);
+
+    // Resolve actorName for WS payload (best-effort)
+    let actorName: string | null = null;
+    if (saved.actorId) {
+      const user = await this.userRepo.findOne({
+        where: { id: saved.actorId },
+        select: ['id', 'displayName', 'email'],
+      });
+      actorName = user?.displayName ?? user?.email ?? null;
+    }
+
+    // Emit to league room — best-effort, never throws
+    this.gateway.emitToLeague(saved.leagueId, 'league:activity', {
+      ...this.toView(saved),
+      actorName,
+    });
+
+    return saved;
   }
 
   async list(
     leagueId: string,
     opts: { cursor?: string; limit?: number },
   ): Promise<{ items: ActivityView[]; nextCursor: string | null }> {
-    const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+    const limit = Math.min(100, Math.max(1, opts.limit ?? 20));
 
     const qb = this.repo
       .createQueryBuilder('a')
@@ -68,18 +92,32 @@ export class LeagueActivityService {
       ? `${items[items.length - 1].createdAt.toISOString()}|${items[items.length - 1].id}`
       : null;
 
+    // Bulk-resolve actorNames — single query, no N+1
+    const actorIds = [...new Set(items.map((a) => a.actorId).filter(Boolean) as string[])];
+    const actorMap = new Map<string, string | null>();
+    if (actorIds.length > 0) {
+      const users = await this.userRepo.find({
+        where: { id: In(actorIds) },
+        select: ['id', 'displayName', 'email'],
+      });
+      for (const u of users) {
+        actorMap.set(u.id, u.displayName ?? u.email);
+      }
+    }
+
     return {
-      items: items.map((a) => this.toView(a)),
+      items: items.map((a) => this.toView(a, actorMap)),
       nextCursor,
     };
   }
 
-  private toView(a: LeagueActivity): ActivityView {
+  private toView(a: LeagueActivity, actorMap?: Map<string, string | null>): ActivityView {
     return {
       id: a.id,
       leagueId: a.leagueId,
       type: a.type,
       actorId: a.actorId,
+      actorName: actorMap ? (actorMap.get(a.actorId ?? '') ?? null) : null,
       entityId: a.entityId,
       payload: a.payload,
       createdAt: a.createdAt.toISOString(),

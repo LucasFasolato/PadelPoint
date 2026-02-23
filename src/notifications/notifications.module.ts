@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Notification } from './notification.entity';
 import { NotificationEvent } from './notification-event.entity';
 import { UserNotification } from './user-notification.entity';
+import { LeagueMember } from '../modules/leagues/league-member.entity';
 import { NotificationsService } from './notifications.service';
 import { NotificationService } from './notification.service';
 import { NotificationEventsService } from './notification-events.service';
@@ -19,6 +20,7 @@ import { HealthController } from './health.controller';
       Notification,
       NotificationEvent,
       UserNotification,
+      LeagueMember,
     ]),
   ],
   controllers: [
