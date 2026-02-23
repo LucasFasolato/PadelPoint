@@ -3,13 +3,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { CompetitiveService } from './competitive.service';
 import { CompetitiveProfile } from './competitive-profile.entity';
-import { EloHistory } from './elo-history.entity';
+import { EloHistory, EloHistoryReason } from './elo-history.entity';
 import { MatchResult } from '../matches/match-result.entity';
 import { UsersService } from '../users/users.service';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { CompetitiveGoal } from './competitive-goal.enum';
 import { PlayingFrequency } from './playing-frequency.enum';
 import { decodeRankingCursor } from './ranking-cursor.util';
+import { decodeEloHistoryCursor } from './elo-history-cursor.util';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -53,6 +54,7 @@ describe('CompetitiveService', () => {
       addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      orWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -426,6 +428,176 @@ describe('CompetitiveService', () => {
         playingFrequency: PlayingFrequency.WEEKLY,
       });
       expect(step3.onboardingComplete).toBe(true);
+    });
+  });
+
+  describe('eloHistory', () => {
+    function fakeHistoryRow(overrides: Partial<EloHistory> = {}): EloHistory {
+      return {
+        id: 'history-1',
+        profileId: 'profile-1',
+        profile: fakeProfile() as any,
+        eloBefore: 1200,
+        eloAfter: 1216,
+        delta: 999, // intentionally wrong in tests to verify response recomputes delta
+        reason: EloHistoryReason.MATCH_RESULT,
+        refId: null,
+        createdAt: new Date('2026-02-23T18:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    it('returns items ordered by createdAt DESC and id DESC with next cursor', async () => {
+      const profile = fakeProfile({ id: 'profile-history' });
+      profileRepo.findOne.mockResolvedValue(profile);
+
+      const h1 = fakeHistoryRow({
+        id: 'c',
+        profileId: profile.id,
+        createdAt: new Date('2026-02-23T12:00:00.000Z'),
+        eloBefore: 1300,
+        eloAfter: 1315,
+        reason: EloHistoryReason.MATCH_RESULT,
+        refId: 'match-1',
+      });
+      const h2 = fakeHistoryRow({
+        id: 'b',
+        profileId: profile.id,
+        createdAt: new Date('2026-02-23T11:00:00.000Z'),
+        eloBefore: 1315,
+        eloAfter: 1308,
+        reason: EloHistoryReason.INIT_CATEGORY,
+        refId: null,
+      });
+      const h3 = fakeHistoryRow({
+        id: 'a',
+        profileId: profile.id,
+        createdAt: new Date('2026-02-23T10:00:00.000Z'),
+        eloBefore: 1308,
+        eloAfter: 1320,
+      });
+
+      const qb = makeQb([h1, h2, h3]);
+      historyRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.eloHistory(FAKE_USER_ID, { limit: 2 });
+
+      expect(qb.where).toHaveBeenCalledWith('h."profileId" = :profileId', {
+        profileId: profile.id,
+      });
+      expect(qb.orderBy).toHaveBeenCalledWith('h."createdAt"', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenCalledWith('h.id', 'DESC');
+      expect(qb.take).toHaveBeenCalledWith(3);
+
+      expect(result.items).toEqual([
+        {
+          id: 'c',
+          createdAt: '2026-02-23T12:00:00.000Z',
+          eloBefore: 1300,
+          eloAfter: 1315,
+          delta: 15,
+          reason: EloHistoryReason.MATCH_RESULT,
+          meta: { refId: 'match-1' },
+        },
+        {
+          id: 'b',
+          createdAt: '2026-02-23T11:00:00.000Z',
+          eloBefore: 1315,
+          eloAfter: 1308,
+          delta: -7,
+          reason: EloHistoryReason.INIT_CATEGORY,
+        },
+      ]);
+      expect(result.nextCursor).toEqual(expect.any(String));
+      expect(
+        result.items.every((item) =>
+          Object.values(EloHistoryReason).includes(item.reason as EloHistoryReason),
+        ),
+      ).toBe(true);
+    });
+
+    it('paginates with cursor without duplicates and preserves ordering', async () => {
+      const profile = fakeProfile({ id: 'profile-history' });
+      profileRepo.findOne.mockResolvedValue(profile);
+
+      const rows = [
+        fakeHistoryRow({
+          id: 'd',
+          profileId: profile.id,
+          createdAt: new Date('2026-02-23T12:00:00.000Z'),
+        }),
+        fakeHistoryRow({
+          id: 'c',
+          profileId: profile.id,
+          createdAt: new Date('2026-02-23T12:00:00.000Z'),
+        }),
+        fakeHistoryRow({
+          id: 'b',
+          profileId: profile.id,
+          createdAt: new Date('2026-02-23T11:00:00.000Z'),
+        }),
+        fakeHistoryRow({
+          id: 'a',
+          profileId: profile.id,
+          createdAt: new Date('2026-02-23T10:00:00.000Z'),
+        }),
+      ];
+
+      const page1Qb = makeQb(rows.slice(0, 3));
+      const page2Qb = makeQb(rows.slice(2));
+      historyRepo.createQueryBuilder
+        .mockReturnValueOnce(page1Qb)
+        .mockReturnValueOnce(page2Qb);
+
+      const page1 = await service.eloHistory(FAKE_USER_ID, { limit: 2 });
+      const page2 = await service.eloHistory(FAKE_USER_ID, {
+        limit: 2,
+        cursor: page1.nextCursor!,
+      });
+
+      expect(page1.items.map((i) => i.id)).toEqual(['d', 'c']);
+      expect(page2.items.map((i) => i.id)).toEqual(['b', 'a']);
+      expect(page1.items.map((i) => i.id).filter((id) => page2.items.some((j) => j.id === id))).toEqual([]);
+
+      const decoded = decodeEloHistoryCursor(page1.nextCursor!);
+      expect(decoded).toEqual({
+        createdAt: '2026-02-23T12:00:00.000Z',
+        id: 'c',
+      });
+      expect(page2Qb.andWhere).toHaveBeenCalled();
+    });
+
+    it('enforces the limit cap at 100', async () => {
+      const profile = fakeProfile({ id: 'profile-history' });
+      profileRepo.findOne.mockResolvedValue(profile);
+
+      const qb = makeQb([]);
+      historyRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.eloHistory(FAKE_USER_ID, { limit: 999 });
+
+      expect(qb.take).toHaveBeenCalledWith(101);
+    });
+
+    it('rejects invalid history cursor', async () => {
+      const profile = fakeProfile({ id: 'profile-history' });
+      profileRepo.findOne.mockResolvedValue(profile);
+
+      await expect(
+        service.eloHistory(FAKE_USER_ID, { cursor: 'invalid' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns empty page shape when profile does not exist yet', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+      const created = fakeProfile();
+      usersService.findById.mockResolvedValue(created.user);
+      profileRepo.create.mockReturnValue(created);
+      profileRepo.save.mockResolvedValue(created);
+
+      const result = await service.eloHistory(FAKE_USER_ID);
+
+      expect(result).toEqual({ items: [], nextCursor: null });
     });
   });
 

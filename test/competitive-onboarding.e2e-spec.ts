@@ -116,6 +116,33 @@ describe('Competitive Onboarding (e2e)', () => {
 
   // ── PUT /competitive/onboarding ─────────────────────────────────
 
+  describe('GET /competitive/profile/me/history', () => {
+    it('should pass default limit=20 and cursor to service', async () => {
+      competitiveService.eloHistory!.mockResolvedValue({
+        items: [],
+        nextCursor: null,
+      });
+
+      await request(app.getHttpServer())
+        .get('/competitive/profile/me/history?cursor=opaque-cursor')
+        .expect(200);
+
+      expect(competitiveService.eloHistory).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+        {
+          limit: 20,
+          cursor: 'opaque-cursor',
+        },
+      );
+    });
+
+    it('should reject limit > 100', async () => {
+      await request(app.getHttpServer())
+        .get('/competitive/profile/me/history?limit=101')
+        .expect(400);
+    });
+  });
+
   describe('PUT /competitive/onboarding', () => {
     it('should accept valid onboarding data', async () => {
       const result = {

@@ -26,6 +26,11 @@ import {
   encodeRankingCursor,
   type RankingCursorPayload,
 } from './ranking-cursor.util';
+import {
+  decodeEloHistoryCursor,
+  encodeEloHistoryCursor,
+  type EloHistoryCursorPayload,
+} from './elo-history-cursor.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -72,6 +77,11 @@ type RankingItem = {
   matchesPlayed: number;
   wins: number;
   losses: number;
+};
+
+type EloHistoryParams = {
+  limit?: number;
+  cursor?: string;
 };
 
 @Injectable()
@@ -224,7 +234,7 @@ export class CompetitiveService {
     };
   }
 
-  async eloHistory(userId: string, limit = 50) {
+  async eloHistory(userId: string, params: EloHistoryParams | number = 20) {
     const profile = await this.profileRepo.findOne({
       where: { userId },
       relations: ['user'],
@@ -232,26 +242,73 @@ export class CompetitiveService {
 
     if (!profile) {
       await this.getOrCreateProfile(userId);
-      return [];
+      return { items: [], nextCursor: null };
     }
 
-    const n = Math.max(1, Math.min(200, limit));
+    const options =
+      typeof params === 'number' ? ({ limit: params } as EloHistoryParams) : params;
+    const n = Math.max(1, Math.min(100, options.limit ?? 20));
 
-    const rows = await this.historyRepo.find({
-      where: { profileId: profile.id },
-      order: { createdAt: 'DESC' },
-      take: n,
-    });
+    let cursor: EloHistoryCursorPayload | null = null;
+    if (options.cursor) {
+      try {
+        cursor = decodeEloHistoryCursor(options.cursor);
+      } catch {
+        throw new BadRequestException('Invalid elo history cursor');
+      }
+    }
 
-    return rows.map((h) => ({
+    const qb = this.historyRepo
+      .createQueryBuilder('h')
+      .where('h."profileId" = :profileId', { profileId: profile.id })
+      .orderBy('h."createdAt"', 'DESC')
+      .addOrderBy('h.id', 'DESC')
+      .take(n + 1);
+
+    if (cursor) {
+      qb.andWhere(
+        new Brackets((where) => {
+          where.where('h."createdAt" < :cursorCreatedAt', {
+            cursorCreatedAt: cursor.createdAt,
+          });
+          where.orWhere(
+            'h."createdAt" = :cursorCreatedAt AND h.id < :cursorId',
+            {
+              cursorCreatedAt: cursor.createdAt,
+              cursorId: cursor.id,
+            },
+          );
+        }),
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > n;
+    const pageRows = hasMore ? rows.slice(0, n) : rows;
+
+    const items = pageRows.map((h) => ({
       id: h.id,
+      createdAt: h.createdAt.toISOString(),
       eloBefore: h.eloBefore,
       eloAfter: h.eloAfter,
-      delta: h.delta,
+      delta: h.eloAfter - h.eloBefore,
       reason: h.reason,
-      refId: h.refId,
-      createdAt: h.createdAt,
+      ...(h.refId ? { meta: { refId: h.refId } } : {}),
     }));
+
+    let nextCursor: string | null = null;
+    if (hasMore && pageRows.length > 0) {
+      const last = pageRows[pageRows.length - 1];
+      nextCursor = encodeEloHistoryCursor({
+        createdAt: last.createdAt.toISOString(),
+        id: last.id,
+      });
+    }
+
+    return {
+      items,
+      nextCursor,
+    };
   }
 
   // INTERNAL helper for EloService

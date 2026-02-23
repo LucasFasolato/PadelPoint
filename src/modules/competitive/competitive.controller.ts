@@ -45,7 +45,10 @@ export class CompetitiveController {
   @Get('profile/me/history')
   history(@Req() req: Request, @Query() q: HistoryQueryDto) {
     const user = req.user as AuthUser;
-    return this.competitive.eloHistory(user.userId, q.limit ?? 50);
+    return this.competitive.eloHistory(user.userId, {
+      limit: q.limit ?? 20,
+      cursor: q.cursor,
+    });
   }
 
   @Get('onboarding')
