@@ -42,6 +42,7 @@ function fakeGuard() {
 
 const LEAGUE_ID = 'e1111111-1111-4111-a111-111111111111';
 const RESERVATION_ID = 'f1111111-1111-4111-a111-111111111111';
+const MATCH_ID = '11111111-2222-4333-8444-555555555555';
 
 const validBody = {
   reservationId: RESERVATION_ID,
@@ -55,6 +56,14 @@ const validBody = {
   ],
 };
 
+const validCaptureResultPayload = {
+  playedAt: '2025-06-10T10:00:00.000Z',
+  sets: [
+    { a: 6, b: 4 },
+    { a: 6, b: 2 },
+  ],
+};
+
 describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2e)', () => {
   let app: INestApplication<App>;
   let matchesService: Partial<Record<keyof MatchesService, jest.Mock>>;
@@ -63,6 +72,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     matchesService = {
       reportFromReservation: jest.fn(),
       getEligibleReservations: jest.fn(),
+      submitLeagueMatchResult: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -194,6 +204,43 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   // ── GET /leagues/:leagueId/eligible-reservations ──────────────
+
+  describe('PATCH /leagues/:leagueId/matches/:matchId/result', () => {
+    it('should accept frontend payload shape { playedAt, sets } and map to score.sets', async () => {
+      matchesService.submitLeagueMatchResult!.mockResolvedValue({
+        id: MATCH_ID,
+        leagueId: LEAGUE_ID,
+        status: MatchResultStatus.CONFIRMED,
+        playedAt: validCaptureResultPayload.playedAt,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/leagues/${LEAGUE_ID}/matches/${MATCH_ID}/result`)
+        .send(validCaptureResultPayload)
+        .expect(200);
+
+      expect(res.body.status).toBe('confirmed');
+      expect(matchesService.submitLeagueMatchResult).toHaveBeenCalledWith(
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+        MATCH_ID,
+        {
+          playedAt: validCaptureResultPayload.playedAt,
+          score: { sets: validCaptureResultPayload.sets },
+        },
+      );
+    });
+
+    it('should return explicit 400 code when result sets payload is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/leagues/${LEAGUE_ID}/matches/${MATCH_ID}/result`)
+        .send({ playedAt: validCaptureResultPayload.playedAt })
+        .expect(400);
+
+      expect(res.body.code).toBe('MATCH_RESULT_PAYLOAD_INVALID');
+      expect(matchesService.submitLeagueMatchResult).not.toHaveBeenCalled();
+    });
+  });
 
   describe('GET /leagues/:leagueId/eligible-reservations', () => {
     const eligibleReservation = {

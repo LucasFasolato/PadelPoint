@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -54,11 +55,12 @@ export class LeagueMatchesController {
     @Body() dto: SubmitLeagueMatchResultDto,
   ) {
     const user = req.user as AuthUser;
+    const normalizedDto = this.normalizeSubmitLeagueMatchResultDto(dto);
     return this.matchesService.submitLeagueMatchResult(
       user.userId,
       leagueId,
       matchId,
-      dto,
+      normalizedDto,
     );
   }
 
@@ -95,5 +97,42 @@ export class LeagueMatchesController {
   ) {
     const user = req.user as AuthUser;
     return this.matchesService.reportManual(user.userId, leagueId, dto);
+  }
+
+  private normalizeSubmitLeagueMatchResultDto(
+    dto: SubmitLeagueMatchResultDto,
+  ): SubmitLeagueMatchResultDto {
+    const nestedSets = dto.score?.sets;
+    const topLevelSets = dto.sets;
+
+    if (nestedSets?.length && topLevelSets?.length) {
+      const samePayload =
+        JSON.stringify(nestedSets) === JSON.stringify(topLevelSets);
+      if (!samePayload) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_RESULT_PAYLOAD_INVALID',
+          message:
+            'Provide either score.sets or sets, but not conflicting values for both',
+        });
+      }
+    }
+
+    if (nestedSets?.length) {
+      return { playedAt: dto.playedAt, score: dto.score };
+    }
+
+    if (topLevelSets?.length) {
+      return {
+        playedAt: dto.playedAt,
+        score: { sets: topLevelSets },
+      };
+    }
+
+    throw new BadRequestException({
+      statusCode: 400,
+      code: 'MATCH_RESULT_PAYLOAD_INVALID',
+      message: 'Provide match result sets in score.sets or sets',
+    });
   }
 }
