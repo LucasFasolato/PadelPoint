@@ -9,6 +9,7 @@ import { UsersService } from '../users/users.service';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { CompetitiveGoal } from './competitive-goal.enum';
 import { PlayingFrequency } from './playing-frequency.enum';
+import { decodeRankingCursor } from './ranking-cursor.util';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -46,6 +47,7 @@ describe('CompetitiveService', () => {
   // Build a chainable query-builder stub that always resolves to empty/null
   function makeQb(resolveWith: any = null) {
     const qb: any = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -55,6 +57,7 @@ describe('CompetitiveService', () => {
       addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(Array.isArray(resolveWith) ? resolveWith : []),
       getRawMany: jest.fn().mockResolvedValue([]),
       getRawOne: jest.fn().mockResolvedValue(resolveWith),
     };
@@ -423,6 +426,185 @@ describe('CompetitiveService', () => {
         playingFrequency: PlayingFrequency.WEEKLY,
       });
       expect(step3.onboardingComplete).toBe(true);
+    });
+  });
+
+  describe('ranking', () => {
+    it('returns paginated items with deterministic ordering and next cursor', async () => {
+      const p1 = fakeProfile({
+        id: 'p1',
+        userId: '00000000-0000-0000-0000-000000000001',
+        user: {
+          id: '00000000-0000-0000-0000-000000000001',
+          email: 'a@b.com',
+          displayName: 'A',
+        } as any,
+        elo: 1700,
+        matchesPlayed: 20,
+        wins: 12,
+        losses: 8,
+      });
+      const p2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000002',
+        user: {
+          id: '00000000-0000-0000-0000-000000000002',
+          email: 'b@b.com',
+          displayName: null,
+        } as any,
+        elo: 1700,
+        matchesPlayed: 10,
+        wins: 7,
+        losses: 3,
+      });
+      const p3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000003',
+        user: {
+          id: '00000000-0000-0000-0000-000000000003',
+          email: 'c@b.com',
+          displayName: 'C',
+        } as any,
+        elo: 1600,
+        matchesPlayed: 30,
+        wins: 20,
+        losses: 10,
+      });
+
+      const qb = makeQb([p1, p2, p3]);
+      profileRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.ranking({ limit: 2 });
+
+      expect(qb.orderBy).toHaveBeenCalledWith('p.elo', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenNthCalledWith(1, 'p.matchesPlayed', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenNthCalledWith(2, 'p.userId', 'ASC');
+      expect(qb.take).toHaveBeenCalledWith(3);
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          rank: 1,
+          userId: p1.userId,
+          displayName: 'A',
+          avatarUrl: null,
+          elo: 1700,
+          matchesPlayed: 20,
+          wins: 12,
+          losses: 8,
+        }),
+        expect.objectContaining({
+          rank: 2,
+          userId: p2.userId,
+          displayName: 'b@b.com',
+          avatarUrl: null,
+          elo: 1700,
+          matchesPlayed: 10,
+          wins: 7,
+          losses: 3,
+        }),
+      ]);
+      expect(result.nextCursor).toEqual(expect.any(String));
+    });
+
+    it('uses cursor rank offset on subsequent pages without overlap', async () => {
+      const p1 = fakeProfile({
+        id: 'p1',
+        userId: '00000000-0000-0000-0000-000000000001',
+        user: { id: '00000000-0000-0000-0000-000000000001', email: 'a@b.com', displayName: 'A' } as any,
+        elo: 1800,
+        matchesPlayed: 20,
+      });
+      const p2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000002',
+        user: { id: '00000000-0000-0000-0000-000000000002', email: 'b@b.com', displayName: 'B' } as any,
+        elo: 1700,
+        matchesPlayed: 15,
+      });
+      const p3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000003',
+        user: { id: '00000000-0000-0000-0000-000000000003', email: 'c@b.com', displayName: 'C' } as any,
+        elo: 1600,
+        matchesPlayed: 10,
+      });
+      const p4 = fakeProfile({
+        id: 'p4',
+        userId: '00000000-0000-0000-0000-000000000004',
+        user: { id: '00000000-0000-0000-0000-000000000004', email: 'd@b.com', displayName: 'D' } as any,
+        elo: 1500,
+        matchesPlayed: 5,
+      });
+
+      const page1Qb = makeQb([p1, p2, p3]);
+      const page2Qb = makeQb([p3, p4]);
+      profileRepo.createQueryBuilder
+        .mockReturnValueOnce(page1Qb)
+        .mockReturnValueOnce(page2Qb);
+
+      const page1 = await service.ranking({ limit: 2 });
+      const page2 = await service.ranking({
+        limit: 2,
+        cursor: page1.nextCursor!,
+      });
+
+      const ids1 = page1.items.map((i) => i.userId);
+      const ids2 = page2.items.map((i) => i.userId);
+      expect(ids1).toEqual([p1.userId, p2.userId]);
+      expect(ids2).toEqual([p3.userId, p4.userId]);
+      expect(ids1.filter((id) => ids2.includes(id))).toEqual([]);
+      expect(page2.items.map((i) => i.rank)).toEqual([3, 4]);
+
+      const decoded = decodeRankingCursor(page1.nextCursor!);
+      expect(decoded).toMatchObject({
+        elo: p2.elo,
+        matchesPlayed: p2.matchesPlayed,
+        userId: p2.userId,
+        rank: 2,
+      });
+      expect(page2Qb.andWhere).toHaveBeenCalled();
+    });
+
+    it('applies category elo-range filtering consistently', async () => {
+      const category3 = fakeProfile({
+        userId: '00000000-0000-0000-0000-000000000010',
+        user: {
+          id: '00000000-0000-0000-0000-000000000010',
+          email: 'cat3@b.com',
+          displayName: 'Cat3',
+        } as any,
+        elo: 1600,
+      });
+      const category4 = fakeProfile({
+        userId: '00000000-0000-0000-0000-000000000011',
+        user: {
+          id: '00000000-0000-0000-0000-000000000011',
+          email: 'cat4@b.com',
+          displayName: 'Cat4',
+        } as any,
+        elo: 1450,
+      });
+
+      const qb = makeQb([category3]);
+      profileRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.ranking({ category: 3, limit: 10 });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].category).toBe(3);
+      expect(qb.andWhere).toHaveBeenCalledWith('"p"."elo" >= :categoryMinElo', {
+        categoryMinElo: 1600,
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('"p"."elo" < :categoryMaxElo', {
+        categoryMaxElo: 1750,
+      });
+      expect(result.items[0].userId).not.toBe(category4.userId);
+    });
+
+    it('throws BadRequestException for invalid cursor', async () => {
+      await expect(
+        service.ranking({ limit: 10, cursor: 'invalid-cursor' }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

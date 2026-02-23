@@ -234,4 +234,42 @@ describe('Competitive Onboarding (e2e)', () => {
       expect(res.body.code).toBe('CATEGORY_LOCKED');
     });
   });
+
+  describe('GET /competitive/ranking', () => {
+    it('should pass pagination and category query params to service', async () => {
+      competitiveService.ranking!.mockResolvedValue({
+        items: [
+          {
+            rank: 1,
+            userId: FAKE_USER.userId,
+            displayName: 'Test',
+            avatarUrl: null,
+            elo: 1200,
+            category: 6,
+            matchesPlayed: 0,
+            wins: 0,
+            losses: 0,
+          },
+        ],
+        nextCursor: 'opaque-cursor',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/ranking?category=6&limit=25&cursor=opaque')
+        .expect(200);
+
+      expect(res.body.nextCursor).toBe('opaque-cursor');
+      expect(competitiveService.ranking).toHaveBeenCalledWith({
+        limit: 25,
+        category: 6,
+        cursor: 'opaque',
+      });
+    });
+
+    it('should reject invalid category query', async () => {
+      await request(app.getHttpServer())
+        .get('/competitive/ranking?category=9')
+        .expect(400);
+    });
+  });
 });

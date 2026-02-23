@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
 import { CompetitiveProfile } from './competitive-profile.entity';
@@ -17,9 +17,15 @@ import {
 import {
   DEFAULT_ELO,
   categoryFromElo,
+  getEloRangeForCategory,
   getStartEloForCategory,
 } from './competitive.constants';
 import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
+import {
+  decodeRankingCursor,
+  encodeRankingCursor,
+  type RankingCursorPayload,
+} from './ranking-cursor.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -48,6 +54,24 @@ type MatchOutcomeRow = {
 type EloPointRow = {
   createdAt: Date;
   eloAfter: number;
+};
+
+type RankingParams = {
+  limit?: number;
+  category?: number;
+  cursor?: string;
+};
+
+type RankingItem = {
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  elo: number;
+  category: number;
+  matchesPlayed: number;
+  wins: number;
+  losses: number;
 };
 
 @Injectable()
@@ -107,27 +131,97 @@ export class CompetitiveService {
     return this.toProfileView(saved);
   }
 
-  async ranking(limit = 50) {
-    const n = Math.max(1, Math.min(200, limit));
+  async ranking(params: RankingParams | number = 50) {
+    const options =
+      typeof params === 'number' ? ({ limit: params } as RankingParams) : params;
+    const n = Math.max(1, Math.min(200, options.limit ?? 50));
 
-    const rows = await this.profileRepo.find({
-      relations: ['user'],
-      order: { elo: 'DESC', updatedAt: 'DESC' },
-      take: n,
-    });
+    let cursor: RankingCursorPayload | null = null;
+    if (options.cursor) {
+      try {
+        cursor = decodeRankingCursor(options.cursor);
+      } catch {
+        throw new BadRequestException('Invalid ranking cursor');
+      }
+    }
 
-    return rows.map((p) => ({
+    const qb = this.profileRepo
+      .createQueryBuilder('p')
+      .innerJoinAndSelect('p.user', 'u')
+      .orderBy('p.elo', 'DESC')
+      .addOrderBy('p.matchesPlayed', 'DESC')
+      .addOrderBy('p.userId', 'ASC')
+      .take(n + 1);
+
+    if (options.category !== undefined) {
+      const { minInclusive, maxExclusive } = getEloRangeForCategory(
+        options.category,
+      );
+      qb.andWhere('"p"."elo" >= :categoryMinElo', {
+        categoryMinElo: minInclusive,
+      });
+      if (maxExclusive != null) {
+        qb.andWhere('"p"."elo" < :categoryMaxElo', {
+          categoryMaxElo: maxExclusive,
+        });
+      }
+    }
+
+    if (cursor) {
+      qb.andWhere(
+        new Brackets((where) => {
+          where.where('"p"."elo" < :cursorElo', { cursorElo: cursor.elo });
+          where.orWhere(
+            '"p"."elo" = :cursorElo AND "p"."matchesPlayed" < :cursorMatchesPlayed',
+            {
+              cursorElo: cursor.elo,
+              cursorMatchesPlayed: cursor.matchesPlayed,
+            },
+          );
+          where.orWhere(
+            '"p"."elo" = :cursorElo AND "p"."matchesPlayed" = :cursorMatchesPlayed AND "p"."userId" > :cursorUserId',
+            {
+              cursorElo: cursor.elo,
+              cursorMatchesPlayed: cursor.matchesPlayed,
+              cursorUserId: cursor.userId,
+            },
+          );
+        }),
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > n;
+    const pageRows = hasMore ? rows.slice(0, n) : rows;
+    const baseRank = cursor?.rank ?? 0;
+
+    const items: RankingItem[] = pageRows.map((p, index) => ({
+      rank: baseRank + index + 1,
       userId: p.user.id,
-      email: p.user.email,
-      displayName: p.user.displayName,
+      displayName: p.user.displayName ?? p.user.email,
+      avatarUrl: null,
       elo: p.elo,
       category: categoryFromElo(p.elo),
       matchesPlayed: p.matchesPlayed,
       wins: p.wins,
       losses: p.losses,
-      draws: p.draws,
-      updatedAt: p.updatedAt,
     }));
+
+    let nextCursor: string | null = null;
+    if (hasMore && pageRows.length > 0) {
+      const last = pageRows[pageRows.length - 1];
+      nextCursor = encodeRankingCursor({
+        elo: last.elo,
+        matchesPlayed: last.matchesPlayed,
+        userId: last.userId,
+        rank: baseRank + pageRows.length,
+      });
+    }
+
+    return {
+      items,
+      nextCursor,
+    };
   }
 
   async eloHistory(userId: string, limit = 50) {

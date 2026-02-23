@@ -62,6 +62,10 @@ export class CompetitiveController {
 
   @Get('ranking')
   ranking(@Query() q: RankingQueryDto) {
-    return this.competitive.ranking(q.limit ?? 50);
+    return this.competitive.ranking({
+      limit: q.limit ?? 50,
+      category: q.category,
+      cursor: q.cursor,
+    });
   }
 }
