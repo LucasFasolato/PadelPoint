@@ -242,6 +242,94 @@
         "properties": {},
         "type": "object"
       },
+      "PlayerFavoriteItemResponseDto": {
+        "properties": {
+          "avatarUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "category": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "elo": {
+            "type": "number"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlayerFavoriteLocationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "avatarUrl",
+          "elo",
+          "category",
+          "location",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "PlayerFavoriteLocationDto": {
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "province": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlayerFavoriteMutationResponseDto": {
+        "properties": {
+          "ok": {
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
+      "PlayerFavoritesListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerFavoriteItemResponseDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "PlayerLocationResponseDto": {
         "properties": {
           "city": {
@@ -3722,6 +3810,110 @@
         },
         "tags": [
           "Payments"
+        ]
+      }
+    },
+    "/players/me/favorites": {
+      "get": {
+        "operationId": "PlayersFavoritesController_listFavorites",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerFavoritesListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "List my favorite players (paginated)",
+        "tags": [
+          "players"
+        ]
+      }
+    },
+    "/players/me/favorites/{targetUserId}": {
+      "delete": {
+        "operationId": "PlayersFavoritesController_removeFavorite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "targetUserId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerFavoriteMutationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Remove a player from my favorites",
+        "tags": [
+          "players"
+        ]
+      },
+      "post": {
+        "operationId": "PlayersFavoritesController_addFavorite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "targetUserId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerFavoriteMutationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Add a player to my favorites",
+        "tags": [
+          "players"
         ]
       }
     },

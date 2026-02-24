@@ -1,13 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
+import { DEFAULT_ELO, categoryFromElo } from '../competitive/competitive.constants';
 import {
   PlayerLocation,
   PlayerLookingFor,
   PlayerProfile,
 } from './player-profile.entity';
 import { UpdatePlayerProfileDto } from './dto/update-player-profile.dto';
+import { PlayerFavorite } from './player-favorite.entity';
+import {
+  decodePlayerFavoritesCursor,
+  encodePlayerFavoritesCursor,
+  type PlayerFavoritesCursorPayload,
+} from './player-favorites-cursor.util';
 
 function defaultLookingFor(): PlayerLookingFor {
   return { partner: false, rival: false };
@@ -35,6 +42,8 @@ export class PlayersService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(PlayerProfile)
     private readonly profileRepo: Repository<PlayerProfile>,
+    @InjectRepository(PlayerFavorite)
+    private readonly favoriteRepo: Repository<PlayerFavorite>,
   ) {}
 
   async getMyProfile(userId: string) {
@@ -103,6 +112,130 @@ export class PlayersService {
     return this.toView(saved);
   }
 
+  async addFavorite(userId: string, targetUserId: string) {
+    if (userId === targetUserId) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'PLAYER_FAVORITE_SELF',
+        message: 'Cannot favorite yourself',
+      });
+    }
+
+    await this.ensureUserExists(targetUserId);
+
+    const favorite = this.favoriteRepo.create({ userId, favoriteUserId: targetUserId });
+
+    try {
+      await this.favoriteRepo.save(favorite);
+    } catch (error: any) {
+      if (error?.code !== '23505') throw error;
+    }
+
+    return { ok: true };
+  }
+
+  async removeFavorite(userId: string, targetUserId: string) {
+    await this.favoriteRepo.delete({ userId, favoriteUserId: targetUserId });
+    return { ok: true };
+  }
+
+  async listFavorites(
+    userId: string,
+    opts: { limit?: number; cursor?: string },
+  ): Promise<{
+    items: Array<{
+      userId: string;
+      displayName: string;
+      avatarUrl: string | null;
+      elo: number;
+      category: number;
+      location: { city?: string; province?: string; country?: string } | null;
+      createdAt: string;
+    }>;
+    nextCursor: string | null;
+  }> {
+    const limit = this.normalizeFavoritesLimit(opts.limit);
+
+    let cursor: PlayerFavoritesCursorPayload | null = null;
+    if (opts.cursor) {
+      try {
+        cursor = decodePlayerFavoritesCursor(opts.cursor);
+      } catch {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'PLAYER_FAVORITES_CURSOR_INVALID',
+          message: 'Invalid favorites cursor',
+        });
+      }
+    }
+
+    const params: unknown[] = [userId];
+    let cursorFilter = '';
+    if (cursor) {
+      params.push(cursor.createdAt, cursor.id);
+      cursorFilter = ` AND (f."createdAt", f.id) < ($2, $3)`;
+    }
+    params.push(limit + 1);
+    const limitParam = cursor ? '$4' : '$2';
+
+    const rows = (await this.favoriteRepo.manager.query(
+      `
+      SELECT
+        f.id AS "favoriteId",
+        f."favoriteUserId" AS "userId",
+        f."createdAt" AS "createdAt",
+        u."displayName" AS "displayName",
+        cp.elo AS "elo",
+        pp.location AS "location"
+      FROM "player_favorites" f
+      LEFT JOIN "users" u ON u.id = f."favoriteUserId"
+      LEFT JOIN "competitive_profiles" cp ON cp."userId" = f."favoriteUserId"
+      LEFT JOIN "player_profiles" pp ON pp."userId" = f."favoriteUserId"
+      WHERE f."userId" = $1${cursorFilter}
+      ORDER BY f."createdAt" DESC, f.id DESC
+      LIMIT ${limitParam}
+      `,
+      params,
+    )) as Array<{
+      favoriteId: string;
+      userId: string;
+      createdAt: string | Date;
+      displayName: string | null;
+      elo: number | null;
+      location: unknown;
+    }>;
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const items = pageRows.map((row) => {
+      const elo = Number.isFinite(Number(row.elo))
+        ? Number(row.elo)
+        : DEFAULT_ELO;
+      const createdAt = new Date(row.createdAt).toISOString();
+
+      return {
+        userId: row.userId,
+        displayName: row.displayName?.trim() || 'Player',
+        avatarUrl: null,
+        elo,
+        category: categoryFromElo(elo),
+        location: this.toFavoriteLocation(row.location),
+        createdAt,
+      };
+    });
+
+    const last = pageRows.at(-1);
+    const nextCursor = hasMore && last
+      ? encodePlayerFavoritesCursor({
+          createdAt: new Date(last.createdAt).toISOString(),
+          id: last.favoriteId,
+        })
+      : null;
+
+    return { items, nextCursor };
+  }
+
   private async getOrCreateProfileEntity(userId: string): Promise<PlayerProfile> {
     await this.ensureUserExists(userId);
 
@@ -148,6 +281,48 @@ export class PlayersService {
       province: value?.province ?? null,
       country: value?.country ?? null,
     };
+  }
+
+  private normalizeFavoritesLimit(limit: number | undefined) {
+    if (!Number.isFinite(limit)) return 20;
+    const n = Math.trunc(limit as number);
+    if (n < 1) return 1;
+    if (n > 50) return 50;
+    return n;
+  }
+
+  private toFavoriteLocation(value: unknown): {
+    city?: string;
+    province?: string;
+    country?: string;
+  } | null {
+    if (!value) return null;
+
+    let source = value;
+    if (typeof value === 'string') {
+      try {
+        source = JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof source !== 'object' || source === null) return null;
+
+    const record = source as Record<string, unknown>;
+    const location: { city?: string; province?: string; country?: string } = {};
+
+    if (typeof record.city === 'string' && record.city.length > 0) {
+      location.city = record.city;
+    }
+    if (typeof record.province === 'string' && record.province.length > 0) {
+      location.province = record.province;
+    }
+    if (typeof record.country === 'string' && record.country.length > 0) {
+      location.country = record.country;
+    }
+
+    return Object.keys(location).length > 0 ? location : null;
   }
 
   private toView(profile: PlayerProfile) {

@@ -4,17 +4,24 @@ import { createMockRepo } from '@/test-utils/mock-repo';
 import { User } from '../users/user.entity';
 import { PlayerProfile } from './player-profile.entity';
 import { PlayersService } from './players.service';
+import { PlayerFavorite } from './player-favorite.entity';
+import { decodePlayerFavoritesCursor } from './player-favorites-cursor.util';
 
 describe('PlayersService', () => {
   let service: PlayersService;
   const userRepo = createMockRepo<User>();
   const profileRepo = createMockRepo<PlayerProfile>();
+  const favoriteRepo = createMockRepo<PlayerFavorite>();
 
   beforeEach(async () => {
     userRepo.findOne.mockReset();
     profileRepo.findOne.mockReset();
     profileRepo.create.mockReset();
     profileRepo.save.mockReset();
+    favoriteRepo.create.mockReset();
+    favoriteRepo.save.mockReset();
+    favoriteRepo.delete.mockReset();
+    favoriteRepo.manager.query.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -23,6 +30,10 @@ describe('PlayersService', () => {
         {
           provide: getRepositoryToken(PlayerProfile),
           useValue: profileRepo,
+        },
+        {
+          provide: getRepositoryToken(PlayerFavorite),
+          useValue: favoriteRepo,
         },
       ],
     }).compile();
@@ -102,5 +113,113 @@ describe('PlayersService', () => {
       country: 'AR',
     });
   });
-});
 
+  it('rejects favoriting self with code PLAYER_FAVORITE_SELF', async () => {
+    await expect(service.addFavorite('u1', 'u1')).rejects.toMatchObject({
+      response: { code: 'PLAYER_FAVORITE_SELF' },
+    });
+
+    expect(favoriteRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('POST addFavorite is idempotent', async () => {
+    userRepo.findOne.mockResolvedValue({ id: 'u2' } as User);
+    favoriteRepo.create.mockImplementation((input) => input);
+    favoriteRepo.save
+      .mockResolvedValueOnce({
+        id: 'fav-1',
+        userId: 'u1',
+        favoriteUserId: 'u2',
+      } as PlayerFavorite)
+      .mockRejectedValueOnce({ code: '23505' });
+
+    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+  });
+
+  it('DELETE removeFavorite is idempotent', async () => {
+    favoriteRepo.delete.mockResolvedValue({ affected: 1 });
+
+    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+
+    expect(favoriteRepo.delete).toHaveBeenCalledWith({
+      userId: 'u1',
+      favoriteUserId: 'u2',
+    });
+  });
+
+  it('lists favorites ordered by createdAt DESC/id DESC with cursor pagination and no overlap', async () => {
+    const rows = [
+      {
+        favoriteId: 'fav-c',
+        userId: 'u3',
+        createdAt: '2026-02-24T12:00:00.000Z',
+        displayName: 'Carlos',
+        elo: 1300,
+        location: { city: 'Cordoba', country: 'AR' },
+      },
+      {
+        favoriteId: 'fav-b',
+        userId: 'u2',
+        createdAt: '2026-02-24T12:00:00.000Z',
+        displayName: null,
+        elo: null,
+        location: { city: null, province: null, country: null },
+      },
+      {
+        favoriteId: 'fav-a',
+        userId: 'u4',
+        createdAt: '2026-02-24T11:59:00.000Z',
+        displayName: 'Ana',
+        elo: 1500,
+        location: null,
+      },
+    ];
+
+    favoriteRepo.manager.query.mockImplementation(async (_sql, params: unknown[]) => {
+      const [, maybeCursorCreatedAt, maybeCursorId, maybeLimitOrUndefined] = params;
+      const hasCursor = params.length === 4;
+      const limit = Number(hasCursor ? maybeLimitOrUndefined : maybeCursorCreatedAt);
+      const cursorCreatedAt = hasCursor ? String(maybeCursorCreatedAt) : null;
+      const cursorId = hasCursor ? String(maybeCursorId) : null;
+
+      let filtered = rows;
+      if (cursorCreatedAt && cursorId) {
+        filtered = rows.filter((row) => {
+          if (row.createdAt !== cursorCreatedAt) return row.createdAt < cursorCreatedAt;
+          return row.favoriteId < cursorId;
+        });
+      }
+
+      return filtered.slice(0, limit);
+    });
+
+    const page1 = await service.listFavorites('u1', { limit: 2 });
+    expect(page1.items.map((item) => item.userId)).toEqual(['u3', 'u2']);
+    expect(page1.items[1]).toMatchObject({
+      displayName: 'Player',
+      avatarUrl: null,
+      location: null,
+    });
+    expect(page1.nextCursor).toEqual(expect.any(String));
+
+    const decoded = decodePlayerFavoritesCursor(page1.nextCursor!);
+    expect(decoded).toEqual({
+      createdAt: '2026-02-24T12:00:00.000Z',
+      id: 'fav-b',
+    });
+
+    const page2 = await service.listFavorites('u1', {
+      limit: 2,
+      cursor: page1.nextCursor!,
+    });
+    expect(page2.items.map((item) => item.userId)).toEqual(['u4']);
+    expect(page2.nextCursor).toBeNull();
+
+    const overlap = page1.items
+      .map((item) => item.userId)
+      .filter((userId) => page2.items.some((item) => item.userId === userId));
+    expect(overlap).toEqual([]);
+  });
+});
