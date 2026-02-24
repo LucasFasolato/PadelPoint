@@ -20,6 +20,7 @@ import { ClubMembersModule } from './modules/club-members/club-members.module';
 import { MediaModule } from './modules/media/media.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LeaguesModule } from './modules/leagues/leagues.module';
+import { PlayersModule } from './modules/players/players.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { LeaguesModule } from './modules/leagues/leagues.module';
     MediaModule,
     NotificationsModule,
     LeaguesModule,
+    PlayersModule,
   ],
 })
 export class AppModule {}

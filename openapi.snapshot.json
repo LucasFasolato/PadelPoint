@@ -145,6 +145,96 @@
         "properties": {},
         "type": "object"
       },
+      "PlayerLocationResponseDto": {
+        "properties": {
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "type": "string"
+          },
+          "province": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlayerLookingForResponseDto": {
+        "properties": {
+          "partner": {
+            "type": "boolean"
+          },
+          "rival": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "partner",
+          "rival"
+        ],
+        "type": "object"
+      },
+      "PlayerProfileResponseDto": {
+        "properties": {
+          "bio": {
+            "maxLength": 240,
+            "nullable": true,
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/PlayerLocationResponseDto"
+          },
+          "lookingFor": {
+            "$ref": "#/components/schemas/PlayerLookingForResponseDto"
+          },
+          "playStyleTags": {
+            "items": {
+              "enum": [
+                "aggressive",
+                "defensive",
+                "balanced",
+                "counterpuncher",
+                "net-player",
+                "baseline",
+                "left-side",
+                "right-side",
+                "lobber",
+                "smash-focused",
+                "tactical",
+                "consistent"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "strengths": {
+            "items": {
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "playStyleTags",
+          "strengths",
+          "lookingFor",
+          "location",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "PublicNotificationsResendDto": {
         "properties": {},
         "type": "object"
@@ -337,6 +427,93 @@
       },
       "UpdateMemberRoleDto": {
         "properties": {},
+        "type": "object"
+      },
+      "UpdatePlayerLocationDto": {
+        "properties": {
+          "city": {
+            "maxLength": 80,
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "maxLength": 80,
+            "nullable": true,
+            "type": "string"
+          },
+          "province": {
+            "maxLength": 80,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdatePlayerLookingForDto": {
+        "properties": {
+          "partner": {
+            "type": "boolean"
+          },
+          "rival": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "UpdatePlayerProfileDto": {
+        "properties": {
+          "bio": {
+            "maxLength": 240,
+            "nullable": true,
+            "type": "string"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdatePlayerLocationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "lookingFor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdatePlayerLookingForDto"
+              }
+            ],
+            "nullable": true
+          },
+          "playStyleTags": {
+            "items": {
+              "enum": [
+                "aggressive",
+                "defensive",
+                "balanced",
+                "counterpuncher",
+                "net-player",
+                "baseline",
+                "left-side",
+                "right-side",
+                "lobber",
+                "smash-focused",
+                "tactical",
+                "consistent"
+              ],
+              "type": "string"
+            },
+            "maxItems": 10,
+            "nullable": true,
+            "type": "array"
+          },
+          "strengths": {
+            "items": {
+              "type": "array"
+            },
+            "maxItems": 8,
+            "nullable": true,
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "UpdateProfileDto": {
@@ -3185,6 +3362,58 @@
         },
         "tags": [
           "Payments"
+        ]
+      }
+    },
+    "/players/me/profile": {
+      "get": {
+        "operationId": "PlayersMeProfileController_getMyProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfileResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get editable player profile",
+        "tags": [
+          "players"
+        ]
+      },
+      "patch": {
+        "operationId": "PlayersMeProfileController_updateMyProfile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlayerProfileDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProfileResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Patch editable player profile",
+        "tags": [
+          "players"
         ]
       }
     },
