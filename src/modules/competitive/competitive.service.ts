@@ -44,10 +44,18 @@ import {
   scaleSignedRangeToScore,
 } from './competitive-radar.util';
 import { PlayerProfile, type PlayerLocation } from '../players/player-profile.entity';
+import { Challenge } from '../challenges/challenge.entity';
+import { ChallengeStatus } from '../challenges/challenge-status.enum';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const MATCHMAKING_ACTIVE_CHALLENGE_STATUSES = [
+  ChallengeStatus.PENDING,
+  ChallengeStatus.ACCEPTED,
+  ChallengeStatus.READY,
+] as ChallengeStatus[];
 
 type MatchOutcome = 'W' | 'L';
 
@@ -139,6 +147,16 @@ type RivalCandidateMomentumRow = {
   momentum30d: string | number | null;
 };
 
+type MatchmakingChallengeRelationRow = {
+  status: ChallengeStatus | string;
+  createdAt: Date | string;
+  teamA1Id: string;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+  invitedOpponentId: string | null;
+};
+
 type RivalSuggestionItem = {
   userId: string;
   displayName: string;
@@ -176,6 +194,8 @@ export class CompetitiveService {
     private readonly historyRepo: Repository<EloHistory>,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
+    @InjectRepository(Challenge)
+    private readonly challengeRepo: Repository<Challenge>,
     @InjectRepository(PlayerProfile)
     private readonly playerProfileRepo: Repository<PlayerProfile>,
   ) {}
@@ -540,6 +560,14 @@ export class CompetitiveService {
           locationFilter,
         ),
       );
+    }
+
+    const excludedUserIds = await this.getMatchmakingExcludedUserIds(
+      userId,
+      candidates.map((c) => c.userId),
+    );
+    if (excludedUserIds.size > 0) {
+      candidates = candidates.filter((c) => !excludedUserIds.has(c.userId));
     }
 
     const filteredUserIds = candidates.map((c) => c.userId);
@@ -923,6 +951,77 @@ export class CompetitiveService {
     }
 
     return values;
+  }
+
+  private async getMatchmakingExcludedUserIds(
+    userId: string,
+    candidateUserIds: string[],
+  ) {
+    const excluded = new Set<string>();
+    if (candidateUserIds.length === 0) return excluded;
+
+    const candidateSet = new Set(candidateUserIds);
+    const recentOutboundCutoff = new Date(Date.now() - FOURTEEN_DAYS_MS);
+
+    const rows = await this.challengeRepo
+      .createQueryBuilder('c')
+      .select('c.status', 'status')
+      .addSelect('c."createdAt"', 'createdAt')
+      .addSelect('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."teamA2Id"', 'teamA2Id')
+      .addSelect('c."teamB1Id"', 'teamB1Id')
+      .addSelect('c."teamB2Id"', 'teamB2Id')
+      .addSelect('c."invitedOpponentId"', 'invitedOpponentId')
+      .where(
+        '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId OR c."invitedOpponentId" = :userId)',
+        { userId },
+      )
+      .andWhere(
+        new Brackets((where) => {
+          where.where('c.status IN (:...activeStatuses)', {
+            activeStatuses: [...MATCHMAKING_ACTIVE_CHALLENGE_STATUSES],
+          });
+          where.orWhere(
+            'c."teamA1Id" = :userId AND c."createdAt" >= :recentOutboundCutoff',
+            {
+              userId,
+              recentOutboundCutoff,
+            },
+          );
+        }),
+      )
+      .andWhere(
+        '(c."teamA1Id" IN (:...candidateUserIds) OR c."teamA2Id" IN (:...candidateUserIds) OR c."teamB1Id" IN (:...candidateUserIds) OR c."teamB2Id" IN (:...candidateUserIds) OR c."invitedOpponentId" IN (:...candidateUserIds))',
+        { candidateUserIds },
+      )
+      .getRawMany<MatchmakingChallengeRelationRow>();
+
+    for (const row of rows) {
+      const status = String(row.status) as ChallengeStatus;
+      const createdAtMs = new Date(row.createdAt).getTime();
+      const isActivePending =
+        MATCHMAKING_ACTIVE_CHALLENGE_STATUSES.includes(status);
+      const isRecentOutbound =
+        row.teamA1Id === userId &&
+        Number.isFinite(createdAtMs) &&
+        createdAtMs >= recentOutboundCutoff.getTime();
+
+      if (!isActivePending && !isRecentOutbound) continue;
+
+      for (const participantId of [
+        row.teamA1Id,
+        row.teamA2Id,
+        row.teamB1Id,
+        row.teamB2Id,
+        row.invitedOpponentId,
+      ]) {
+        if (!participantId || participantId === userId) continue;
+        if (!candidateSet.has(participantId)) continue;
+        excluded.add(participantId);
+      }
+    }
+
+    return excluded;
   }
 
   private normalizeLocationFilter(input: {

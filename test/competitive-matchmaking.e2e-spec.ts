@@ -98,6 +98,37 @@ describe('Competitive Matchmaking (e2e)', () => {
         expect.objectContaining({ limit: 5, range: 200, sameCategory: false, city: 'Madrid' }),
       );
     });
+
+    it('does not include candidate when service excludes them due to pending/recent challenge hygiene', async () => {
+      const excludedCandidateId = '00000000-0000-0000-0000-000000000111';
+      const allowedCandidateId = '00000000-0000-0000-0000-000000000112';
+
+      // Simulates service behavior after a challenge with excludedCandidateId exists.
+      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue({
+        items: [
+          {
+            userId: allowedCandidateId,
+            displayName: 'Allowed',
+            avatarUrl: null,
+            elo: 1200,
+            category: 6,
+            matches30d: 0,
+            momentum30d: 0,
+            tags: [],
+            location: null,
+            reasons: ['Similar ELO'],
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/rivals')
+        .expect(200);
+
+      expect(res.body.items.map((i: any) => i.userId)).toEqual([allowedCandidateId]);
+      expect(res.body.items.some((i: any) => i.userId === excludedCandidateId)).toBe(false);
+    });
   });
 
   // ── GET /competitive/matchmaking/partners ────────────────────────

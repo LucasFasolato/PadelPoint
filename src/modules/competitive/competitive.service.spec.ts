@@ -5,6 +5,8 @@ import { CompetitiveService } from './competitive.service';
 import { CompetitiveProfile } from './competitive-profile.entity';
 import { EloHistory, EloHistoryReason } from './elo-history.entity';
 import { MatchResult } from '../matches/match-result.entity';
+import { Challenge } from '../challenges/challenge.entity';
+import { ChallengeStatus } from '../challenges/challenge-status.enum';
 import { UsersService } from '../users/users.service';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { CompetitiveGoal } from './competitive-goal.enum';
@@ -45,6 +47,7 @@ describe('CompetitiveService', () => {
   let profileRepo: MockRepo<CompetitiveProfile>;
   let historyRepo: MockRepo<EloHistory>;
   let matchRepo: MockRepo<MatchResult>;
+  let challengeRepo: MockRepo<Challenge>;
   let playerProfileRepo: MockRepo<PlayerProfile>;
   let usersService: { findById: jest.Mock };
 
@@ -76,12 +79,14 @@ describe('CompetitiveService', () => {
     profileRepo = createMockRepo<CompetitiveProfile>();
     historyRepo = createMockRepo<EloHistory>();
     matchRepo = createMockRepo<MatchResult>();
+    challengeRepo = createMockRepo<Challenge>();
     playerProfileRepo = createMockRepo<PlayerProfile>();
 
     // getConfirmedMatchOutcomes uses matchRepo.createQueryBuilder
     matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
     // getEloStats uses historyRepo.createQueryBuilder (multiple calls)
     historyRepo.createQueryBuilder.mockReturnValue(makeQb(null));
+    challengeRepo.createQueryBuilder.mockReturnValue(makeQb([]));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -93,6 +98,7 @@ describe('CompetitiveService', () => {
         },
         { provide: getRepositoryToken(EloHistory), useValue: historyRepo },
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
+        { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
         { provide: getRepositoryToken(PlayerProfile), useValue: playerProfileRepo },
       ],
     }).compile();
@@ -1020,6 +1026,136 @@ describe('CompetitiveService', () => {
       expect(page1.items.map((i) => i.userId)).toEqual([c1.userId, c2.userId]);
       expect(page2.items.map((i) => i.userId)).toEqual([c3.userId]);
       expect(decoded.userId).toBe(c2.userId);
+    });
+
+    it('excludes candidate when there is a pending challenge between requester and candidate', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const blocked = fakeProfile({
+        id: 'p-blocked',
+        userId: '00000000-0000-0000-0000-000000000024',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000024', email: 'blocked@test.com', displayName: 'Blocked' } as any,
+      });
+      const allowed = fakeProfile({
+        id: 'p-allowed',
+        userId: '00000000-0000-0000-0000-000000000025',
+        elo: 1212,
+        user: { id: '00000000-0000-0000-0000-000000000025', email: 'allowed@test.com', displayName: 'Allowed' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, blocked, allowed]);
+      playerProfileRepo.find.mockResolvedValue([]);
+
+      const challengeQb = {
+        ...makeQb([]),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            status: ChallengeStatus.PENDING,
+            createdAt: new Date().toISOString(),
+            teamA1Id: FAKE_USER_ID,
+            teamA2Id: null,
+            teamB1Id: blocked.userId,
+            teamB2Id: null,
+            invitedOpponentId: blocked.userId,
+          },
+        ]),
+      };
+      challengeRepo.createQueryBuilder.mockReturnValueOnce(challengeQb);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 100,
+        sameCategory: false,
+      });
+
+      expect(result.items.map((i) => i.userId)).toEqual([allowed.userId]);
+      expect(result.items.some((i) => i.userId === blocked.userId)).toBe(false);
+    });
+
+    it('excludes candidate when requester challenged them within last 14 days even if resolved', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const recent = fakeProfile({
+        id: 'p-recent',
+        userId: '00000000-0000-0000-0000-000000000026',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000026', email: 'recent@test.com', displayName: 'Recent' } as any,
+      });
+      const allowed = fakeProfile({
+        id: 'p-allowed',
+        userId: '00000000-0000-0000-0000-000000000027',
+        elo: 1211,
+        user: { id: '00000000-0000-0000-0000-000000000027', email: 'allowed@test.com', displayName: 'Allowed' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, recent, allowed]);
+      playerProfileRepo.find.mockResolvedValue([]);
+
+      const challengeQb = {
+        ...makeQb([]),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            status: ChallengeStatus.CANCELLED,
+            createdAt: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000).toISOString(),
+            teamA1Id: FAKE_USER_ID,
+            teamA2Id: null,
+            teamB1Id: recent.userId,
+            teamB2Id: null,
+            invitedOpponentId: recent.userId,
+          },
+        ]),
+      };
+      challengeRepo.createQueryBuilder.mockReturnValueOnce(challengeQb);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 100,
+        sameCategory: false,
+      });
+
+      expect(result.items.map((i) => i.userId)).toEqual([allowed.userId]);
+    });
+
+    it('does not exclude candidate when requester challenge is older than 14 days and not active', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const oldChallengeCandidate = fakeProfile({
+        id: 'p-old',
+        userId: '00000000-0000-0000-0000-000000000028',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000028', email: 'old@test.com', displayName: 'Old' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, oldChallengeCandidate]);
+      playerProfileRepo.find.mockResolvedValue([]);
+
+      const challengeQb = {
+        ...makeQb([]),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            status: ChallengeStatus.REJECTED,
+            createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            teamA1Id: FAKE_USER_ID,
+            teamA2Id: null,
+            teamB1Id: oldChallengeCandidate.userId,
+            teamB2Id: null,
+            invitedOpponentId: oldChallengeCandidate.userId,
+          },
+        ]),
+      };
+      challengeRepo.createQueryBuilder.mockReturnValueOnce(challengeQb);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 100,
+        sameCategory: false,
+      });
+
+      expect(result.items.map((i) => i.userId)).toEqual([oldChallengeCandidate.userId]);
     });
   });
 
