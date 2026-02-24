@@ -10,16 +10,19 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CompetitiveService } from './competitive.service';
 import { InitCompetitiveProfileDto } from './dto/init-profile.dto';
 import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
 import { RankingQueryDto } from './dto/ranking-query.dto';
 import { HistoryQueryDto } from './dto/history-query.dto';
+import { SkillRadarResponseDto } from './dto/skill-radar-response.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
 @UseGuards(JwtAuthGuard)
+@ApiTags('competitive')
 @Controller('competitive')
 export class CompetitiveController {
   constructor(private readonly competitive: CompetitiveService) {}
@@ -49,6 +52,14 @@ export class CompetitiveController {
       limit: q.limit ?? 20,
       cursor: q.cursor,
     });
+  }
+
+  @Get('profile/me/radar')
+  @ApiOperation({ summary: 'Get computed skill radar metrics for current player' })
+  @ApiOkResponse({ type: SkillRadarResponseDto })
+  radar(@Req() req: Request) {
+    const user = req.user as AuthUser;
+    return this.competitive.getSkillRadar(user.userId);
   }
 
   @Get('onboarding')

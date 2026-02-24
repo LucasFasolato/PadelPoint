@@ -397,6 +397,69 @@
         "properties": {},
         "type": "object"
       },
+      "SkillRadarMetaDto": {
+        "properties": {
+          "computedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "matches30d": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "sampleSize": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "matches30d",
+          "sampleSize",
+          "computedAt"
+        ],
+        "type": "object"
+      },
+      "SkillRadarResponseDto": {
+        "properties": {
+          "activity": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "consistency": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "dominance": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/SkillRadarMetaDto"
+          },
+          "momentum": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "resilience": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "activity",
+          "momentum",
+          "consistency",
+          "dominance",
+          "resilience",
+          "meta"
+        ],
+        "type": "object"
+      },
       "SubmitLeagueMatchResultCanonicalBodyDto": {
         "properties": {
           "playedAt": {
@@ -1667,7 +1730,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       }
     },
@@ -1681,7 +1744,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       },
       "put": {
@@ -1703,7 +1766,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       }
     },
@@ -1727,7 +1790,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       }
     },
@@ -1741,7 +1804,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       }
     },
@@ -1755,7 +1818,29 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
+        ]
+      }
+    },
+    "/competitive/profile/me/radar": {
+      "get": {
+        "operationId": "CompetitiveController_radar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillRadarResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get computed skill radar metrics for current player",
+        "tags": [
+          "competitive"
         ]
       }
     },
@@ -1769,7 +1854,7 @@
           }
         },
         "tags": [
-          "Competitive"
+          "competitive"
         ]
       }
     },

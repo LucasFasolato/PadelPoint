@@ -779,4 +779,32 @@ describe('CompetitiveService', () => {
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('getSkillRadar', () => {
+    it('returns neutral fallback metrics when sample is insufficient', async () => {
+      const profile = fakeProfile({ id: 'profile-radar' });
+      profileRepo.findOne.mockResolvedValue(profile);
+
+      matchRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb([])) // recent radar rows
+        .mockReturnValueOnce(makeQb({ count: '0' })); // matches30d count
+      historyRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb([])); // recent deltas preview (not used after fallback)
+
+      const result = await service.getSkillRadar(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        activity: 50,
+        momentum: 50,
+        consistency: 50,
+        dominance: 50,
+        resilience: 50,
+        meta: {
+          matches30d: 0,
+          sampleSize: 0,
+          computedAt: expect.any(String),
+        },
+      });
+    });
+  });
 });

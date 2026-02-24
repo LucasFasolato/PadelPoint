@@ -31,6 +31,12 @@ import {
   encodeEloHistoryCursor,
   type EloHistoryCursorPayload,
 } from './elo-history-cursor.util';
+import {
+  clamp01Score,
+  consistencyFromDeltas,
+  scaleCappedToScore,
+  scaleSignedRangeToScore,
+} from './competitive-radar.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -82,6 +88,26 @@ type RankingItem = {
 type EloHistoryParams = {
   limit?: number;
   cursor?: string;
+};
+
+type SkillRadarRow = {
+  id: string;
+  playedAt: Date | null;
+  winnerTeam: WinnerTeam | null;
+  teamA1Id: string;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+  teamASet1: number | null;
+  teamBSet1: number | null;
+  teamASet2: number | null;
+  teamBSet2: number | null;
+  teamASet3: number | null;
+  teamBSet3: number | null;
+};
+
+type EloDeltaRow = {
+  delta: number | string;
 };
 
 @Injectable()
@@ -311,6 +337,81 @@ export class CompetitiveService {
     };
   }
 
+  async getSkillRadar(userId: string) {
+    const profile = await this.getOrCreateProfileEntity(userId);
+    const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
+
+    const [recentMatches, matches30dRaw, radarDeltasRaw] = await Promise.all([
+      this.getConfirmedRadarRows(userId, 20),
+      this.matchRepo
+        .createQueryBuilder('m')
+        .innerJoin('m.challenge', 'c')
+        .select('COUNT(*)', 'count')
+        .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
+        .andWhere('m."playedAt" IS NOT NULL')
+        .andWhere('m."playedAt" >= :cutoff', { cutoff })
+        .andWhere(
+          '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
+          { userId },
+        )
+        .getRawOne<{ count: string | number } | null>(),
+      this.historyRepo
+        .createQueryBuilder('h')
+        .select('h.delta', 'delta')
+        .where('h."profileId" = :profileId', { profileId: profile.id })
+        .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+        .orderBy('h."createdAt"', 'DESC')
+        .addOrderBy('h.id', 'DESC')
+        .limit(10)
+        .getRawMany<EloDeltaRow>(),
+    ]);
+
+    const matches30d = Number(matches30dRaw?.count ?? 0) || 0;
+    const sampleSize = recentMatches.length;
+    const computedAt = new Date().toISOString();
+
+    if (sampleSize < 3) {
+      return {
+        activity: 50,
+        momentum: 50,
+        consistency: 50,
+        dominance: 50,
+        resilience: 50,
+        meta: {
+          matches30d,
+          sampleSize,
+          computedAt,
+        },
+      };
+    }
+
+    const activity = scaleCappedToScore(matches30d, 10);
+
+    const deltas = radarDeltasRaw
+      .map((row) => Number(row.delta))
+      .filter((value) => Number.isFinite(value));
+
+    const momentumDelta30d = await this.getRadarMomentumDelta30d(profile.id, cutoff);
+    const momentum =
+      deltas.length > 0 ? scaleSignedRangeToScore(momentumDelta30d, -50, 50) : 50;
+    const consistency = consistencyFromDeltas(deltas);
+
+    const scoreMetrics = this.computeScoreMetrics(recentMatches, userId);
+
+    return {
+      activity,
+      momentum,
+      consistency,
+      dominance: scoreMetrics.dominance,
+      resilience: scoreMetrics.resilience,
+      meta: {
+        matches30d,
+        sampleSize,
+        computedAt,
+      },
+    };
+  }
+
   // INTERNAL helper for EloService
   async getOrCreateProfileEntity(userId: string) {
     let existing = await this.profileRepo.findOne({
@@ -523,6 +624,38 @@ export class CompetitiveService {
     return outcomes;
   }
 
+  private async getConfirmedRadarRows(
+    userId: string,
+    take = 20,
+  ): Promise<SkillRadarRow[]> {
+    const qb = this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin('m.challenge', 'c')
+      .select('m.id', 'id')
+      .addSelect('m."playedAt"', 'playedAt')
+      .addSelect('m."winnerTeam"', 'winnerTeam')
+      .addSelect('m."teamASet1"', 'teamASet1')
+      .addSelect('m."teamBSet1"', 'teamBSet1')
+      .addSelect('m."teamASet2"', 'teamASet2')
+      .addSelect('m."teamBSet2"', 'teamBSet2')
+      .addSelect('m."teamASet3"', 'teamASet3')
+      .addSelect('m."teamBSet3"', 'teamBSet3')
+      .addSelect('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."teamA2Id"', 'teamA2Id')
+      .addSelect('c."teamB1Id"', 'teamB1Id')
+      .addSelect('c."teamB2Id"', 'teamB2Id')
+      .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
+      .andWhere(
+        '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
+        { userId },
+      )
+      .orderBy('m."playedAt"', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(take);
+
+    return qb.getRawMany<SkillRadarRow>();
+  }
+
   private resolveOutcomeForUser(
     row: MatchOutcomeRow,
     userId: string,
@@ -534,6 +667,101 @@ export class CompetitiveService {
     const teamAWon = row.winnerTeam === WinnerTeam.A;
     const didWin = (isTeamA && teamAWon) || (isTeamB && !teamAWon);
     return didWin ? 'W' : 'L';
+  }
+
+  private async getRadarMomentumDelta30d(profileId: string, cutoff: Date) {
+    const rows = await this.historyRepo
+      .createQueryBuilder('h')
+      .select('h.delta', 'delta')
+      .where('h."profileId" = :profileId', { profileId })
+      .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+      .andWhere('h."createdAt" >= :cutoff', { cutoff })
+      .getRawMany<EloDeltaRow>();
+
+    return rows
+      .map((row) => Number(row.delta))
+      .filter((value) => Number.isFinite(value))
+      .reduce((sum, value) => sum + value, 0);
+  }
+
+  private computeScoreMetrics(rows: SkillRadarRow[], userId: string) {
+    const margins: number[] = [];
+    const lossMargins: number[] = [];
+
+    for (const row of rows) {
+      const team = this.resolveTeamSideForUser(row, userId);
+      if (!team) continue;
+
+      const sets: Array<[number | null, number | null]> = [
+        [row.teamASet1, row.teamBSet1],
+        [row.teamASet2, row.teamBSet2],
+        [row.teamASet3, row.teamBSet3],
+      ];
+
+      let gamesFor = 0;
+      let gamesAgainst = 0;
+      let hasScore = false;
+
+      for (const [a, b] of sets) {
+        if (typeof a !== 'number' || typeof b !== 'number') continue;
+        hasScore = true;
+        if (team === 'A') {
+          gamesFor += a;
+          gamesAgainst += b;
+        } else {
+          gamesFor += b;
+          gamesAgainst += a;
+        }
+      }
+
+      if (!hasScore) continue;
+
+      const totalGames = gamesFor + gamesAgainst;
+      if (totalGames <= 0) continue;
+
+      const marginRatio = (gamesFor - gamesAgainst) / totalGames; // [-1,1]
+      margins.push(marginRatio);
+
+      const outcome = this.resolveOutcomeForUser(row as MatchOutcomeRow, userId);
+      if (outcome === 'L') {
+        lossMargins.push((gamesAgainst - gamesFor) / totalGames);
+      }
+    }
+
+    const dominance =
+      margins.length > 0
+        ? scaleSignedRangeToScore(
+            margins.reduce((sum, m) => sum + m, 0) / margins.length,
+            -1,
+            1,
+          )
+        : 50;
+
+    const resilience =
+      lossMargins.length > 0
+        ? clamp01Score(
+            100 -
+              (Math.min(
+                1,
+                lossMargins.reduce((sum, m) => sum + m, 0) / lossMargins.length,
+              ) *
+                100),
+          )
+        : 50;
+
+    return { dominance, resilience };
+  }
+
+  private resolveTeamSideForUser(
+    row: Pick<
+      SkillRadarRow,
+      'teamA1Id' | 'teamA2Id' | 'teamB1Id' | 'teamB2Id'
+    >,
+    userId: string,
+  ): 'A' | 'B' | null {
+    if (row.teamA1Id === userId || row.teamA2Id === userId) return 'A';
+    if (row.teamB1Id === userId || row.teamB2Id === userId) return 'B';
+    return null;
   }
 
   private async getEloStats(

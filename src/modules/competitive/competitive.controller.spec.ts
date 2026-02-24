@@ -11,6 +11,7 @@ describe('CompetitiveController', () => {
       getOrCreateProfile: jest.fn(),
       initProfileCategory: jest.fn(),
       eloHistory: jest.fn(),
+      getSkillRadar: jest.fn(),
       ranking: jest.fn(),
     };
 

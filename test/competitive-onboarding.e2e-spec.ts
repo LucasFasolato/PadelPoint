@@ -30,6 +30,7 @@ describe('Competitive Onboarding (e2e)', () => {
       initProfileCategory: jest.fn(),
       ranking: jest.fn(),
       eloHistory: jest.fn(),
+      getSkillRadar: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -140,6 +141,45 @@ describe('Competitive Onboarding (e2e)', () => {
       await request(app.getHttpServer())
         .get('/competitive/profile/me/history?limit=101')
         .expect(400);
+    });
+  });
+
+  describe('GET /competitive/profile/me/radar', () => {
+    it('should return a valid radar shape', async () => {
+      competitiveService.getSkillRadar!.mockResolvedValue({
+        activity: 50,
+        momentum: 50,
+        consistency: 50,
+        dominance: 50,
+        resilience: 50,
+        meta: {
+          matches30d: 0,
+          sampleSize: 0,
+          computedAt: new Date().toISOString(),
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/profile/me/radar')
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          activity: expect.any(Number),
+          momentum: expect.any(Number),
+          consistency: expect.any(Number),
+          dominance: expect.any(Number),
+          resilience: expect.any(Number),
+          meta: expect.objectContaining({
+            matches30d: expect.any(Number),
+            sampleSize: expect.any(Number),
+            computedAt: expect.any(String),
+          }),
+        }),
+      );
+      expect(competitiveService.getSkillRadar).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+      );
     });
   });
 
