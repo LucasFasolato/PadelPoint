@@ -36,6 +36,7 @@ import {
   encodeMatchmakingRivalsCursor,
   type MatchmakingRivalsCursorPayload,
 } from './matchmaking-rivals-cursor.util';
+import { computeMatchmakingScore } from './matchmaking-scoring.util';
 import {
   clamp01Score,
   consistencyFromDeltas,
@@ -151,7 +152,19 @@ type RivalSuggestionItem = {
   reasons: string[];
 };
 
-type RivalSuggestionScoredItem = RivalSuggestionItem & { _absDiff: number };
+type RivalSuggestionScoredItem = RivalSuggestionItem & {
+  _absDiff: number;
+  _score: number;
+};
+
+type ReasonBuilderInput = {
+  myCategory: number;
+  candidateCategory: number;
+  matches30d: number;
+  location: PlayerLocation | null;
+  locationFilter: { city?: string; province?: string; country?: string };
+  tagOverlapScore: number;
+};
 
 @Injectable()
 export class CompetitiveService {
@@ -457,133 +470,35 @@ export class CompetitiveService {
     };
   }
 
-  async findRivalSuggestions(
-    userId: string,
-    params: MatchmakingRivalsParams = {},
-  ) {
-    const me = await this.getOrCreateProfileEntity(userId);
-    const limit = Math.max(1, Math.min(50, params.limit ?? 20));
-    const range = Math.max(1, Math.min(500, params.range ?? 100));
-    const sameCategory = params.sameCategory ?? true;
-    const myCategory = categoryFromElo(me.elo);
-    const cursor = params.cursor
-      ? decodeMatchmakingRivalsCursor(params.cursor)
-      : null;
-
-    const allProfiles = await this.profileRepo.find({ relations: ['user'] });
-    let candidates = allProfiles.filter((candidate) => candidate.userId !== userId);
-    candidates = candidates.filter(
-      (candidate) => Math.abs(candidate.elo - me.elo) <= range,
+  async findRivalSuggestions(userId: string, params: MatchmakingRivalsParams = {}) {
+    return this.findSuggestionsCore(userId, params, (input) =>
+      this.buildRivalReasons(input),
     );
-
-    if (sameCategory) {
-      candidates = candidates.filter(
-        (candidate) => categoryFromElo(candidate.elo) === myCategory,
-      );
-    }
-
-    const candidateUserIds = candidates.map((candidate) => candidate.userId);
-    const candidatePlayerProfiles =
-      candidateUserIds.length > 0
-        ? await this.playerProfileRepo.find({
-            where: { userId: In(candidateUserIds) },
-          })
-        : [];
-    const playerProfileByUserId = new Map(
-      candidatePlayerProfiles.map((profile) => [profile.userId, profile]),
-    );
-
-    const locationFilter = this.normalizeLocationFilter({
-      city: params.city,
-      province: params.province,
-      country: params.country,
-    });
-    if (locationFilter.city || locationFilter.province || locationFilter.country) {
-      candidates = candidates.filter((candidate) =>
-        this.matchesLocationFilter(
-          playerProfileByUserId.get(candidate.userId)?.location ?? null,
-          locationFilter,
-        ),
-      );
-    }
-
-    const filteredUserIds = candidates.map((candidate) => candidate.userId);
-    const filteredProfileIds = candidates.map((candidate) => candidate.id);
-    const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
-    const [matches30dByUserId, momentum30dByProfileId] = await Promise.all([
-      this.getMatches30dByUserIds(filteredUserIds, cutoff),
-      this.getMomentum30dByProfileIds(filteredProfileIds, cutoff),
-    ]);
-
-    const scoredItems: RivalSuggestionScoredItem[] = candidates.map((candidate) => {
-      const absDiff = Math.abs(candidate.elo - me.elo);
-      const matches30d = matches30dByUserId.get(candidate.userId) ?? 0;
-      const momentum30d = momentum30dByProfileId.get(candidate.id) ?? 0;
-      const playerProfile = playerProfileByUserId.get(candidate.userId);
-      const category = categoryFromElo(candidate.elo);
-      const location = this.normalizeLocationForResponse(
-        playerProfile?.location ?? null,
-      );
-
-      return {
-        userId: candidate.userId,
-        displayName: candidate.user.displayName?.trim() || 'Player',
-        avatarUrl: null,
-        elo: candidate.elo,
-        category,
-        matches30d,
-        momentum30d,
-        tags: Array.isArray(playerProfile?.playStyleTags)
-          ? [...playerProfile!.playStyleTags]
-          : [],
-        location,
-        reasons: this.buildRivalReasons({
-          myCategory,
-          candidateCategory: category,
-          matches30d,
-          location,
-          locationFilter,
-        }),
-        _absDiff: absDiff,
-      };
-    });
-
-    scoredItems.sort((a, b) => this.compareRivalCandidates(a, b));
-
-    const paged = cursor
-      ? scoredItems.filter((item) =>
-          this.isAfterRivalCursor(
-            {
-              absDiff: item._absDiff,
-              matches30d: item.matches30d,
-              userId: item.userId,
-            },
-            cursor,
-          ),
-        )
-      : scoredItems;
-
-    const slice = paged.slice(0, limit);
-    const nextCursor =
-      paged.length > limit && slice.length > 0
-        ? encodeMatchmakingRivalsCursor({
-            absDiff: slice[slice.length - 1]._absDiff,
-            matches30d: slice[slice.length - 1].matches30d,
-            userId: slice[slice.length - 1].userId,
-          })
-        : null;
-
-    return {
-      items: slice.map(({ _absDiff, ...item }) => item),
-      nextCursor,
-    };
   }
 
-  async findPartnerSuggestions(
+  async findPartnerSuggestions(userId: string, params: MatchmakingRivalsParams = {}) {
+    return this.findSuggestionsCore(userId, params, (input) =>
+      this.buildPartnerReasons(input),
+    );
+  }
+
+  private async findSuggestionsCore(
     userId: string,
-    params: MatchmakingRivalsParams = {},
+    params: MatchmakingRivalsParams,
+    buildReasonsFn: (input: ReasonBuilderInput) => string[],
   ) {
-    const me = await this.getOrCreateProfileEntity(userId);
+    const [me, myPlayerProfile] = await Promise.all([
+      this.getOrCreateProfileEntity(userId),
+      this.playerProfileRepo.findOne({ where: { userId } }),
+    ]);
+
+    const myTags = Array.isArray(myPlayerProfile?.playStyleTags)
+      ? [...myPlayerProfile!.playStyleTags]
+      : [];
+    const myLocation = this.normalizeLocationForResponse(
+      myPlayerProfile?.location ?? null,
+    );
+
     const limit = Math.max(1, Math.min(50, params.limit ?? 20));
     const range = Math.max(1, Math.min(500, params.range ?? 100));
     const sameCategory = params.sameCategory ?? true;
@@ -593,18 +508,16 @@ export class CompetitiveService {
       : null;
 
     const allProfiles = await this.profileRepo.find({ relations: ['user'] });
-    let candidates = allProfiles.filter((candidate) => candidate.userId !== userId);
-    candidates = candidates.filter(
-      (candidate) => Math.abs(candidate.elo - me.elo) <= range,
-    );
+    let candidates = allProfiles.filter((c) => c.userId !== userId);
+    candidates = candidates.filter((c) => Math.abs(c.elo - me.elo) <= range);
 
     if (sameCategory) {
       candidates = candidates.filter(
-        (candidate) => categoryFromElo(candidate.elo) === myCategory,
+        (c) => categoryFromElo(c.elo) === myCategory,
       );
     }
 
-    const candidateUserIds = candidates.map((candidate) => candidate.userId);
+    const candidateUserIds = candidates.map((c) => c.userId);
     const candidatePlayerProfiles =
       candidateUserIds.length > 0
         ? await this.playerProfileRepo.find({
@@ -612,7 +525,7 @@ export class CompetitiveService {
           })
         : [];
     const playerProfileByUserId = new Map(
-      candidatePlayerProfiles.map((profile) => [profile.userId, profile]),
+      candidatePlayerProfiles.map((p) => [p.userId, p]),
     );
 
     const locationFilter = this.normalizeLocationFilter({
@@ -621,16 +534,16 @@ export class CompetitiveService {
       country: params.country,
     });
     if (locationFilter.city || locationFilter.province || locationFilter.country) {
-      candidates = candidates.filter((candidate) =>
+      candidates = candidates.filter((c) =>
         this.matchesLocationFilter(
-          playerProfileByUserId.get(candidate.userId)?.location ?? null,
+          playerProfileByUserId.get(c.userId)?.location ?? null,
           locationFilter,
         ),
       );
     }
 
-    const filteredUserIds = candidates.map((candidate) => candidate.userId);
-    const filteredProfileIds = candidates.map((candidate) => candidate.id);
+    const filteredUserIds = candidates.map((c) => c.userId);
+    const filteredProfileIds = candidates.map((c) => c.id);
     const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
     const [matches30dByUserId, momentum30dByProfileId] = await Promise.all([
       this.getMatches30dByUserIds(filteredUserIds, cutoff),
@@ -646,6 +559,20 @@ export class CompetitiveService {
       const location = this.normalizeLocationForResponse(
         playerProfile?.location ?? null,
       );
+      const tags = Array.isArray(playerProfile?.playStyleTags)
+        ? [...playerProfile!.playStyleTags]
+        : [];
+
+      const scoreBreakdown = computeMatchmakingScore({
+        absDiff,
+        range,
+        matches30d,
+        momentum30d,
+        candidateLocation: location,
+        myLocation,
+        candidateTags: tags,
+        myTags,
+      });
 
       return {
         userId: candidate.userId,
@@ -655,18 +582,18 @@ export class CompetitiveService {
         category,
         matches30d,
         momentum30d,
-        tags: Array.isArray(playerProfile?.playStyleTags)
-          ? [...playerProfile!.playStyleTags]
-          : [],
+        tags,
         location,
-        reasons: this.buildPartnerReasons({
+        reasons: buildReasonsFn({
           myCategory,
           candidateCategory: category,
           matches30d,
           location,
           locationFilter,
+          tagOverlapScore: scoreBreakdown.tagOverlapScore,
         }),
         _absDiff: absDiff,
+        _score: scoreBreakdown.total,
       };
     });
 
@@ -675,11 +602,7 @@ export class CompetitiveService {
     const paged = cursor
       ? scoredItems.filter((item) =>
           this.isAfterRivalCursor(
-            {
-              absDiff: item._absDiff,
-              matches30d: item.matches30d,
-              userId: item.userId,
-            },
+            { score: item._score, absDiff: item._absDiff, userId: item.userId },
             cursor,
           ),
         )
@@ -689,14 +612,14 @@ export class CompetitiveService {
     const nextCursor =
       paged.length > limit && slice.length > 0
         ? encodeMatchmakingRivalsCursor({
+            score: slice[slice.length - 1]._score,
             absDiff: slice[slice.length - 1]._absDiff,
-            matches30d: slice[slice.length - 1].matches30d,
             userId: slice[slice.length - 1].userId,
           })
         : null;
 
     return {
-      items: slice.map(({ _absDiff, ...item }) => item),
+      items: slice.map(({ _absDiff: _a, _score: _s, ...item }) => item),
       nextCursor,
     };
   }
@@ -1048,13 +971,7 @@ export class CompetitiveService {
     return true;
   }
 
-  private buildRivalReasons(input: {
-    myCategory: number;
-    candidateCategory: number;
-    matches30d: number;
-    location: PlayerLocation | null;
-    locationFilter: { city?: string; province?: string; country?: string };
-  }) {
+  private buildRivalReasons(input: ReasonBuilderInput) {
     const reasons = ['Similar ELO'];
 
     if (input.candidateCategory === input.myCategory) {
@@ -1063,7 +980,6 @@ export class CompetitiveService {
     if (input.matches30d > 0) {
       reasons.push('Active recently');
     }
-
     if (input.location && input.locationFilter.city) {
       if (input.location.city?.trim().toLowerCase() === input.locationFilter.city) {
         reasons.push('Same city');
@@ -1082,17 +998,14 @@ export class CompetitiveService {
         reasons.push('Same country');
       }
     }
+    if (input.tagOverlapScore > 2) {
+      reasons.push('Compatible style');
+    }
 
     return reasons;
   }
 
-  private buildPartnerReasons(input: {
-    myCategory: number;
-    candidateCategory: number;
-    matches30d: number;
-    location: PlayerLocation | null;
-    locationFilter: { city?: string; province?: string; country?: string };
-  }) {
+  private buildPartnerReasons(input: ReasonBuilderInput) {
     const reasons = ['ELO similar'];
 
     if (input.candidateCategory === input.myCategory) {
@@ -1101,7 +1014,6 @@ export class CompetitiveService {
     if (input.matches30d > 0) {
       reasons.push('Activo recientemente');
     }
-
     if (input.location && input.locationFilter.city) {
       if (input.location.city?.trim().toLowerCase() === input.locationFilter.city) {
         reasons.push('Misma ciudad');
@@ -1120,24 +1032,25 @@ export class CompetitiveService {
         reasons.push('Mismo país');
       }
     }
+    if (input.tagOverlapScore > 2) {
+      reasons.push('Estilo compatible');
+    }
 
     return reasons;
   }
 
   private compareRivalCandidates(a: RivalSuggestionScoredItem, b: RivalSuggestionScoredItem) {
-    if (a._absDiff !== b._absDiff) return a._absDiff - b._absDiff;
-    if (a.matches30d !== b.matches30d) return b.matches30d - a.matches30d;
-    return a.userId.localeCompare(b.userId);
+    if (a._score !== b._score) return b._score - a._score; // score DESC
+    if (a._absDiff !== b._absDiff) return a._absDiff - b._absDiff; // absDiff ASC
+    return a.userId.localeCompare(b.userId); // userId ASC
   }
 
   private isAfterRivalCursor(
     item: MatchmakingRivalsCursorPayload,
     cursor: MatchmakingRivalsCursorPayload,
   ) {
+    if (item.score !== cursor.score) return item.score < cursor.score; // score DESC
     if (item.absDiff !== cursor.absDiff) return item.absDiff > cursor.absDiff;
-    if (item.matches30d !== cursor.matches30d) {
-      return item.matches30d < cursor.matches30d;
-    }
     return item.userId > cursor.userId;
   }
 

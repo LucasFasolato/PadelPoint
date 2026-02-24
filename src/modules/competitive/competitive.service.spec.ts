@@ -1201,4 +1201,195 @@ describe('CompetitiveService', () => {
       expect(decoded.userId).toBe(c2.userId);
     });
   });
+
+  describe('scoring engine (composite score drives ordering)', () => {
+    it('high-activity candidate ranks above closer-ELO inactive candidate', async () => {
+      // me: elo=1200, range=100
+      // c1: absDiff=5 → eloScore≈47.5, matches30d=0 → total≈47.5
+      // c2: absDiff=10 → eloScore≈45, matches30d=20 → activityScore=20 → total≈65
+      // c2 should rank first despite higher absDiff
+      const me = fakeProfile({ id: 'me', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000041',
+        elo: 1205,
+        user: { id: '00000000-0000-0000-0000-000000000041', email: 'c1@t.com', displayName: 'C1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2',
+        userId: '00000000-0000-0000-0000-000000000042',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000042', email: 'c2@t.com', displayName: 'C2' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      // playerProfileRepo.findOne for requester → undefined (no requester profile)
+      playerProfileRepo.findOne.mockResolvedValue(undefined);
+      profileRepo.find.mockResolvedValue([me, c1, c2]);
+      playerProfileRepo.find.mockResolvedValue([]);
+
+      // c2 has 20 confirmed matches in last 30d; use custom getRawMany
+      const matchesQb = {
+        ...makeQb([]),
+        getRawMany: jest.fn().mockResolvedValue(
+          Array.from({ length: 20 }, () => ({
+            teamA1Id: c2.userId,
+            teamA2Id: null,
+            teamB1Id: 'x',
+            teamB2Id: null,
+          })),
+        ),
+      };
+      matchRepo.createQueryBuilder.mockReturnValueOnce(matchesQb);
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, { range: 100, sameCategory: false });
+
+      expect(result.items[0].userId).toBe(c2.userId);
+      expect(result.items[1].userId).toBe(c1.userId);
+    });
+
+    it('location-boosted candidate ranks above closer-ELO distant candidate', async () => {
+      // me in Madrid; c1 closer in ELO but different city; c2 farther in ELO but same city
+      const me = fakeProfile({ id: 'me', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000051',
+        elo: 1205, // absDiff=5 → eloScore≈47.5, locationScore=0 → total≈47.5
+        user: { id: '00000000-0000-0000-0000-000000000051', email: 'c1@t.com', displayName: 'C1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2',
+        userId: '00000000-0000-0000-0000-000000000052',
+        elo: 1210, // absDiff=10 → eloScore≈45, same city → locationScore=10 → total≈55
+        user: { id: '00000000-0000-0000-0000-000000000052', email: 'c2@t.com', displayName: 'C2' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      playerProfileRepo.findOne.mockResolvedValue({
+        userId: FAKE_USER_ID,
+        playStyleTags: [],
+        location: { city: 'Madrid', province: 'Madrid', country: 'ES' },
+      } as any);
+      profileRepo.find.mockResolvedValue([me, c1, c2]);
+      playerProfileRepo.find.mockResolvedValue([
+        { userId: c1.userId, playStyleTags: [], location: { city: 'Barcelona', province: 'Cataluña', country: 'ES' } },
+        { userId: c2.userId, playStyleTags: [], location: { city: 'Madrid', province: 'Madrid', country: 'ES' } },
+      ] as any);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, { range: 100, sameCategory: false });
+
+      expect(result.items[0].userId).toBe(c2.userId);
+      expect(result.items[1].userId).toBe(c1.userId);
+    });
+
+    it('adds "Compatible style" reason when tagOverlapScore > 2', async () => {
+      const me = fakeProfile({ id: 'me', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000061',
+        elo: 1205,
+        user: { id: '00000000-0000-0000-0000-000000000061', email: 'c1@t.com', displayName: 'C1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2',
+        userId: '00000000-0000-0000-0000-000000000062',
+        elo: 1206,
+        user: { id: '00000000-0000-0000-0000-000000000062', email: 'c2@t.com', displayName: 'C2' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      // requester has 3 tags
+      playerProfileRepo.findOne.mockResolvedValue({
+        userId: FAKE_USER_ID,
+        playStyleTags: ['aggressive', 'baseline', 'consistent'],
+        location: null,
+      } as any);
+      profileRepo.find.mockResolvedValue([me, c1, c2]);
+      playerProfileRepo.find.mockResolvedValue([
+        // c1: identical tags → jaccard=1.0, tagOverlapScore=5 > 2 → "Compatible style"
+        { userId: c1.userId, playStyleTags: ['aggressive', 'baseline', 'consistent'], location: null },
+        // c2: no tags → jaccard=0, tagOverlapScore=0 → no reason
+        { userId: c2.userId, playStyleTags: [], location: null },
+      ] as any);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, { range: 100, sameCategory: false });
+
+      const c1Item = result.items.find((i) => i.userId === c1.userId)!;
+      const c2Item = result.items.find((i) => i.userId === c2.userId)!;
+      expect(c1Item.reasons).toContain('Compatible style');
+      expect(c2Item.reasons).not.toContain('Compatible style');
+    });
+
+    it('adds "Estilo compatible" reason for partners when tagOverlapScore > 2', async () => {
+      const me = fakeProfile({ id: 'me', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000071',
+        elo: 1205,
+        user: { id: '00000000-0000-0000-0000-000000000071', email: 'c1@t.com', displayName: 'C1' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      playerProfileRepo.findOne.mockResolvedValue({
+        userId: FAKE_USER_ID,
+        playStyleTags: ['aggressive', 'baseline', 'consistent'],
+        location: null,
+      } as any);
+      profileRepo.find.mockResolvedValue([me, c1]);
+      playerProfileRepo.find.mockResolvedValue([
+        { userId: c1.userId, playStyleTags: ['aggressive', 'baseline', 'consistent'], location: null },
+      ] as any);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findPartnerSuggestions(FAKE_USER_ID, { range: 100 });
+
+      expect(result.items[0].reasons).toContain('Estilo compatible');
+    });
+
+    it('cursor encodes composite score and paginates stably', async () => {
+      // c1: eloScore=49.5 (absDiff=1); c2: eloScore=49 (absDiff=2); c3: eloScore=48.5 (absDiff=3)
+      const me = fakeProfile({ id: 'me', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1', userId: '00000000-0000-0000-0000-000000000081', elo: 1201,
+        user: { id: '00000000-0000-0000-0000-000000000081', email: '1@t.com', displayName: '1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2', userId: '00000000-0000-0000-0000-000000000082', elo: 1202,
+        user: { id: '00000000-0000-0000-0000-000000000082', email: '2@t.com', displayName: '2' } as any,
+      });
+      const c3 = fakeProfile({
+        id: 'c3', userId: '00000000-0000-0000-0000-000000000083', elo: 1203,
+        user: { id: '00000000-0000-0000-0000-000000000083', email: '3@t.com', displayName: '3' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      playerProfileRepo.findOne.mockResolvedValue(undefined);
+      profileRepo.find.mockResolvedValue([me, c1, c2, c3]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+
+      const page1 = await service.findRivalSuggestions(FAKE_USER_ID, { limit: 2, range: 100 });
+      const decoded = decodeMatchmakingRivalsCursor(page1.nextCursor!);
+      const page2 = await service.findRivalSuggestions(FAKE_USER_ID, {
+        limit: 2,
+        range: 100,
+        cursor: page1.nextCursor!,
+      });
+
+      expect(page1.items).toHaveLength(2);
+      expect(page2.items).toHaveLength(1);
+      expect(page1.items.map((i) => i.userId)).toEqual([c1.userId, c2.userId]);
+      expect(page2.items.map((i) => i.userId)).toEqual([c3.userId]);
+      // cursor now has score instead of matches30d
+      expect(typeof decoded.score).toBe('number');
+      expect(decoded.userId).toBe(c2.userId);
+    });
+  });
 });

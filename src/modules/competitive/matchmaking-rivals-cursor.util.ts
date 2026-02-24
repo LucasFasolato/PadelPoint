@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
 export type MatchmakingRivalsCursorPayload = {
+  score: number;
   absDiff: number;
-  matches30d: number;
   userId: string;
 };
 
@@ -21,10 +21,10 @@ export function decodeMatchmakingRivalsCursor(
     ) as Partial<MatchmakingRivalsCursorPayload>;
 
     if (
+      typeof parsed.score !== 'number' ||
+      !Number.isFinite(parsed.score) ||
       typeof parsed.absDiff !== 'number' ||
       !Number.isFinite(parsed.absDiff) ||
-      typeof parsed.matches30d !== 'number' ||
-      !Number.isFinite(parsed.matches30d) ||
       typeof parsed.userId !== 'string' ||
       parsed.userId.length === 0
     ) {
@@ -32,8 +32,8 @@ export function decodeMatchmakingRivalsCursor(
     }
 
     return {
+      score: parsed.score,
       absDiff: parsed.absDiff,
-      matches30d: parsed.matches30d,
       userId: parsed.userId,
     };
   } catch {

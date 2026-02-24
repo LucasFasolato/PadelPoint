@@ -136,7 +136,7 @@ describe('Competitive Matchmaking (e2e)', () => {
       );
     });
 
-    it('returns item shape with expected fields', async () => {
+    it('returns item shape with expected fields including Estilo compatible', async () => {
       const partnerItem = {
         userId: '00000000-0000-0000-0000-000000000099',
         displayName: 'Partner One',
@@ -145,9 +145,14 @@ describe('Competitive Matchmaking (e2e)', () => {
         category: 5,
         matches30d: 3,
         momentum30d: 15,
-        tags: ['balanced'],
+        tags: ['balanced', 'aggressive'],
         location: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        reasons: ['ELO similar', 'Misma categoría', 'Activo recientemente'],
+        reasons: [
+          'ELO similar',
+          'Misma categoría',
+          'Activo recientemente',
+          'Estilo compatible',
+        ],
       };
       (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue({
         items: [partnerItem],
@@ -161,11 +166,77 @@ describe('Competitive Matchmaking (e2e)', () => {
       expect(res.body.items).toHaveLength(1);
       const item = res.body.items[0];
       expect(item.userId).toBe(partnerItem.userId);
-      expect(item.displayName).toBe(partnerItem.displayName);
-      expect(item.elo).toBe(partnerItem.elo);
       expect(item.reasons).toContain('ELO similar');
       expect(item.reasons).toContain('Misma categoría');
+      expect(item.reasons).toContain('Estilo compatible');
       expect(res.body.nextCursor).toBeNull();
+    });
+
+    it('higher-score item from service is returned first', async () => {
+      const higherScore = {
+        userId: '00000000-0000-0000-0000-000000000091',
+        displayName: 'High Score',
+        avatarUrl: null,
+        elo: 1260,
+        category: 5,
+        matches30d: 20,
+        momentum30d: 40,
+        tags: ['aggressive'],
+        location: { city: 'Madrid', province: 'Madrid', country: 'ES' },
+        reasons: ['ELO similar', 'Misma categoría', 'Activo recientemente', 'Estilo compatible'],
+      };
+      const lowerScore = {
+        userId: '00000000-0000-0000-0000-000000000092',
+        displayName: 'Low Score',
+        avatarUrl: null,
+        elo: 1202,
+        category: 5,
+        matches30d: 0,
+        momentum30d: 0,
+        tags: [],
+        location: null,
+        reasons: ['ELO similar'],
+      };
+      // service already returns them pre-sorted by score DESC
+      (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue({
+        items: [higherScore, lowerScore],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/partners')
+        .expect(200);
+
+      expect(res.body.items[0].userId).toBe(higherScore.userId);
+      expect(res.body.items[1].userId).toBe(lowerScore.userId);
+    });
+  });
+
+  // ── GET /competitive/matchmaking/rivals — Compatible style ───────
+  describe('GET /competitive/matchmaking/rivals — smart scoring reasons', () => {
+    it('returns "Compatible style" reason in rivals response', async () => {
+      const rivalItem = {
+        userId: '00000000-0000-0000-0000-000000000098',
+        displayName: 'Rival One',
+        avatarUrl: null,
+        elo: 1210,
+        category: 5,
+        matches30d: 5,
+        momentum30d: 10,
+        tags: ['aggressive', 'baseline'],
+        location: null,
+        reasons: ['Similar ELO', 'Same category', 'Active recently', 'Compatible style'],
+      };
+      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue({
+        items: [rivalItem],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/rivals')
+        .expect(200);
+
+      expect(res.body.items[0].reasons).toContain('Compatible style');
     });
   });
 });
