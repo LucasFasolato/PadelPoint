@@ -18,6 +18,8 @@ import { UpsertOnboardingDto } from './dto/upsert-onboarding.dto';
 import { RankingQueryDto } from './dto/ranking-query.dto';
 import { HistoryQueryDto } from './dto/history-query.dto';
 import { SkillRadarResponseDto } from './dto/skill-radar-response.dto';
+import { MatchmakingRivalsQueryDto } from './dto/matchmaking-rivals-query.dto';
+import { MatchmakingRivalsResponseDto } from './dto/matchmaking-rivals-response.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -60,6 +62,22 @@ export class CompetitiveController {
   radar(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.competitive.getSkillRadar(user.userId);
+  }
+
+  @Get('matchmaking/rivals')
+  @ApiOperation({ summary: 'Find suggested rivals for current player' })
+  @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
+  matchmakingRivals(@Req() req: Request, @Query() q: MatchmakingRivalsQueryDto) {
+    const user = req.user as AuthUser;
+    return this.competitive.findRivalSuggestions(user.userId, {
+      limit: q.limit ?? 20,
+      cursor: q.cursor,
+      range: q.range ?? 100,
+      sameCategory: q.sameCategory ?? true,
+      city: q.city,
+      province: q.province,
+      country: q.country,
+    });
   }
 
   @Get('onboarding')

@@ -11,6 +11,8 @@ import { CompetitiveGoal } from './competitive-goal.enum';
 import { PlayingFrequency } from './playing-frequency.enum';
 import { decodeRankingCursor } from './ranking-cursor.util';
 import { decodeEloHistoryCursor } from './elo-history-cursor.util';
+import { PlayerProfile } from '../players/player-profile.entity';
+import { decodeMatchmakingRivalsCursor } from './matchmaking-rivals-cursor.util';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -43,6 +45,7 @@ describe('CompetitiveService', () => {
   let profileRepo: MockRepo<CompetitiveProfile>;
   let historyRepo: MockRepo<EloHistory>;
   let matchRepo: MockRepo<MatchResult>;
+  let playerProfileRepo: MockRepo<PlayerProfile>;
   let usersService: { findById: jest.Mock };
 
   // Build a chainable query-builder stub that always resolves to empty/null
@@ -57,6 +60,8 @@ describe('CompetitiveService', () => {
       orWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue(Array.isArray(resolveWith) ? resolveWith : []),
@@ -71,6 +76,7 @@ describe('CompetitiveService', () => {
     profileRepo = createMockRepo<CompetitiveProfile>();
     historyRepo = createMockRepo<EloHistory>();
     matchRepo = createMockRepo<MatchResult>();
+    playerProfileRepo = createMockRepo<PlayerProfile>();
 
     // getConfirmedMatchOutcomes uses matchRepo.createQueryBuilder
     matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
@@ -87,6 +93,7 @@ describe('CompetitiveService', () => {
         },
         { provide: getRepositoryToken(EloHistory), useValue: historyRepo },
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
+        { provide: getRepositoryToken(PlayerProfile), useValue: playerProfileRepo },
       ],
     }).compile();
 
@@ -805,6 +812,214 @@ describe('CompetitiveService', () => {
           computedAt: expect.any(String),
         },
       });
+    });
+  });
+
+  describe('findRivalSuggestions', () => {
+    it('excludes current user, respects range/sameCategory, and orders deterministically', async () => {
+      const me = fakeProfile({
+        id: 'me-profile',
+        userId: FAKE_USER_ID,
+        elo: 1250,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+      });
+      const u2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000002',
+        elo: 1260,
+        user: { id: '00000000-0000-0000-0000-000000000002', email: 'u2@test.com', displayName: 'U2' } as any,
+      });
+      const u3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000003',
+        elo: 1240,
+        user: { id: '00000000-0000-0000-0000-000000000003', email: 'u3@test.com', displayName: 'U3' } as any,
+      });
+      const u4 = fakeProfile({
+        id: 'p4',
+        userId: '00000000-0000-0000-0000-000000000004',
+        elo: 1260,
+        user: { id: '00000000-0000-0000-0000-000000000004', email: 'u4@test.com', displayName: 'U4' } as any,
+      });
+      const outOfRange = fakeProfile({
+        id: 'p5',
+        userId: '00000000-0000-0000-0000-000000000005',
+        elo: 1405,
+        user: { id: '00000000-0000-0000-0000-000000000005', email: 'u5@test.com', displayName: 'U5' } as any,
+      });
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, u2, u3, u4, outOfRange]);
+      playerProfileRepo.find.mockResolvedValue([
+        {
+          userId: u2.userId,
+          playStyleTags: ['balanced'],
+          location: { city: 'Cordoba', province: 'Cordoba', country: 'AR' },
+        },
+        {
+          userId: u3.userId,
+          playStyleTags: ['aggressive'],
+          location: { city: 'Rosario', province: 'Santa Fe', country: 'AR' },
+        },
+        {
+          userId: u4.userId,
+          playStyleTags: [],
+          location: { city: 'CORDOBA', province: 'Cordoba', country: 'AR' },
+        },
+      ] as any);
+
+      matchRepo.createQueryBuilder.mockReturnValueOnce(
+        makeQb([
+          { teamA1Id: u2.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+          { teamA1Id: u2.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+          { teamA1Id: u3.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+          { teamA1Id: u4.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+          { teamA1Id: u4.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+          { teamA1Id: u4.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+        ]),
+      );
+      historyRepo.createQueryBuilder.mockReturnValueOnce(
+        makeQb([
+          { profileId: u2.id, momentum30d: '10' },
+          { profileId: u3.id, momentum30d: '-5' },
+          { profileId: u4.id, momentum30d: '20' },
+        ]),
+      );
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        limit: 10,
+        range: 100,
+        sameCategory: true,
+      });
+
+      // Deterministic ordering for equal-distance candidates.
+      expect(result.items.map((i) => i.userId)).toEqual([u2.userId, u3.userId, u4.userId]);
+      expect(result.items.some((i) => i.userId === FAKE_USER_ID)).toBe(false);
+      expect(result.items.some((i) => i.userId === outOfRange.userId)).toBe(false);
+      expect(result.items.every((i) => typeof i.matches30d === 'number')).toBe(true);
+      expect(result.items[0].reasons).toContain('Similar ELO');
+      expect(result.items[0].reasons).toContain('Same category');
+    });
+
+    it('supports case-insensitive location filtering', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000010',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000010', email: 'c1@test.com', displayName: 'C1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2',
+        userId: '00000000-0000-0000-0000-000000000011',
+        elo: 1220,
+        user: { id: '00000000-0000-0000-0000-000000000011', email: 'c2@test.com', displayName: 'C2' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, c1, c2]);
+      playerProfileRepo.find.mockResolvedValue([
+        {
+          userId: c1.userId,
+          playStyleTags: ['balanced'],
+          location: { city: 'CORDOBA', province: 'Cordoba', country: 'AR' },
+        },
+        {
+          userId: c2.userId,
+          playStyleTags: [],
+          location: { city: 'Rosario', province: 'Santa Fe', country: 'AR' },
+        },
+      ] as any);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        city: '  CORDOBA ',
+        range: 100,
+      });
+
+      expect(result.items.map((i) => i.userId)).toEqual([c1.userId]);
+      expect(result.items[0].reasons).toContain('Same city');
+    });
+
+    it('respects sameCategory filter', async () => {
+      const me = fakeProfile({
+        id: 'me-profile',
+        userId: FAKE_USER_ID,
+        elo: 1590, // category 4
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+      });
+      const sameCat = fakeProfile({
+        id: 'p-same',
+        userId: '00000000-0000-0000-0000-000000000031',
+        elo: 1580, // category 4
+        user: { id: '00000000-0000-0000-0000-000000000031', email: 'same@test.com', displayName: 'Same' } as any,
+      });
+      const diffCat = fakeProfile({
+        id: 'p-diff',
+        userId: '00000000-0000-0000-0000-000000000032',
+        elo: 1600, // category 3 and within range 20
+        user: { id: '00000000-0000-0000-0000-000000000032', email: 'diff@test.com', displayName: 'Diff' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, sameCat, diffCat]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+
+      const sameCategoryOnly = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 20,
+        sameCategory: true,
+      });
+      const mixed = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 20,
+        sameCategory: false,
+      });
+
+      expect(sameCategoryOnly.items.map((i) => i.userId)).toEqual([sameCat.userId]);
+      expect(mixed.items.map((i) => i.userId)).toEqual([sameCat.userId, diffCat.userId]);
+    });
+
+    it('paginates with stable opaque cursor', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'p1',
+        userId: '00000000-0000-0000-0000-000000000021',
+        elo: 1201,
+        user: { id: '00000000-0000-0000-0000-000000000021', email: '1@test.com', displayName: '1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000022',
+        elo: 1202,
+        user: { id: '00000000-0000-0000-0000-000000000022', email: '2@test.com', displayName: '2' } as any,
+      });
+      const c3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000023',
+        elo: 1203,
+        user: { id: '00000000-0000-0000-0000-000000000023', email: '3@test.com', displayName: '3' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, c1, c2, c3]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+
+      const page1 = await service.findRivalSuggestions(FAKE_USER_ID, { limit: 2, range: 100 });
+      const decoded = decodeMatchmakingRivalsCursor(page1.nextCursor!);
+      const page2 = await service.findRivalSuggestions(FAKE_USER_ID, {
+        limit: 2,
+        range: 100,
+        cursor: page1.nextCursor!,
+      });
+
+      expect(page1.items).toHaveLength(2);
+      expect(page2.items).toHaveLength(1);
+      expect(page1.items.map((i) => i.userId)).toEqual([c1.userId, c2.userId]);
+      expect(page2.items.map((i) => i.userId)).toEqual([c3.userId]);
+      expect(decoded.userId).toBe(c2.userId);
     });
   });
 });

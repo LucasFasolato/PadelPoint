@@ -31,6 +31,7 @@ describe('Competitive Onboarding (e2e)', () => {
       ranking: jest.fn(),
       eloHistory: jest.fn(),
       getSkillRadar: jest.fn(),
+      findRivalSuggestions: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -180,6 +181,59 @@ describe('Competitive Onboarding (e2e)', () => {
       expect(competitiveService.getSkillRadar).toHaveBeenCalledWith(
         FAKE_USER.userId,
       );
+    });
+  });
+
+  describe('GET /competitive/matchmaking/rivals', () => {
+    it('should return valid rival suggestions page', async () => {
+      competitiveService.findRivalSuggestions!.mockResolvedValue({
+        items: [
+          {
+            userId: '22222222-2222-4222-8222-222222222222',
+            displayName: 'Rival One',
+            avatarUrl: null,
+            elo: 1210,
+            category: 4,
+            matches30d: 3,
+            momentum30d: 12,
+            tags: ['balanced'],
+            location: { city: 'Cordoba', province: 'Cordoba', country: 'AR' },
+            reasons: ['Similar ELO', 'Same category', 'Active recently'],
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/rivals?limit=20&range=100&sameCategory=true')
+        .expect(200);
+
+      expect(res.body.items[0]).toEqual(
+        expect.objectContaining({
+          userId: expect.any(String),
+          displayName: expect.any(String),
+          elo: expect.any(Number),
+          category: expect.any(Number),
+          matches30d: expect.any(Number),
+          momentum30d: expect.any(Number),
+          tags: expect.any(Array),
+          reasons: expect.any(Array),
+        }),
+      );
+      expect(competitiveService.findRivalSuggestions).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+        expect.objectContaining({
+          limit: 20,
+          range: 100,
+          sameCategory: true,
+        }),
+      );
+    });
+
+    it('should reject limit > 50', async () => {
+      await request(app.getHttpServer())
+        .get('/competitive/matchmaking/rivals?limit=51')
+        .expect(400);
     });
   });
 

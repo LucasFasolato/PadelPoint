@@ -141,6 +141,103 @@
         "properties": {},
         "type": "object"
       },
+      "MatchmakingRivalItemDto": {
+        "properties": {
+          "avatarUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "category": {
+            "type": "number"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "elo": {
+            "type": "number"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MatchmakingRivalLocationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "matches30d": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "momentum30d": {
+            "type": "number"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "avatarUrl",
+          "elo",
+          "category",
+          "matches30d",
+          "momentum30d",
+          "tags",
+          "location",
+          "reasons"
+        ],
+        "type": "object"
+      },
+      "MatchmakingRivalLocationDto": {
+        "properties": {
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "type": "string"
+          },
+          "province": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MatchmakingRivalsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MatchmakingRivalItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "MockPaymentWebhookDto": {
         "properties": {},
         "type": "object"
@@ -1717,6 +1814,95 @@
         },
         "tags": [
           "Clubs"
+        ]
+      }
+    },
+    "/competitive/matchmaking/rivals": {
+      "get": {
+        "operationId": "CompetitiveController_matchmakingRivals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sameCategory",
+            "required": false,
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "maxLength": 80,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "province",
+            "required": false,
+            "schema": {
+              "maxLength": 80,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "maxLength": 80,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchmakingRivalsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Find suggested rivals for current player",
+        "tags": [
+          "competitive"
         ]
       }
     },

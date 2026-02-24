@@ -10,6 +10,7 @@ import { EloService } from './elo.service';
 import { MatchResult } from '../matches/match-result.entity';
 import { Challenge } from '../challenges/challenge.entity';
 import { UsersModule } from '../users/users.module';
+import { PlayerProfile } from '../players/player-profile.entity';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { UsersModule } from '../users/users.module';
       EloHistory,
       MatchResult,
       Challenge,
+      PlayerProfile,
     ]),
   ],
   controllers: [CompetitiveController],

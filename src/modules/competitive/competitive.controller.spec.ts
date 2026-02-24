@@ -12,6 +12,7 @@ describe('CompetitiveController', () => {
       initProfileCategory: jest.fn(),
       eloHistory: jest.fn(),
       getSkillRadar: jest.fn(),
+      findRivalSuggestions: jest.fn(),
       ranking: jest.fn(),
     };
 

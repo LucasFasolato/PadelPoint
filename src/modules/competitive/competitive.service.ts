@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
 import { CompetitiveProfile } from './competitive-profile.entity';
@@ -32,11 +32,17 @@ import {
   type EloHistoryCursorPayload,
 } from './elo-history-cursor.util';
 import {
+  decodeMatchmakingRivalsCursor,
+  encodeMatchmakingRivalsCursor,
+  type MatchmakingRivalsCursorPayload,
+} from './matchmaking-rivals-cursor.util';
+import {
   clamp01Score,
   consistencyFromDeltas,
   scaleCappedToScore,
   scaleSignedRangeToScore,
 } from './competitive-radar.util';
+import { PlayerProfile, type PlayerLocation } from '../players/player-profile.entity';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -90,6 +96,16 @@ type EloHistoryParams = {
   cursor?: string;
 };
 
+type MatchmakingRivalsParams = {
+  limit?: number;
+  cursor?: string;
+  range?: number;
+  sameCategory?: boolean;
+  city?: string;
+  province?: string;
+  country?: string;
+};
+
 type SkillRadarRow = {
   id: string;
   playedAt: Date | null;
@@ -110,6 +126,33 @@ type EloDeltaRow = {
   delta: number | string;
 };
 
+type RivalCandidateAggregateMatchRow = {
+  teamA1Id: string;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+};
+
+type RivalCandidateMomentumRow = {
+  profileId: string;
+  momentum30d: string | number | null;
+};
+
+type RivalSuggestionItem = {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  elo: number;
+  category: number;
+  matches30d: number;
+  momentum30d: number;
+  tags: string[];
+  location: PlayerLocation | null;
+  reasons: string[];
+};
+
+type RivalSuggestionScoredItem = RivalSuggestionItem & { _absDiff: number };
+
 @Injectable()
 export class CompetitiveService {
   constructor(
@@ -120,6 +163,8 @@ export class CompetitiveService {
     private readonly historyRepo: Repository<EloHistory>,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
+    @InjectRepository(PlayerProfile)
+    private readonly playerProfileRepo: Repository<PlayerProfile>,
   ) {}
 
   async getOrCreateProfile(userId: string) {
@@ -412,6 +457,128 @@ export class CompetitiveService {
     };
   }
 
+  async findRivalSuggestions(
+    userId: string,
+    params: MatchmakingRivalsParams = {},
+  ) {
+    const me = await this.getOrCreateProfileEntity(userId);
+    const limit = Math.max(1, Math.min(50, params.limit ?? 20));
+    const range = Math.max(1, Math.min(500, params.range ?? 100));
+    const sameCategory = params.sameCategory ?? true;
+    const myCategory = categoryFromElo(me.elo);
+    const cursor = params.cursor
+      ? decodeMatchmakingRivalsCursor(params.cursor)
+      : null;
+
+    const allProfiles = await this.profileRepo.find({ relations: ['user'] });
+    let candidates = allProfiles.filter((candidate) => candidate.userId !== userId);
+    candidates = candidates.filter(
+      (candidate) => Math.abs(candidate.elo - me.elo) <= range,
+    );
+
+    if (sameCategory) {
+      candidates = candidates.filter(
+        (candidate) => categoryFromElo(candidate.elo) === myCategory,
+      );
+    }
+
+    const candidateUserIds = candidates.map((candidate) => candidate.userId);
+    const candidatePlayerProfiles =
+      candidateUserIds.length > 0
+        ? await this.playerProfileRepo.find({
+            where: { userId: In(candidateUserIds) },
+          })
+        : [];
+    const playerProfileByUserId = new Map(
+      candidatePlayerProfiles.map((profile) => [profile.userId, profile]),
+    );
+
+    const locationFilter = this.normalizeLocationFilter({
+      city: params.city,
+      province: params.province,
+      country: params.country,
+    });
+    if (locationFilter.city || locationFilter.province || locationFilter.country) {
+      candidates = candidates.filter((candidate) =>
+        this.matchesLocationFilter(
+          playerProfileByUserId.get(candidate.userId)?.location ?? null,
+          locationFilter,
+        ),
+      );
+    }
+
+    const filteredUserIds = candidates.map((candidate) => candidate.userId);
+    const filteredProfileIds = candidates.map((candidate) => candidate.id);
+    const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
+    const [matches30dByUserId, momentum30dByProfileId] = await Promise.all([
+      this.getMatches30dByUserIds(filteredUserIds, cutoff),
+      this.getMomentum30dByProfileIds(filteredProfileIds, cutoff),
+    ]);
+
+    const scoredItems: RivalSuggestionScoredItem[] = candidates.map((candidate) => {
+      const absDiff = Math.abs(candidate.elo - me.elo);
+      const matches30d = matches30dByUserId.get(candidate.userId) ?? 0;
+      const momentum30d = momentum30dByProfileId.get(candidate.id) ?? 0;
+      const playerProfile = playerProfileByUserId.get(candidate.userId);
+      const category = categoryFromElo(candidate.elo);
+      const location = this.normalizeLocationForResponse(
+        playerProfile?.location ?? null,
+      );
+
+      return {
+        userId: candidate.userId,
+        displayName: candidate.user.displayName?.trim() || 'Player',
+        avatarUrl: null,
+        elo: candidate.elo,
+        category,
+        matches30d,
+        momentum30d,
+        tags: Array.isArray(playerProfile?.playStyleTags)
+          ? [...playerProfile!.playStyleTags]
+          : [],
+        location,
+        reasons: this.buildRivalReasons({
+          myCategory,
+          candidateCategory: category,
+          matches30d,
+          location,
+          locationFilter,
+        }),
+        _absDiff: absDiff,
+      };
+    });
+
+    scoredItems.sort((a, b) => this.compareRivalCandidates(a, b));
+
+    const paged = cursor
+      ? scoredItems.filter((item) =>
+          this.isAfterRivalCursor(
+            {
+              absDiff: item._absDiff,
+              matches30d: item.matches30d,
+              userId: item.userId,
+            },
+            cursor,
+          ),
+        )
+      : scoredItems;
+
+    const slice = paged.slice(0, limit);
+    const nextCursor =
+      paged.length > limit && slice.length > 0
+        ? encodeMatchmakingRivalsCursor({
+            absDiff: slice[slice.length - 1]._absDiff,
+            matches30d: slice[slice.length - 1].matches30d,
+            userId: slice[slice.length - 1].userId,
+          })
+        : null;
+
+    return {
+      items: slice.map(({ _absDiff, ...item }) => item),
+      nextCursor,
+    };
+  }
+
   // INTERNAL helper for EloService
   async getOrCreateProfileEntity(userId: string) {
     let existing = await this.profileRepo.findOne({
@@ -654,6 +821,164 @@ export class CompetitiveService {
       .take(take);
 
     return qb.getRawMany<SkillRadarRow>();
+  }
+
+  private async getMatches30dByUserIds(userIds: string[], cutoff: Date) {
+    const counts = new Map<string, number>();
+    if (userIds.length === 0) return counts;
+
+    const rows = await this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin('m.challenge', 'c')
+      .select('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."teamA2Id"', 'teamA2Id')
+      .addSelect('c."teamB1Id"', 'teamB1Id')
+      .addSelect('c."teamB2Id"', 'teamB2Id')
+      .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
+      .andWhere('m."playedAt" IS NOT NULL')
+      .andWhere('m."playedAt" >= :cutoff', { cutoff })
+      .andWhere(
+        '(c."teamA1Id" IN (:...userIds) OR c."teamA2Id" IN (:...userIds) OR c."teamB1Id" IN (:...userIds) OR c."teamB2Id" IN (:...userIds))',
+        { userIds },
+      )
+      .getRawMany<RivalCandidateAggregateMatchRow>();
+
+    const targetIds = new Set(userIds);
+    for (const row of rows) {
+      for (const participantId of [
+        row.teamA1Id,
+        row.teamA2Id,
+        row.teamB1Id,
+        row.teamB2Id,
+      ]) {
+        if (!participantId || !targetIds.has(participantId)) continue;
+        counts.set(participantId, (counts.get(participantId) ?? 0) + 1);
+      }
+    }
+
+    return counts;
+  }
+
+  private async getMomentum30dByProfileIds(profileIds: string[], cutoff: Date) {
+    const values = new Map<string, number>();
+    if (profileIds.length === 0) return values;
+
+    const rows = await this.historyRepo
+      .createQueryBuilder('h')
+      .select('h."profileId"', 'profileId')
+      .addSelect('COALESCE(SUM(h.delta), 0)', 'momentum30d')
+      .where('h."profileId" IN (:...profileIds)', { profileIds })
+      .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+      .andWhere('h."createdAt" >= :cutoff', { cutoff })
+      .groupBy('h."profileId"')
+      .getRawMany<RivalCandidateMomentumRow>();
+
+    for (const row of rows) {
+      values.set(row.profileId, Number(row.momentum30d ?? 0) || 0);
+    }
+
+    return values;
+  }
+
+  private normalizeLocationFilter(input: {
+    city?: string;
+    province?: string;
+    country?: string;
+  }) {
+    return {
+      city: input.city?.trim().toLowerCase() || undefined,
+      province: input.province?.trim().toLowerCase() || undefined,
+      country: input.country?.trim().toLowerCase() || undefined,
+    };
+  }
+
+  private normalizeLocationForResponse(
+    location: PlayerLocation | null,
+  ): PlayerLocation | null {
+    if (!location) return null;
+
+    const normalized: PlayerLocation = {
+      city: location.city ?? null,
+      province: location.province ?? null,
+      country: location.country ?? null,
+    };
+
+    const hasValue = Object.values(normalized).some(
+      (value) => typeof value === 'string' && value.trim().length > 0,
+    );
+    return hasValue ? normalized : null;
+  }
+
+  private matchesLocationFilter(
+    location: PlayerLocation | null,
+    filter: { city?: string; province?: string; country?: string },
+  ) {
+    if (!filter.city && !filter.province && !filter.country) return true;
+    if (!location) return false;
+
+    const city = location.city?.trim().toLowerCase() || undefined;
+    const province = location.province?.trim().toLowerCase() || undefined;
+    const country = location.country?.trim().toLowerCase() || undefined;
+
+    if (filter.city && city !== filter.city) return false;
+    if (filter.province && province !== filter.province) return false;
+    if (filter.country && country !== filter.country) return false;
+    return true;
+  }
+
+  private buildRivalReasons(input: {
+    myCategory: number;
+    candidateCategory: number;
+    matches30d: number;
+    location: PlayerLocation | null;
+    locationFilter: { city?: string; province?: string; country?: string };
+  }) {
+    const reasons = ['Similar ELO'];
+
+    if (input.candidateCategory === input.myCategory) {
+      reasons.push('Same category');
+    }
+    if (input.matches30d > 0) {
+      reasons.push('Active recently');
+    }
+
+    if (input.location && input.locationFilter.city) {
+      if (input.location.city?.trim().toLowerCase() === input.locationFilter.city) {
+        reasons.push('Same city');
+      }
+    } else if (input.location && input.locationFilter.province) {
+      if (
+        input.location.province?.trim().toLowerCase() ===
+        input.locationFilter.province
+      ) {
+        reasons.push('Same province');
+      }
+    } else if (input.location && input.locationFilter.country) {
+      if (
+        input.location.country?.trim().toLowerCase() === input.locationFilter.country
+      ) {
+        reasons.push('Same country');
+      }
+    }
+
+    return reasons;
+  }
+
+  private compareRivalCandidates(a: RivalSuggestionScoredItem, b: RivalSuggestionScoredItem) {
+    if (a._absDiff !== b._absDiff) return a._absDiff - b._absDiff;
+    if (a.matches30d !== b.matches30d) return b.matches30d - a.matches30d;
+    return a.userId.localeCompare(b.userId);
+  }
+
+  private isAfterRivalCursor(
+    item: MatchmakingRivalsCursorPayload,
+    cursor: MatchmakingRivalsCursorPayload,
+  ) {
+    if (item.absDiff !== cursor.absDiff) return item.absDiff > cursor.absDiff;
+    if (item.matches30d !== cursor.matches30d) {
+      return item.matches30d < cursor.matches30d;
+    }
+    return item.userId > cursor.userId;
   }
 
   private resolveOutcomeForUser(
