@@ -1,0 +1,3979 @@
+{
+  "components": {
+    "schemas": {
+      "AgendaBlockDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "AgendaUpdateBlockDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "BulkCreateAvailabilityDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateAvailabilityRuleDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateClubDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateCourtDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateDirectChallengeDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateHoldDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateInvitesDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateLeagueChallengeDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateLeagueDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateLeagueMatchDto": {
+        "properties": {
+          "playedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "score": {
+            "$ref": "#/components/schemas/LeagueMatchScoreDto"
+          },
+          "teamA1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamA2Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB2Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "PLAYED",
+              "SCHEDULED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "teamA1Id",
+          "teamB1Id"
+        ],
+        "type": "object"
+      },
+      "CreateMiniLeagueDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateOpenChallengeDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateOverrideDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreatePaymentIntentDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "CreateSignatureDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "DisputeMatchDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "InitCompetitiveProfileDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "LeagueMatchScoreDto": {
+        "properties": {
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSetDto"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "sets"
+        ],
+        "type": "object"
+      },
+      "LinkLeagueChallengeMatchDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "LoginDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "MockPaymentWebhookDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "PublicNotificationsResendDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "RegisterDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "RegisterMediaDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "RejectMatchDto": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportFromReservationDto": {
+        "properties": {
+          "playedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reservationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSetDto"
+            },
+            "maxItems": 3,
+            "minItems": 2,
+            "type": "array"
+          },
+          "teamA1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamA2Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB2Id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservationId",
+          "teamA1Id",
+          "teamA2Id",
+          "teamB1Id",
+          "teamB2Id",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "ReportManualDto": {
+        "properties": {
+          "playedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSetDto"
+            },
+            "maxItems": 3,
+            "minItems": 2,
+            "type": "array"
+          },
+          "teamA1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamA2Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teamB2Id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teamA1Id",
+          "teamA2Id",
+          "teamB1Id",
+          "teamB2Id",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "ReportMatchDto": {
+        "properties": {
+          "challengeId": {
+            "type": "string"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "playedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSetDto"
+            },
+            "maxItems": 3,
+            "minItems": 2,
+            "type": "array"
+          }
+        },
+        "required": [
+          "challengeId",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "ReportSetDto": {
+        "properties": {
+          "a": {
+            "example": 6,
+            "maximum": 7,
+            "minimum": 0,
+            "type": "number"
+          },
+          "b": {
+            "example": 4,
+            "maximum": 7,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "ResolveDisputeDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "SimulatePaymentDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "SubmitLeagueMatchResultCanonicalBodyDto": {
+        "properties": {
+          "playedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "score": {
+            "$ref": "#/components/schemas/LeagueMatchScoreDto"
+          }
+        },
+        "required": [
+          "playedAt",
+          "score"
+        ],
+        "type": "object"
+      },
+      "UpdateClubDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpdateCourtDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpdateLeagueSettingsDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpdateMemberRoleDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpdateProfileDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpdateUserRoleDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "UpsertOnboardingDto": {
+        "properties": {},
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Backend API contract for PadelPoint",
+    "title": "PadelPoint API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/admin/notifications": {
+      "get": {
+        "operationId": "NotificationsAdminController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Admin",
+          "Notifications"
+        ]
+      }
+    },
+    "/admin/notifications/{id}": {
+      "get": {
+        "operationId": "NotificationsAdminController_getById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Admin",
+          "Notifications"
+        ]
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "UsersAdminController_find",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "email",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UsersAdmin"
+        ]
+      }
+    },
+    "/admin/users/{userId}/role": {
+      "patch": {
+        "operationId": "UsersAdminController_updateRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UsersAdmin"
+        ]
+      }
+    },
+    "/auth/bootstrap-admin": {
+      "post": {
+        "operationId": "AuthAdminBootstrapController_bootstrap",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AuthAdminBootstrap"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/login-player": {
+      "post": {
+        "operationId": "AuthController_loginPlayer",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/login-user": {
+      "post": {
+        "operationId": "AuthController_loginUser",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/availability/admin/cleanup-duplicates": {
+      "delete": {
+        "operationId": "AvailabilityController_cleanupDuplicates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/overrides": {
+      "post": {
+        "operationId": "AvailabilityController_createOverride",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOverrideDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/overrides/{id}": {
+      "delete": {
+        "operationId": "AvailabilityController_deleteOverride",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/rules": {
+      "post": {
+        "operationId": "AvailabilityController_createRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAvailabilityRuleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/rules/bulk": {
+      "post": {
+        "operationId": "AvailabilityController_bulk",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCreateAvailabilityDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/rules/court/{courtId}": {
+      "get": {
+        "operationId": "AvailabilityController_listByCourt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courtId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/availability/slots": {
+      "get": {
+        "operationId": "AvailabilityController_getSlots",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Availability"
+        ]
+      }
+    },
+    "/challenge-invites": {
+      "post": {
+        "operationId": "ChallengeInvitesController_invite",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenge-invites/inbox": {
+      "get": {
+        "operationId": "ChallengeInvitesController_inbox",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenge-invites/outbox": {
+      "get": {
+        "operationId": "ChallengeInvitesController_outbox",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenge-invites/{id}/accept": {
+      "patch": {
+        "operationId": "ChallengeInvitesController_accept",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenge-invites/{id}/cancel": {
+      "patch": {
+        "operationId": "ChallengeInvitesController_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenge-invites/{id}/reject": {
+      "patch": {
+        "operationId": "ChallengeInvitesController_reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ChallengeInvites"
+        ]
+      }
+    },
+    "/challenges/direct": {
+      "post": {
+        "operationId": "ChallengesController_createDirect",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDirectChallengeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/inbox": {
+      "get": {
+        "operationId": "ChallengesController_inbox",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/open": {
+      "get": {
+        "operationId": "ChallengesController_listOpen",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "post": {
+        "operationId": "ChallengesController_createOpen",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpenChallengeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/outbox": {
+      "get": {
+        "operationId": "ChallengesController_outbox",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}": {
+      "get": {
+        "operationId": "ChallengesController_getById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/accept": {
+      "patch": {
+        "operationId": "ChallengesController_acceptDirect",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "post": {
+        "operationId": "LeagueChallengeActionsController_accept",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueChallengeActions"
+        ]
+      }
+    },
+    "/challenges/{id}/accept-open": {
+      "patch": {
+        "operationId": "ChallengesController_acceptOpen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/cancel": {
+      "patch": {
+        "operationId": "ChallengesController_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/cancel-open": {
+      "patch": {
+        "operationId": "ChallengesController_cancelOpen",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/decline": {
+      "post": {
+        "operationId": "LeagueChallengeActionsController_decline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueChallengeActions"
+        ]
+      }
+    },
+    "/challenges/{id}/link-match": {
+      "post": {
+        "operationId": "LeagueChallengeActionsController_linkMatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkLeagueChallengeMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueChallengeActions"
+        ]
+      }
+    },
+    "/challenges/{id}/reject": {
+      "patch": {
+        "operationId": "ChallengesController_rejectDirect",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/clubs": {
+      "get": {
+        "operationId": "ClubsController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      },
+      "post": {
+        "operationId": "ClubsController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClubDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
+    "/clubs/mine": {
+      "get": {
+        "operationId": "ClubsController_findMine",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
+    "/clubs/search": {
+      "get": {
+        "operationId": "ClubsController_search",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
+    "/clubs/{clubId}/agenda": {
+      "get": {
+        "operationId": "AgendaController_getDailyAgenda",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/clubs/{clubId}/agenda/block": {
+      "post": {
+        "operationId": "AgendaController_blockSlot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaBlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/clubs/{clubId}/agenda/blocks/{overrideId}": {
+      "patch": {
+        "operationId": "AgendaController_updateBlock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "overrideId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaUpdateBlockDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Agenda"
+        ]
+      }
+    },
+    "/clubs/{clubId}/details": {
+      "patch": {
+        "operationId": "ClubsController_updateMyClub",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClubDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
+    "/clubs/{clubId}/members": {
+      "get": {
+        "operationId": "ClubMembersController_findAll",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ClubMembers"
+        ]
+      },
+      "post": {
+        "operationId": "ClubMembersController_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "ClubMembers"
+        ]
+      }
+    },
+    "/clubs/{id}": {
+      "delete": {
+        "operationId": "ClubsController_remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      },
+      "get": {
+        "operationId": "ClubsController_findOne",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      },
+      "patch": {
+        "operationId": "ClubsController_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClubDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
+    "/competitive/me": {
+      "get": {
+        "operationId": "CompetitiveController_meV2",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/competitive/onboarding": {
+      "get": {
+        "operationId": "CompetitiveController_getOnboarding",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      },
+      "put": {
+        "operationId": "CompetitiveController_upsertOnboarding",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOnboardingDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/competitive/profile/init": {
+      "post": {
+        "operationId": "CompetitiveController_init",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitCompetitiveProfileDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/competitive/profile/me": {
+      "get": {
+        "operationId": "CompetitiveController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/competitive/profile/me/history": {
+      "get": {
+        "operationId": "CompetitiveController_history",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/competitive/ranking": {
+      "get": {
+        "operationId": "CompetitiveController_ranking",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Competitive"
+        ]
+      }
+    },
+    "/courts": {
+      "post": {
+        "operationId": "CourtsController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourtDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courts"
+        ]
+      }
+    },
+    "/courts/by-club/{clubId}": {
+      "get": {
+        "operationId": "CourtsController_findByClub",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courts"
+        ]
+      }
+    },
+    "/courts/{id}": {
+      "delete": {
+        "operationId": "CourtsController_remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courts"
+        ]
+      },
+      "get": {
+        "operationId": "CourtsController_findOne",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courts"
+        ]
+      },
+      "patch": {
+        "operationId": "CourtsController_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourtDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courts"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/leagues": {
+      "get": {
+        "operationId": "LeaguesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      },
+      "post": {
+        "operationId": "LeaguesController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeagueDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/invites/{inviteId}/accept": {
+      "post": {
+        "operationId": "LeaguesController_acceptInvite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inviteId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/invites/{inviteId}/decline": {
+      "post": {
+        "operationId": "LeaguesController_declineInvite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inviteId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/invites/{token}": {
+      "get": {
+        "operationId": "LeaguesController_getInvite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/mini": {
+      "post": {
+        "operationId": "LeaguesController_createMini",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMiniLeagueDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}": {
+      "get": {
+        "operationId": "LeaguesController_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/activity": {
+      "get": {
+        "operationId": "LeaguesController_getActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/invites": {
+      "post": {
+        "operationId": "LeaguesController_invite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitesDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/members/{memberId}/role": {
+      "patch": {
+        "operationId": "LeaguesController_updateMemberRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "memberId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRoleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/recompute": {
+      "post": {
+        "operationId": "LeaguesController_recompute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/settings": {
+      "get": {
+        "operationId": "LeaguesController_getSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      },
+      "patch": {
+        "operationId": "LeaguesController_updateSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLeagueSettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/share/disable": {
+      "post": {
+        "operationId": "LeaguesController_disableShare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/share/enable": {
+      "post": {
+        "operationId": "LeaguesController_enableShare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/standings": {
+      "get": {
+        "operationId": "LeaguesController_getStandings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/standings/history": {
+      "get": {
+        "operationId": "LeaguesController_getStandingsHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/standings/history/{version}": {
+      "get": {
+        "operationId": "LeaguesController_getStandingsHistoryVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/standings/latest": {
+      "get": {
+        "operationId": "LeaguesController_getLatestStandings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Leagues"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/challenges": {
+      "get": {
+        "operationId": "LeagueChallengesController_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueChallenges"
+        ]
+      },
+      "post": {
+        "operationId": "LeagueChallengesController_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeagueChallengeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueChallenges"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/eligible-reservations": {
+      "get": {
+        "operationId": "LeagueMatchesController_getEligibleReservations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/matches": {
+      "get": {
+        "operationId": "LeagueMatchesController_listLeagueMatches",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      },
+      "post": {
+        "operationId": "LeagueMatchesController_createLeagueMatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeagueMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/matches/{matchId}/result": {
+      "patch": {
+        "operationId": "LeagueMatchesController_submitLeagueMatchResult",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "matchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitLeagueMatchResultCanonicalBodyDto"
+              }
+            }
+          },
+          "description": "Canonical contract: { playedAt, score: { sets } }. Runtime also tolerates legacy { playedAt, sets } for backward compatibility.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/report-from-reservation": {
+      "post": {
+        "operationId": "LeagueMatchesController_reportFromReservation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportFromReservationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/report-manual": {
+      "post": {
+        "operationId": "LeagueMatchesController_reportManual",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportManualDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LeagueMatches"
+        ]
+      }
+    },
+    "/matches": {
+      "get": {
+        "operationId": "MatchesController_getByChallenge",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "challengeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      },
+      "post": {
+        "operationId": "MatchesController_report",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/me": {
+      "get": {
+        "operationId": "MatchesController_getMyMatches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}": {
+      "get": {
+        "operationId": "MatchesController_getById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}/confirm": {
+      "patch": {
+        "operationId": "MatchesController_confirm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}/dispute": {
+      "post": {
+        "operationId": "MatchesController_dispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}/reject": {
+      "patch": {
+        "operationId": "MatchesController_reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectMatchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}/resolve": {
+      "post": {
+        "operationId": "MatchesController_resolve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveDisputeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/matches/{id}/resolve-confirm-as-is": {
+      "post": {
+        "operationId": "MatchesController_resolveConfirmAsIs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/me/profile": {
+      "get": {
+        "operationId": "MeProfileController_getProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeProfile"
+        ]
+      },
+      "patch": {
+        "operationId": "MeProfileController_updateProfile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeProfile"
+        ]
+      }
+    },
+    "/me/reservations": {
+      "get": {
+        "operationId": "MeReservationsController_listMine",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeReservations"
+        ]
+      }
+    },
+    "/me/reservations/{reservationId}/receipt-link": {
+      "post": {
+        "operationId": "MeReservationsController_getReceiptLink",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reservationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeReservations"
+        ]
+      }
+    },
+    "/media": {
+      "get": {
+        "operationId": "MediaController_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ownerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ownerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/media/cloudinary/signature": {
+      "post": {
+        "operationId": "MediaController_signature",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSignatureDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/media/register": {
+      "post": {
+        "operationId": "MediaController_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterMediaDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/media/{id}": {
+      "delete": {
+        "operationId": "MediaController_remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/notifications": {
+      "get": {
+        "operationId": "UserNotificationsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserNotifications"
+        ]
+      }
+    },
+    "/notifications/read-all": {
+      "post": {
+        "operationId": "UserNotificationsController_markAllRead",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserNotifications"
+        ]
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "operationId": "UserNotificationsController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserNotifications"
+        ]
+      }
+    },
+    "/notifications/{id}/read": {
+      "post": {
+        "operationId": "UserNotificationsController_markRead",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserNotifications"
+        ]
+      }
+    },
+    "/payments/intents": {
+      "get": {
+        "operationId": "PaymentsController_listIntents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      },
+      "post": {
+        "operationId": "PaymentsController_createIntent",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentIntentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/intents/by-reference": {
+      "get": {
+        "operationId": "PaymentsController_findByReference",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "referenceType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "referenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/intents/{id}": {
+      "get": {
+        "operationId": "PaymentsController_getIntent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/intents/{id}/simulate-failure": {
+      "post": {
+        "operationId": "PaymentsController_simulateFailure",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/intents/{id}/simulate-success": {
+      "post": {
+        "operationId": "PaymentsController_simulateSuccess",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/public/intents": {
+      "post": {
+        "operationId": "PaymentsController_createIntentPublic",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentIntentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/public/intents/{id}/simulate-failure": {
+      "post": {
+        "operationId": "PaymentsController_simulateFailurePublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/public/intents/{id}/simulate-success": {
+      "post": {
+        "operationId": "PaymentsController_simulateSuccessPublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatePaymentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/payments/webhook/mock": {
+      "post": {
+        "operationId": "PaymentsController_webhookMock",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockPaymentWebhookDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/public/clubs": {
+      "get": {
+        "operationId": "PublicClubsController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicClubs"
+        ]
+      }
+    },
+    "/public/clubs/search": {
+      "get": {
+        "operationId": "PublicClubsController_search",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicClubs"
+        ]
+      }
+    },
+    "/public/clubs/{clubId}": {
+      "get": {
+        "operationId": "PublicClubsController_overview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicClubs"
+        ]
+      }
+    },
+    "/public/courts/club/{clubId}": {
+      "get": {
+        "operationId": "PublicCourtsController_findByClubPublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicCourts"
+        ]
+      }
+    },
+    "/public/courts/{id}": {
+      "get": {
+        "operationId": "PublicCourtsController_findOnePublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicCourts"
+        ]
+      }
+    },
+    "/public/leagues/{id}/og": {
+      "get": {
+        "operationId": "PublicLeaguesController_getPublicOgData",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicLeagues"
+        ]
+      }
+    },
+    "/public/leagues/{id}/standings": {
+      "get": {
+        "operationId": "PublicLeaguesController_getPublicStandings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicLeagues"
+        ]
+      }
+    },
+    "/public/media": {
+      "get": {
+        "operationId": "PublicMediaController_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ownerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ownerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/media/clubs/{clubId}/cover": {
+      "get": {
+        "operationId": "PublicMediaController_clubCover",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/media/clubs/{clubId}/logo": {
+      "get": {
+        "operationId": "PublicMediaController_clubLogo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/media/courts/{courtId}/gallery": {
+      "get": {
+        "operationId": "PublicMediaController_courtGallery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courtId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/media/courts/{courtId}/primary": {
+      "get": {
+        "operationId": "PublicMediaController_courtPrimary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courtId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/media/users/{userId}/avatar": {
+      "get": {
+        "operationId": "PublicMediaController_userAvatar",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicMedia"
+        ]
+      }
+    },
+    "/public/reservations/{id}": {
+      "get": {
+        "operationId": "PublicReservationsController_getPublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicReservations"
+        ]
+      }
+    },
+    "/public/reservations/{id}/confirm": {
+      "post": {
+        "operationId": "PublicReservationsController_confirmPublic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicReservations"
+        ]
+      }
+    },
+    "/public/reservations/{id}/notifications": {
+      "get": {
+        "operationId": "PublicReservationsController_getNotifications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicReservations",
+          "Public",
+          "Notifications"
+        ]
+      }
+    },
+    "/public/reservations/{id}/notifications/resend": {
+      "post": {
+        "operationId": "PublicReservationsController_resendNotifications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicNotificationsResendDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicReservations",
+          "Public",
+          "Notifications"
+        ]
+      }
+    },
+    "/public/reservations/{id}/receipt": {
+      "get": {
+        "operationId": "PublicReservationsController_getReceipt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PublicReservations"
+        ]
+      }
+    },
+    "/reports/occupancy": {
+      "get": {
+        "operationId": "ReportsController_occupancy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/reports/peak-hours": {
+      "get": {
+        "operationId": "ReportsController_peakHours",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/reports/revenue": {
+      "get": {
+        "operationId": "ReportsController_revenue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/reports/summary": {
+      "get": {
+        "operationId": "ReportsController_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/reservations/club/{clubId}": {
+      "get": {
+        "operationId": "ReservationsController_listByClub",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/club/{clubId}/range": {
+      "get": {
+        "operationId": "ReservationsController_listByClubRange",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/court/{courtId}": {
+      "get": {
+        "operationId": "ReservationsController_listByCourt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "courtId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/hold": {
+      "post": {
+        "operationId": "ReservationsController_createHold",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHoldDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/list": {
+      "get": {
+        "operationId": "ReservationsController_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "clubId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "courtId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/mine": {
+      "get": {
+        "operationId": "ReservationsController_findMine",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/{id}": {
+      "get": {
+        "operationId": "ReservationsController_getById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/{id}/cancel": {
+      "patch": {
+        "operationId": "ReservationsController_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/reservations/{id}/confirm": {
+      "patch": {
+        "operationId": "ReservationsController_confirm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/users/search": {
+      "get": {
+        "operationId": "UsersController_searchUsers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Users"
+        ]
+      }
+    }
+  },
+  "servers": [],
+  "tags": []
+}

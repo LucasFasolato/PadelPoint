@@ -16,8 +16,12 @@ import { MatchesService } from './matches.service';
 import { ReportFromReservationDto } from './dto/report-from-reservation.dto';
 import { ReportManualDto } from './dto/report-manual.dto';
 import { CreateLeagueMatchDto } from './dto/create-league-match.dto';
-import { SubmitLeagueMatchResultDto } from './dto/submit-league-match-result.dto';
+import {
+  SubmitLeagueMatchResultCanonicalBodyDto,
+  SubmitLeagueMatchResultDto,
+} from './dto/submit-league-match-result.dto';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
+import { ApiBody } from '@nestjs/swagger';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -48,6 +52,11 @@ export class LeagueMatchesController {
   }
 
   @Patch(':leagueId/matches/:matchId/result')
+  @ApiBody({
+    type: SubmitLeagueMatchResultCanonicalBodyDto,
+    description:
+      'Canonical contract: { playedAt, score: { sets } }. Runtime also tolerates legacy { playedAt, sets } for backward compatibility.',
+  })
   submitLeagueMatchResult(
     @Req() req: Request,
     @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
