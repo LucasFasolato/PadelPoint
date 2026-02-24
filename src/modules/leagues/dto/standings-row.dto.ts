@@ -29,7 +29,7 @@ export class StandingsRowDto {
   @ApiProperty({ description: '1-based rank position' })
   position: number;
 
-  @ApiPropertyOptional({ description: 'ISO 8601 timestamp of the player's most recent win' })
+  @ApiPropertyOptional({ description: "ISO 8601 timestamp of the player's most recent win" })
   lastWinAt?: string;
 
   @ApiPropertyOptional({ description: 'oldPosition - newPosition; positive means moved up; null = new player' })
