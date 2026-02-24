@@ -80,6 +80,22 @@ export class CompetitiveController {
     });
   }
 
+  @Get('matchmaking/partners')
+  @ApiOperation({ summary: 'Find suggested partners for current player' })
+  @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
+  matchmakingPartners(@Req() req: Request, @Query() q: MatchmakingRivalsQueryDto) {
+    const user = req.user as AuthUser;
+    return this.competitive.findPartnerSuggestions(user.userId, {
+      limit: q.limit ?? 20,
+      cursor: q.cursor,
+      range: q.range ?? 100,
+      sameCategory: q.sameCategory ?? true,
+      city: q.city,
+      province: q.province,
+      country: q.country,
+    });
+  }
+
   @Get('onboarding')
   getOnboarding(@Req() req: Request) {
     const user = req.user as AuthUser;

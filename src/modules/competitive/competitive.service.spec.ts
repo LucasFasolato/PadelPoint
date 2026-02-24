@@ -1022,4 +1022,183 @@ describe('CompetitiveService', () => {
       expect(decoded.userId).toBe(c2.userId);
     });
   });
+
+  describe('findPartnerSuggestions', () => {
+    it('excludes current user, respects range/sameCategory, and uses Spanish reason strings', async () => {
+      const me = fakeProfile({
+        id: 'me-profile',
+        userId: FAKE_USER_ID,
+        elo: 1250,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+      });
+      const u2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000002',
+        elo: 1260,
+        user: { id: '00000000-0000-0000-0000-000000000002', email: 'u2@test.com', displayName: 'U2' } as any,
+      });
+      const u3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000003',
+        elo: 1240,
+        user: { id: '00000000-0000-0000-0000-000000000003', email: 'u3@test.com', displayName: 'U3' } as any,
+      });
+      const outOfRange = fakeProfile({
+        id: 'p5',
+        userId: '00000000-0000-0000-0000-000000000005',
+        elo: 1405,
+        user: { id: '00000000-0000-0000-0000-000000000005', email: 'u5@test.com', displayName: 'U5' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, u2, u3, outOfRange]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findPartnerSuggestions(FAKE_USER_ID, {
+        limit: 10,
+        range: 100,
+        sameCategory: true,
+      });
+
+      expect(result.items.some((i) => i.userId === FAKE_USER_ID)).toBe(false);
+      expect(result.items.some((i) => i.userId === outOfRange.userId)).toBe(false);
+      // u2 and u3 both have absDiff=10; tiebreaker is userId ASC → u2 before u3
+      expect(result.items.map((i) => i.userId)).toEqual([u2.userId, u3.userId]);
+      expect(result.items[0].reasons).toContain('ELO similar');
+      expect(result.items[0].reasons).toContain('Misma categoría');
+      expect(result.items[0].reasons).not.toContain('Similar ELO');
+    });
+
+    it('uses "Activo recientemente" and "Misma ciudad" location reasons', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'c1',
+        userId: '00000000-0000-0000-0000-000000000010',
+        elo: 1210,
+        user: { id: '00000000-0000-0000-0000-000000000010', email: 'c1@test.com', displayName: 'C1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'c2',
+        userId: '00000000-0000-0000-0000-000000000011',
+        elo: 1220,
+        user: { id: '00000000-0000-0000-0000-000000000011', email: 'c2@test.com', displayName: 'C2' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, c1, c2]);
+      playerProfileRepo.find.mockResolvedValue([
+        {
+          userId: c1.userId,
+          playStyleTags: ['balanced'],
+          location: { city: 'Cordoba', province: 'Cordoba', country: 'AR' },
+        },
+        {
+          userId: c2.userId,
+          playStyleTags: [],
+          location: { city: 'Rosario', province: 'Santa Fe', country: 'AR' },
+        },
+      ] as any);
+      // Use a custom QB stub so that getRawMany returns real match rows
+      const matchesQb = {
+        ...makeQb([]),
+        getRawMany: jest.fn().mockResolvedValue([
+          { teamA1Id: c1.userId, teamA2Id: null, teamB1Id: 'x', teamB2Id: null },
+        ]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValueOnce(matchesQb);
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findPartnerSuggestions(FAKE_USER_ID, {
+        city: 'CORDOBA',
+        range: 100,
+      });
+
+      expect(result.items.map((i) => i.userId)).toEqual([c1.userId]);
+      expect(result.items[0].reasons).toContain('Misma ciudad');
+      expect(result.items[0].reasons).toContain('Activo recientemente');
+    });
+
+    it('respects sameCategory filter', async () => {
+      const me = fakeProfile({
+        id: 'me-profile',
+        userId: FAKE_USER_ID,
+        elo: 1590,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+      });
+      const sameCat = fakeProfile({
+        id: 'p-same',
+        userId: '00000000-0000-0000-0000-000000000031',
+        elo: 1580,
+        user: { id: '00000000-0000-0000-0000-000000000031', email: 'same@test.com', displayName: 'Same' } as any,
+      });
+      const diffCat = fakeProfile({
+        id: 'p-diff',
+        userId: '00000000-0000-0000-0000-000000000032',
+        elo: 1600,
+        user: { id: '00000000-0000-0000-0000-000000000032', email: 'diff@test.com', displayName: 'Diff' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, sameCat, diffCat]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+
+      const sameCategoryOnly = await service.findPartnerSuggestions(FAKE_USER_ID, {
+        range: 20,
+        sameCategory: true,
+      });
+      const mixed = await service.findPartnerSuggestions(FAKE_USER_ID, {
+        range: 20,
+        sameCategory: false,
+      });
+
+      expect(sameCategoryOnly.items.map((i) => i.userId)).toEqual([sameCat.userId]);
+      expect(mixed.items.map((i) => i.userId)).toEqual([sameCat.userId, diffCat.userId]);
+    });
+
+    it('paginates with stable opaque cursor', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const c1 = fakeProfile({
+        id: 'p1',
+        userId: '00000000-0000-0000-0000-000000000021',
+        elo: 1201,
+        user: { id: '00000000-0000-0000-0000-000000000021', email: '1@test.com', displayName: '1' } as any,
+      });
+      const c2 = fakeProfile({
+        id: 'p2',
+        userId: '00000000-0000-0000-0000-000000000022',
+        elo: 1202,
+        user: { id: '00000000-0000-0000-0000-000000000022', email: '2@test.com', displayName: '2' } as any,
+      });
+      const c3 = fakeProfile({
+        id: 'p3',
+        userId: '00000000-0000-0000-0000-000000000023',
+        elo: 1203,
+        user: { id: '00000000-0000-0000-0000-000000000023', email: '3@test.com', displayName: '3' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, c1, c2, c3]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+
+      const page1 = await service.findPartnerSuggestions(FAKE_USER_ID, { limit: 2, range: 100 });
+      const decoded = decodeMatchmakingRivalsCursor(page1.nextCursor!);
+      const page2 = await service.findPartnerSuggestions(FAKE_USER_ID, {
+        limit: 2,
+        range: 100,
+        cursor: page1.nextCursor!,
+      });
+
+      expect(page1.items).toHaveLength(2);
+      expect(page2.items).toHaveLength(1);
+      expect(page1.items.map((i) => i.userId)).toEqual([c1.userId, c2.userId]);
+      expect(page2.items.map((i) => i.userId)).toEqual([c3.userId]);
+      expect(decoded.userId).toBe(c2.userId);
+    });
+  });
 });

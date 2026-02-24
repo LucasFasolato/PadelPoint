@@ -32,6 +32,7 @@ describe('Competitive Onboarding (e2e)', () => {
       eloHistory: jest.fn(),
       getSkillRadar: jest.fn(),
       findRivalSuggestions: jest.fn(),
+      findPartnerSuggestions: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
