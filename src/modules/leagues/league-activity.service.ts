@@ -24,6 +24,10 @@ export type ActivityView = {
   entityId: string | null;
   payload: Record<string, unknown> | null;
   createdAt: string;
+  /** Human-readable title for UI display (always present). */
+  title: string;
+  /** Optional second line with more context. */
+  subtitle: string | null;
 };
 
 @Injectable()
@@ -46,21 +50,26 @@ export class LeagueActivityService {
     });
     const saved = await this.repo.save(entity);
 
-    // Resolve actorName for WS payload (best-effort)
+    // Resolve actorName for WS payload — never expose full email (best-effort)
     let actorName: string | null = null;
     if (saved.actorId) {
       const user = await this.userRepo.findOne({
         where: { id: saved.actorId },
         select: ['id', 'displayName', 'email'],
       });
-      actorName = user?.displayName ?? user?.email ?? null;
+      actorName = user?.displayName ?? (user?.email ? user.email.split('@')[0] : null);
     }
 
+    // Build view with resolved actorName so title/subtitle include the actor's name
+    const actorMapForWs = new Map<string, string | null>();
+    if (saved.actorId) actorMapForWs.set(saved.actorId, actorName);
+
     // Emit to league room — best-effort, never throws
-    this.gateway.emitToLeague(saved.leagueId, 'league:activity', {
-      ...this.toView(saved),
-      actorName,
-    });
+    this.gateway.emitToLeague(
+      saved.leagueId,
+      'league:activity',
+      this.toView(saved, actorMapForWs),
+    );
 
     return saved;
   }
@@ -101,7 +110,8 @@ export class LeagueActivityService {
         select: ['id', 'displayName', 'email'],
       });
       for (const u of users) {
-        actorMap.set(u.id, u.displayName ?? u.email);
+        // Never expose full email — use displayName or email prefix only
+        actorMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
       }
     }
 
@@ -112,15 +122,97 @@ export class LeagueActivityService {
   }
 
   private toView(a: LeagueActivity, actorMap?: Map<string, string | null>): ActivityView {
+    const actorName = actorMap ? (actorMap.get(a.actorId ?? '') ?? null) : null;
+    const { title, subtitle } = this.buildPresentation(a.type, actorName, a.payload);
     return {
       id: a.id,
       leagueId: a.leagueId,
       type: a.type,
       actorId: a.actorId,
-      actorName: actorMap ? (actorMap.get(a.actorId ?? '') ?? null) : null,
+      actorName,
       entityId: a.entityId,
       payload: a.payload,
       createdAt: a.createdAt.toISOString(),
+      title,
+      subtitle,
     };
+  }
+
+  private buildPresentation(
+    type: LeagueActivityType,
+    actorName: string | null,
+    payload: Record<string, unknown> | null,
+  ): { title: string; subtitle: string | null } {
+    const actor = actorName ?? 'Un jugador';
+    switch (type) {
+      case LeagueActivityType.MATCH_REPORTED:
+        return {
+          title: 'Se reportó un partido',
+          subtitle: `${actor} reportó un resultado`,
+        };
+      case LeagueActivityType.MATCH_CONFIRMED:
+        return {
+          title: 'Partido confirmado',
+          subtitle: `${actor} confirmó el resultado`,
+        };
+      case LeagueActivityType.MATCH_DISPUTED:
+        return {
+          title: 'Partido en disputa',
+          subtitle: `${actor} abrió una disputa`,
+        };
+      case LeagueActivityType.MATCH_RESOLVED:
+        return {
+          title: 'Disputa resuelta',
+          subtitle: `La disputa fue resuelta por ${actor}`,
+        };
+      case LeagueActivityType.MEMBER_JOINED:
+        return {
+          title: 'Nuevo miembro',
+          subtitle: `${actor} se unió a la liga`,
+        };
+      case LeagueActivityType.MEMBER_DECLINED:
+        return {
+          title: 'Invitación rechazada',
+          subtitle: `${actor} declinó la invitación`,
+        };
+      case LeagueActivityType.SETTINGS_UPDATED:
+        return {
+          title: 'Configuración actualizada',
+          subtitle: `${actor} actualizó la configuración de la liga`,
+        };
+      case LeagueActivityType.CHALLENGE_CREATED:
+        return {
+          title: 'Nuevo desafío',
+          subtitle: `${actor} creó un desafío`,
+        };
+      case LeagueActivityType.CHALLENGE_ACCEPTED:
+        return {
+          title: 'Desafío aceptado',
+          subtitle: `${actor} aceptó el desafío`,
+        };
+      case LeagueActivityType.CHALLENGE_DECLINED:
+        return {
+          title: 'Desafío rechazado',
+          subtitle: `${actor} rechazó el desafío`,
+        };
+      case LeagueActivityType.CHALLENGE_EXPIRED:
+        return {
+          title: 'Desafío expirado',
+          subtitle: 'Un desafío expiró sin respuesta',
+        };
+      case LeagueActivityType.RANKINGS_UPDATED: {
+        const topMovers = payload?.topMovers as {
+          up?: Array<{ userId: string; delta: number; newPosition: number }>;
+          down?: Array<{ userId: string; delta: number; newPosition: number }>;
+        } | undefined;
+        const topUp = topMovers?.up?.[0];
+        const subtitle = topUp
+          ? `Ranking actualizado — alguien subió ${topUp.delta} lugar${topUp.delta === 1 ? '' : 'es'}`
+          : 'El ranking fue actualizado';
+        return { title: 'Ranking actualizado', subtitle };
+      }
+      default:
+        return { title: 'Actividad de liga', subtitle: null };
+    }
   }
 }

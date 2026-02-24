@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
+import { User } from '../users/user.entity';
 import { League } from './league.entity';
 import { LeagueMember } from './league-member.entity';
 import {
@@ -27,6 +28,11 @@ import { UserNotificationType } from '../../notifications/user-notification-type
 /** Max user notifications emitted per league per snapshot. */
 const MAX_NOTIFICATIONS_PER_SNAPSHOT = 10;
 
+/** Snapshot row enriched with display-ready player name for API responses. */
+export type EnrichedStandingsRow = LeagueStandingsSnapshotRow & {
+  displayName: string | null;
+};
+
 @Injectable()
 export class LeagueStandingsService {
   private readonly logger = new Logger(LeagueStandingsService.name);
@@ -42,6 +48,8 @@ export class LeagueStandingsService {
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(LeagueStandingsSnapshot)
     private readonly snapshotRepo: Repository<LeagueStandingsSnapshot>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly activityService: LeagueActivityService,
     private readonly userNotificationsService: UserNotificationsService,
   ) {}
@@ -54,6 +62,7 @@ export class LeagueStandingsService {
     manager: EntityManager,
     matchId: string,
   ): Promise<void> {
+    this.debugLog(`recomputeForMatch: entry matchId=${matchId}`);
     const match = await manager
       .getRepository(MatchResult)
       .findOne({ where: { id: matchId }, relations: ['challenge'] });
@@ -93,6 +102,7 @@ export class LeagueStandingsService {
         await this.recomputeLeague(manager, league.id);
       }
     }
+    this.debugLog(`recomputeForMatch: done matchId=${matchId}`);
   }
 
   /**
@@ -104,6 +114,8 @@ export class LeagueStandingsService {
     manager: EntityManager,
     leagueId: string,
   ): Promise<LeagueMember[]> {
+    const startMs = Date.now();
+    this.debugLog(`recomputeLeague: entry leagueId=${leagueId}`);
     const league = await manager
       .getRepository(League)
       .findOne({ where: { id: leagueId } });
@@ -131,6 +143,7 @@ export class LeagueStandingsService {
     }
 
     const matches = await matchQb.getMany();
+    const totalMatchesFetched = matches.length;
 
     // Read configurable settings (fallback to defaults)
     const settings: LeagueSettings = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
@@ -325,7 +338,7 @@ export class LeagueStandingsService {
     );
 
     this.logger.log(
-      `standings recomputed: leagueId=${leagueId} members=${ranked.length} matches=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum}`,
+      `standings recomputed: leagueId=${leagueId} members=${ranked.length} totalMatchesFetched=${totalMatchesFetched} totalMatchesUsed=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum} executionTimeMs=${Date.now() - startMs}`,
     );
 
     // Emit activity + per-player notifications (best-effort; failures are logged, not thrown)
@@ -347,7 +360,7 @@ export class LeagueStandingsService {
 
   async getStandingsWithMovement(leagueId: string): Promise<{
     computedAt: string | null;
-    rows: LeagueStandingsSnapshotRow[];
+    rows: EnrichedStandingsRow[];
     movement: Record<string, { delta: number }>;
   }> {
     const latest = await this.snapshotRepo
@@ -363,7 +376,7 @@ export class LeagueStandingsService {
     if (!latest) {
       rows = await this.getCurrentRowsFromMembers(leagueId);
       movement = this.computeMovement(rows, null);
-      return { computedAt: null, rows, movement };
+      return { computedAt: null, rows: await this.enrichRowsWithUsers(rows), movement };
     }
 
     const previous = await this.snapshotRepo
@@ -379,7 +392,7 @@ export class LeagueStandingsService {
 
     return {
       computedAt: latest.computedAt.toISOString(),
-      rows,
+      rows: await this.enrichRowsWithUsers(rows),
       movement,
     };
   }
@@ -429,7 +442,7 @@ export class LeagueStandingsService {
    */
   async getLatestStandings(leagueId: string): Promise<{
     computedAt: string | null;
-    table: LeagueStandingsSnapshotRow[];
+    table: EnrichedStandingsRow[];
     movements: StandingsMovement[];
     topMovers: { up: StandingsMovement[]; down: StandingsMovement[] };
   }> {
@@ -440,8 +453,9 @@ export class LeagueStandingsService {
       .getOne();
 
     if (!latest) {
-      const table = await this.getCurrentRowsFromMembers(leagueId);
-      const movements = computeStandingsDiff([], table);
+      const rawTable = await this.getCurrentRowsFromMembers(leagueId);
+      const movements = computeStandingsDiff([], rawTable);
+      const table = await this.enrichRowsWithUsers(rawTable);
       return { computedAt: null, table, movements, topMovers: { up: [], down: [] } };
     }
 
@@ -452,15 +466,17 @@ export class LeagueStandingsService {
       .orderBy('s.version', 'DESC')
       .getOne();
 
-    const table = latest.rows ?? [];
+    const rawTable = latest.rows ?? [];
     // Re-compute movements from persisted row positions for full accuracy
     // (handles snapshots written before movement embedding was introduced)
-    const movements = computeStandingsDiff(prevSnapshot?.rows ?? [], table);
+    const movements = computeStandingsDiff(prevSnapshot?.rows ?? [], rawTable);
 
     const topMovers = {
       up: movements.filter((m) => m.movementType === 'UP').slice(0, 3),
       down: movements.filter((m) => m.movementType === 'DOWN').slice(0, 3),
     };
+
+    const table = await this.enrichRowsWithUsers(rawTable);
 
     return {
       computedAt: latest.computedAt.toISOString(),
@@ -470,12 +486,41 @@ export class LeagueStandingsService {
     };
   }
 
+  /**
+   * Bulk-fetch user display names for a set of snapshot rows.
+   * Fallback chain: displayName → email prefix → "Jugador {position}".
+   * Never throws — returns positional fallback on any lookup failure.
+   */
+  private async enrichRowsWithUsers(
+    rows: LeagueStandingsSnapshotRow[],
+  ): Promise<EnrichedStandingsRow[]> {
+    if (rows.length === 0) return [];
+    const userIds = rows.map((r) => r.userId);
+    try {
+      const users = await this.userRepo.find({
+        where: { id: In(userIds) },
+        select: ['id', 'displayName', 'email'],
+      });
+      const userMap = new Map<string, string | null>();
+      for (const u of users) {
+        userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+      }
+      return rows.map((r) => ({
+        ...r,
+        displayName: userMap.get(r.userId) ?? `Jugador ${r.position}`,
+      }));
+    } catch {
+      return rows.map((r) => ({ ...r, displayName: `Jugador ${r.position}` }));
+    }
+  }
+
   private async persistSnapshot(
     manager: EntityManager,
     leagueId: string,
     rows: LeagueStandingsSnapshotRow[],
     totalMatchesUsed: number,
   ): Promise<LeagueStandingsSnapshot & { checksum: string; movements: StandingsMovement[] }> {
+    this.debugLog(`persistSnapshot: entry leagueId=${leagueId} rows=${rows.length} matchesUsed=${totalMatchesUsed}`);
     // Stable JSON ordering: rows sorted by position ASC then userId ASC before persistence
     const stableRows = [...rows].sort(
       (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
@@ -744,5 +789,12 @@ export class LeagueStandingsService {
     if (!(err instanceof QueryFailedError)) return false;
     const code = (err as QueryFailedError & { code?: string }).code;
     return code === '23505';
+  }
+
+  /** Structured debug log gated on LOG_COMPETITIVE_DEBUG=true env flag. */
+  private debugLog(msg: string): void {
+    if (process.env.LOG_COMPETITIVE_DEBUG === 'true') {
+      this.logger.debug(msg);
+    }
   }
 }

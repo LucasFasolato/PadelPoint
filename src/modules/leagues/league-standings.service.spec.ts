@@ -207,11 +207,17 @@ describe('LeagueStandingsService', () => {
       hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
       create: jest.fn().mockResolvedValue(undefined),
     } as any;
+    // userRepo is only used by the read endpoints (getStandingsWithMovement /
+    // getLatestStandings), not by recomputeLeague which uses EntityManager.
+    const noopUserRepo = {
+      find: jest.fn().mockResolvedValue([]),
+    } as any;
     service = new LeagueStandingsService(
       {} as Repository<League>,
       {} as Repository<LeagueMember>,
       {} as any,
       {} as any,
+      noopUserRepo,
       noopActivityService,
       noopNotificationsService,
     );
@@ -620,6 +626,68 @@ describe('LeagueStandingsService', () => {
       // Default: winPoints=3
       const p1 = result.find((m) => m.userId === uid(1));
       expect(p1.points).toBe(3);
+    });
+  });
+
+  describe('getStandingsWithMovement — displayName fallback', () => {
+    it('returns "Jugador {position}" when user is not found in userRepo', async () => {
+      const snapshotRow = {
+        userId: uid(1),
+        points: 6,
+        wins: 2,
+        losses: 0,
+        draws: 0,
+        setsDiff: 4,
+        gamesDiff: 6,
+        position: 1,
+      };
+
+      const fakeSnapshot = {
+        id: 'snap-1',
+        leagueId: 'league-1',
+        version: 1,
+        computedAt: new Date('2025-06-20T12:00:00.000Z'),
+        rows: [snapshotRow],
+      };
+
+      // snapshotRepo QBmock: first .getOne() returns the latest snapshot,
+      // second .getOne() (previous) returns null
+      let getOneCallCount = 0;
+      const makeQb = () => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockImplementation(() => {
+          getOneCallCount++;
+          // First call: return latest snapshot; second call: no previous snapshot
+          return Promise.resolve(getOneCallCount === 1 ? fakeSnapshot : null);
+        }),
+      });
+
+      const mockSnapshotRepo = {
+        createQueryBuilder: jest.fn().mockImplementation(() => makeQb()),
+      } as any;
+
+      // userRepo returns empty → user not found → must use positional fallback
+      const emptyUserRepo = {
+        find: jest.fn().mockResolvedValue([]),
+      } as any;
+
+      const testService = new LeagueStandingsService(
+        {} as Repository<League>,
+        {} as Repository<LeagueMember>,
+        {} as any,
+        mockSnapshotRepo,
+        emptyUserRepo,
+        { create: jest.fn().mockResolvedValue(undefined) } as any,
+        { hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false), create: jest.fn() } as any,
+      );
+
+      const { rows } = await testService.getStandingsWithMovement('league-1');
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].displayName).toBe('Jugador 1');
     });
   });
 });

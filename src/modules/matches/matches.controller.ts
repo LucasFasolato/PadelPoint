@@ -11,12 +11,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MatchesService } from './matches.service';
 import { ReportMatchDto, RejectMatchDto } from './dto/report-match.dto';
 import { DisputeMatchDto } from './dto/dispute-match.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { UserRole } from '../users/user-role.enum';
+import { PendingConfirmationsResponseDto } from './dto/pending-confirmation.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -29,6 +31,20 @@ export class MatchesController {
   async getMyMatches(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.service.getMyMatches(user.userId);
+  }
+
+  @Get('me/pending-confirmations')
+  @ApiOkResponse({ type: PendingConfirmationsResponseDto })
+  async getPendingConfirmations(
+    @Req() req: Request,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.service.getPendingConfirmations(user.userId, {
+      cursor,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   @Post()

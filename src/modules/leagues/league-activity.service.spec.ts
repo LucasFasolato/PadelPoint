@@ -103,7 +103,7 @@ describe('LeagueActivityService', () => {
       expect(gateway.emitToLeague).toHaveBeenCalledWith(
         LEAGUE_ID,
         'league:activity',
-        expect.objectContaining({ actorName: 'alice@example.com' }),
+        expect.objectContaining({ actorName: 'alice' }),
       );
     });
 
@@ -204,6 +204,58 @@ describe('LeagueActivityService', () => {
 
       // take is called with limit+1, max is 100+1=101
       expect(qb.take).toHaveBeenCalledWith(101);
+    });
+  });
+
+  // ── buildPresentation (via list()) ────────────────────────────────────────
+
+  describe('buildPresentation (title/subtitle) via list()', () => {
+    const ACTOR_NAME = 'Alice';
+
+    async function getTitleSubtitle(type: LeagueActivityType, payload: Record<string, unknown> | null = null) {
+      const act = fakeActivity({ type, payload: payload as any });
+      const qb = makeQb([act]);
+      repo.createQueryBuilder.mockReturnValue(qb);
+      userRepo.find.mockResolvedValue([{ id: ACTOR_ID, displayName: ACTOR_NAME, email: 'alice@x.com' }] as User[]);
+      const { items } = await service.list(LEAGUE_ID, {});
+      return { title: items[0].title, subtitle: items[0].subtitle };
+    }
+
+    it('MATCH_REPORTED: title is "Se reportó un partido"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_REPORTED);
+      expect(title).toBe('Se reportó un partido');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
+    it('MATCH_CONFIRMED: title is "Partido confirmado"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_CONFIRMED);
+      expect(title).toBe('Partido confirmado');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
+    it('MATCH_DISPUTED: title is "Partido en disputa"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_DISPUTED);
+      expect(title).toBe('Partido en disputa');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
+    it('MATCH_RESOLVED: title is "Disputa resuelta"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_RESOLVED);
+      expect(title).toBe('Disputa resuelta');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
+    it('MEMBER_JOINED: title is "Nuevo miembro"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MEMBER_JOINED);
+      expect(title).toBe('Nuevo miembro');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
+    it('RANKINGS_UPDATED: title is "Ranking actualizado" and subtitle is non-null', async () => {
+      const payload = { topMovers: { up: [{ userId: 'u1', delta: 2, newPosition: 1 }], down: [] } };
+      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.RANKINGS_UPDATED, payload);
+      expect(title).toBe('Ranking actualizado');
+      expect(subtitle).toBeTruthy();
     });
   });
 });

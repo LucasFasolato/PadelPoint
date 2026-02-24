@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
@@ -26,6 +27,8 @@ import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { LeagueActivityQueryDto } from './dto/league-activity-query.dto';
 import { LeagueStandingsHistoryQueryDto } from './dto/league-standings-history-query.dto';
+import { StandingsWithMovementDto } from './dto/standings-row.dto';
+import { ActivityListResponseDto } from './dto/activity-view.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -146,6 +149,7 @@ export class LeaguesController {
   @Get(':id/activity')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: ActivityListResponseDto })
   async getActivity(
     @Req() req: Request,
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
@@ -162,6 +166,7 @@ export class LeaguesController {
   @Get(':id/standings')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: StandingsWithMovementDto })
   async getStandings(
     @Req() req: Request,
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,

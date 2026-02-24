@@ -1075,4 +1075,47 @@ describe('MatchesService', () => {
       );
     });
   });
+
+  // ── getPendingConfirmations ────────────────────────────────────────────────
+
+  describe('getPendingConfirmations', () => {
+    it('returns empty list when user has no challenges (non-participant)', async () => {
+      // User OUTSIDER has no challenges
+      challengeRepo.find.mockResolvedValue([]);
+
+      const result = await service.getPendingConfirmations(OUTSIDER, {});
+
+      expect(result.items).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+      // Match query should not be called since there are no challenge IDs
+      expect(matchRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('returns empty list when all PENDING_CONFIRM matches were reported by the caller', async () => {
+      // USER_A1 has a challenge but is the reporter — should not appear in pending list
+      const ch = fakeChallenge();
+      challengeRepo.find.mockResolvedValue([ch]);
+
+      const pendingMatch = fakeMatch({
+        status: MatchResultStatus.PENDING_CONFIRM,
+        reportedByUserId: USER_A1, // caller is the reporter
+      });
+
+      const qb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]), // query already filters reporter≠userId
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb);
+      userRepo.find.mockResolvedValue([]);
+
+      const result = await service.getPendingConfirmations(USER_A1, {});
+
+      expect(result.items).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+    });
+  });
 });

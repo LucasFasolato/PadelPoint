@@ -52,6 +52,23 @@ import { UserNotificationType } from '../../notifications/user-notification-type
 
 const TZ = 'America/Argentina/Cordoba';
 
+type PlayerRef = { userId: string | null; displayName: string | null };
+
+type PendingConfirmationView = {
+  matchId: string;
+  challengeId: string | null;
+  leagueId: string | null;
+  status: MatchResultStatus;
+  playedAt: string | null;
+  score: { sets: Array<{ a: number; b: number }> };
+  winnerTeam: WinnerTeam | null;
+  teamA: { player1: PlayerRef; player2: PlayerRef | null };
+  teamB: { player1: PlayerRef; player2: PlayerRef | null };
+  reportedBy: { userId: string | null; displayName: string | null };
+  /** Always true for this endpoint — signals the front to show confirm/reject CTAs. */
+  canConfirm: true;
+};
+
 type ParticipantIds = {
   teamA: [string, string];
   teamB: [string, string];
@@ -1127,6 +1144,133 @@ export class MatchesService {
     });
 
     return matches;
+  }
+
+  // ------------------------
+  // pending confirmations
+  // ------------------------
+
+  /**
+   * Returns all matches in PENDING_CONFIRM status where the caller is a
+   * participant but NOT the reporter (i.e. they need to confirm or reject).
+   * Enriched with player display names so the front can render CTAs without
+   * extra fetches.
+   */
+  async getPendingConfirmations(
+    userId: string,
+    opts: { cursor?: string; limit?: number },
+  ): Promise<{ items: PendingConfirmationView[]; nextCursor: string | null }> {
+    const startMs = Date.now();
+    const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+
+    // Step 1: get all challenge IDs where this user is a participant
+    const challenges = await this.challengeRepo.find({
+      where: [
+        { teamA1Id: userId },
+        { teamA2Id: userId },
+        { teamB1Id: userId },
+        { teamB2Id: userId },
+      ],
+    });
+
+    const challengeIds = challenges.map((ch) => ch.id);
+    if (challengeIds.length === 0) return { items: [], nextCursor: null };
+
+    const challengeMap = new Map(challenges.map((ch) => [ch.id, ch]));
+
+    // Step 2: query PENDING_CONFIRM matches where caller is not the reporter
+    const qb = this.matchRepo
+      .createQueryBuilder('m')
+      .where('m."challengeId" IN (:...challengeIds)', { challengeIds })
+      .andWhere('m.status = :status', { status: MatchResultStatus.PENDING_CONFIRM })
+      .andWhere('m."reportedByUserId" != :userId', { userId })
+      .orderBy('m."playedAt"', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(limit + 1);
+
+    if (opts.cursor) {
+      const parts = opts.cursor.split('|');
+      qb.andWhere('(m."playedAt", m.id) < (:cursorDate, :cursorId)', {
+        cursorDate: new Date(parts[0]),
+        cursorId: parts[1],
+      });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore
+      ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
+      : null;
+
+    // Step 3: bulk-resolve display names (single query)
+    const allUserIds = new Set<string>();
+    for (const m of items) {
+      const ch = challengeMap.get(m.challengeId ?? '');
+      if (ch) {
+        [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id].forEach(
+          (id) => id && allUserIds.add(id),
+        );
+      }
+      if (m.reportedByUserId) allUserIds.add(m.reportedByUserId);
+    }
+
+    const userIdArray = [...allUserIds];
+    const users =
+      userIdArray.length > 0
+        ? await this.userRepo.find({
+            where: { id: In(userIdArray) },
+            select: ['id', 'displayName', 'email'],
+          })
+        : [];
+
+    const userMap = new Map<string, string | null>();
+    for (const u of users) {
+      userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+    }
+
+    const resolvePlayer = (id: string | null | undefined): PlayerRef => ({
+      userId: id ?? null,
+      displayName: id ? (userMap.get(id) ?? null) : null,
+    });
+
+    // Step 4: shape response
+    const result: PendingConfirmationView[] = items.map((m) => {
+      const ch = challengeMap.get(m.challengeId ?? '');
+      const sets: Array<{ a: number; b: number }> = [];
+      if (m.teamASet1 != null && m.teamBSet1 != null)
+        sets.push({ a: m.teamASet1, b: m.teamBSet1 });
+      if (m.teamASet2 != null && m.teamBSet2 != null)
+        sets.push({ a: m.teamASet2, b: m.teamBSet2 });
+      if (m.teamASet3 != null && m.teamBSet3 != null)
+        sets.push({ a: m.teamASet3, b: m.teamBSet3 });
+
+      return {
+        matchId: m.id,
+        challengeId: m.challengeId ?? null,
+        leagueId: m.leagueId ?? null,
+        status: m.status,
+        playedAt: m.playedAt ? m.playedAt.toISOString() : null,
+        score: { sets },
+        winnerTeam: m.winnerTeam ?? null,
+        teamA: {
+          player1: resolvePlayer(ch?.teamA1Id),
+          player2: ch?.teamA2Id ? resolvePlayer(ch.teamA2Id) : null,
+        },
+        teamB: {
+          player1: resolvePlayer(ch?.teamB1Id),
+          player2: ch?.teamB2Id ? resolvePlayer(ch.teamB2Id) : null,
+        },
+        reportedBy: resolvePlayer(m.reportedByUserId),
+        canConfirm: true,
+      };
+    });
+
+    this.logger.debug(
+      `getPendingConfirmations: userId=${userId} candidateChallenges=${challengeIds.length} matchesFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
+    );
+
+    return { items: result, nextCursor };
   }
 
   // ------------------------
