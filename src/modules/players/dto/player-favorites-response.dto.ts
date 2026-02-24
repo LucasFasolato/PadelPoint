@@ -5,6 +5,11 @@ export class PlayerFavoriteMutationResponseDto {
   ok!: boolean;
 }
 
+export class PlayerFavoriteIdsResponseDto {
+  @ApiProperty({ type: [String] })
+  ids!: string[];
+}
+
 export class PlayerFavoriteLocationDto {
   @ApiPropertyOptional()
   city?: string;

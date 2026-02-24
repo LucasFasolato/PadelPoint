@@ -14,6 +14,7 @@ const FAKE_PLAYER = {
 };
 
 const TARGET_USER_ID = '22222222-2222-4222-8222-222222222222';
+const TARGET_USER_ID_2 = '33333333-3333-4333-8333-333333333333';
 
 type FavoriteItem = {
   userId: string;
@@ -67,6 +68,9 @@ describe('Players Favorites (e2e)', () => {
           nextCursor: null,
         };
       }),
+      listFavoriteIds: jest.fn(async () => ({
+        ids: favorites.map((item) => item.userId).slice(0, 500),
+      })),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -132,6 +136,24 @@ describe('Players Favorites (e2e)', () => {
 
     expect(res.body.items).toEqual([]);
     expect(res.body.nextCursor).toBeNull();
+  });
+
+  it('adds 2 favorites and ids endpoint returns both in most recent-first order', async () => {
+    await request(app.getHttpServer())
+      .post(`/players/me/favorites/${TARGET_USER_ID}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/players/me/favorites/${TARGET_USER_ID_2}`)
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/players/me/favorites/ids')
+      .expect(200);
+
+    expect(res.body).toEqual({
+      ids: [TARGET_USER_ID_2, TARGET_USER_ID],
+    });
   });
 
   it('validates limit max 50', async () => {

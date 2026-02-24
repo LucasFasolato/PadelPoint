@@ -242,6 +242,20 @@
         "properties": {},
         "type": "object"
       },
+      "PlayerFavoriteIdsResponseDto": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
       "PlayerFavoriteItemResponseDto": {
         "properties": {
           "avatarUrl": {
@@ -3850,6 +3864,28 @@
           }
         },
         "summary": "List my favorite players (paginated)",
+        "tags": [
+          "players"
+        ]
+      }
+    },
+    "/players/me/favorites/ids": {
+      "get": {
+        "operationId": "PlayersFavoritesController_listFavoriteIds",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerFavoriteIdsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "List my favorite player ids (most recent first)",
         "tags": [
           "players"
         ]

@@ -27,17 +27,37 @@ import { PlayersService } from './players.service';
 import { PlayerFavoritesQueryDto } from './dto/player-favorites-query.dto';
 import {
   PlayerFavoriteMutationResponseDto,
+  PlayerFavoriteIdsResponseDto,
   PlayerFavoritesListResponseDto,
 } from './dto/player-favorites-response.dto';
 
 type AuthUser = { userId: string; email: string; role: UserRole };
 
 @ApiTags('players')
-@ApiExtraModels(PlayerFavoriteMutationResponseDto, PlayerFavoritesListResponseDto)
+@ApiExtraModels(
+  PlayerFavoriteMutationResponseDto,
+  PlayerFavoriteIdsResponseDto,
+  PlayerFavoritesListResponseDto,
+)
 @Controller('players/me')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PlayersFavoritesController {
   constructor(private readonly playersService: PlayersService) {}
+
+  @Get('favorites/ids')
+  @Roles(UserRole.PLAYER)
+  @ApiOperation({ summary: 'List my favorite player ids (most recent first)' })
+  @ApiOkResponse({
+    content: {
+      'application/json': {
+        schema: { $ref: getSchemaPath(PlayerFavoriteIdsResponseDto) },
+      },
+    },
+  })
+  listFavoriteIds(@Req() req: Request) {
+    const user = req.user as AuthUser;
+    return this.playersService.listFavoriteIds(user.userId);
+  }
 
   @Post('favorites/:targetUserId')
   @HttpCode(200)

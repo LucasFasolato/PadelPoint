@@ -44,6 +44,7 @@ import {
   scaleSignedRangeToScore,
 } from './competitive-radar.util';
 import { PlayerProfile, type PlayerLocation } from '../players/player-profile.entity';
+import { PlayerFavorite } from '../players/player-favorite.entity';
 import { Challenge } from '../challenges/challenge.entity';
 import { ChallengeStatus } from '../challenges/challenge-status.enum';
 
@@ -56,6 +57,7 @@ const MATCHMAKING_ACTIVE_CHALLENGE_STATUSES = [
   ChallengeStatus.ACCEPTED,
   ChallengeStatus.READY,
 ] as ChallengeStatus[];
+const MATCHMAKING_FAVORITE_SCORE_BOOST = 5;
 
 type MatchOutcome = 'W' | 'L';
 
@@ -198,6 +200,8 @@ export class CompetitiveService {
     private readonly challengeRepo: Repository<Challenge>,
     @InjectRepository(PlayerProfile)
     private readonly playerProfileRepo: Repository<PlayerProfile>,
+    @InjectRepository(PlayerFavorite)
+    private readonly favoriteRepo: Repository<PlayerFavorite>,
   ) {}
 
   async getOrCreateProfile(userId: string) {
@@ -573,9 +577,11 @@ export class CompetitiveService {
     const filteredUserIds = candidates.map((c) => c.userId);
     const filteredProfileIds = candidates.map((c) => c.id);
     const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
-    const [matches30dByUserId, momentum30dByProfileId] = await Promise.all([
+    const [matches30dByUserId, momentum30dByProfileId, favoriteUserIds] =
+      await Promise.all([
       this.getMatches30dByUserIds(filteredUserIds, cutoff),
       this.getMomentum30dByProfileIds(filteredProfileIds, cutoff),
+      this.getFavoriteUserIdsForMatchmaking(userId, filteredUserIds),
     ]);
 
     const scoredItems: RivalSuggestionScoredItem[] = candidates.map((candidate) => {
@@ -601,6 +607,18 @@ export class CompetitiveService {
         candidateTags: tags,
         myTags,
       });
+      const isFavorite = favoriteUserIds.has(candidate.userId);
+      const reasons = buildReasonsFn({
+        myCategory,
+        candidateCategory: category,
+        matches30d,
+        location,
+        locationFilter,
+        tagOverlapScore: scoreBreakdown.tagOverlapScore,
+      });
+      if (isFavorite) {
+        reasons.push('Favorito');
+      }
 
       return {
         userId: candidate.userId,
@@ -612,16 +630,9 @@ export class CompetitiveService {
         momentum30d,
         tags,
         location,
-        reasons: buildReasonsFn({
-          myCategory,
-          candidateCategory: category,
-          matches30d,
-          location,
-          locationFilter,
-          tagOverlapScore: scoreBreakdown.tagOverlapScore,
-        }),
+        reasons,
         _absDiff: absDiff,
-        _score: scoreBreakdown.total,
+        _score: scoreBreakdown.total + (isFavorite ? MATCHMAKING_FAVORITE_SCORE_BOOST : 0),
       };
     });
 
@@ -1022,6 +1033,28 @@ export class CompetitiveService {
     }
 
     return excluded;
+  }
+
+  private async getFavoriteUserIdsForMatchmaking(
+    userId: string,
+    candidateUserIds: string[],
+  ) {
+    const favoriteUserIds = new Set<string>();
+    if (candidateUserIds.length === 0) return favoriteUserIds;
+
+    const rows = await this.favoriteRepo.find({
+      where: {
+        userId,
+        favoriteUserId: In(candidateUserIds),
+      },
+      select: { favoriteUserId: true },
+    });
+
+    for (const row of rows) {
+      if (row.favoriteUserId) favoriteUserIds.add(row.favoriteUserId);
+    }
+
+    return favoriteUserIds;
   }
 
   private normalizeLocationFilter(input: {

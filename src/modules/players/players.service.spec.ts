@@ -19,6 +19,7 @@ describe('PlayersService', () => {
     profileRepo.create.mockReset();
     profileRepo.save.mockReset();
     favoriteRepo.create.mockReset();
+    favoriteRepo.find.mockReset();
     favoriteRepo.save.mockReset();
     favoriteRepo.delete.mockReset();
     favoriteRepo.manager.query.mockReset();
@@ -147,6 +148,26 @@ describe('PlayersService', () => {
       userId: 'u1',
       favoriteUserId: 'u2',
     });
+  });
+
+  it('listFavoriteIds returns most recent ids first and caps at 500', async () => {
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      favoriteUserId: `u-${index + 1}`,
+    })) as PlayerFavorite[];
+    favoriteRepo.find.mockResolvedValue(rows);
+
+    const result = await service.listFavoriteIds('u1');
+
+    expect(favoriteRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'u1' },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 500,
+      }),
+    );
+    expect(result.ids).toHaveLength(500);
+    expect(result.ids[0]).toBe('u-1');
+    expect(result.ids[499]).toBe('u-500');
   });
 
   it('lists favorites ordered by createdAt DESC/id DESC with cursor pagination and no overlap', async () => {

@@ -14,6 +14,7 @@ import { PlayingFrequency } from './playing-frequency.enum';
 import { decodeRankingCursor } from './ranking-cursor.util';
 import { decodeEloHistoryCursor } from './elo-history-cursor.util';
 import { PlayerProfile } from '../players/player-profile.entity';
+import { PlayerFavorite } from '../players/player-favorite.entity';
 import { decodeMatchmakingRivalsCursor } from './matchmaking-rivals-cursor.util';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -49,6 +50,7 @@ describe('CompetitiveService', () => {
   let matchRepo: MockRepo<MatchResult>;
   let challengeRepo: MockRepo<Challenge>;
   let playerProfileRepo: MockRepo<PlayerProfile>;
+  let favoriteRepo: MockRepo<PlayerFavorite>;
   let usersService: { findById: jest.Mock };
 
   // Build a chainable query-builder stub that always resolves to empty/null
@@ -81,12 +83,14 @@ describe('CompetitiveService', () => {
     matchRepo = createMockRepo<MatchResult>();
     challengeRepo = createMockRepo<Challenge>();
     playerProfileRepo = createMockRepo<PlayerProfile>();
+    favoriteRepo = createMockRepo<PlayerFavorite>();
 
     // getConfirmedMatchOutcomes uses matchRepo.createQueryBuilder
     matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
     // getEloStats uses historyRepo.createQueryBuilder (multiple calls)
     historyRepo.createQueryBuilder.mockReturnValue(makeQb(null));
     challengeRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+    favoriteRepo.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -100,6 +104,7 @@ describe('CompetitiveService', () => {
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
         { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
         { provide: getRepositoryToken(PlayerProfile), useValue: playerProfileRepo },
+        { provide: getRepositoryToken(PlayerFavorite), useValue: favoriteRepo },
       ],
     }).compile();
 
@@ -1156,6 +1161,40 @@ describe('CompetitiveService', () => {
       });
 
       expect(result.items.map((i) => i.userId)).toEqual([oldChallengeCandidate.userId]);
+    });
+
+    it('adds "Favorito" reason and boosts score when candidate is favorited', async () => {
+      const me = fakeProfile({ id: 'me-profile', userId: FAKE_USER_ID, elo: 1200 });
+      const favoriteCandidate = fakeProfile({
+        id: 'p-fav',
+        userId: '00000000-0000-0000-0000-000000000029',
+        elo: 1210, // slightly worse absDiff than non-favorite
+        user: { id: '00000000-0000-0000-0000-000000000029', email: 'fav@test.com', displayName: 'Fav' } as any,
+      });
+      const nonFavoriteCandidate = fakeProfile({
+        id: 'p-other',
+        userId: '00000000-0000-0000-0000-000000000030',
+        elo: 1207,
+        user: { id: '00000000-0000-0000-0000-000000000030', email: 'other@test.com', displayName: 'Other' } as any,
+      });
+
+      profileRepo.findOne.mockResolvedValue(me);
+      profileRepo.find.mockResolvedValue([me, favoriteCandidate, nonFavoriteCandidate]);
+      playerProfileRepo.find.mockResolvedValue([]);
+      favoriteRepo.find.mockResolvedValue([
+        { favoriteUserId: favoriteCandidate.userId } as PlayerFavorite,
+      ]);
+      challengeRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+
+      const result = await service.findRivalSuggestions(FAKE_USER_ID, {
+        range: 100,
+        sameCategory: false,
+      });
+
+      expect(result.items[0].userId).toBe(favoriteCandidate.userId);
+      expect(result.items[0].reasons).toContain('Favorito');
     });
   });
 

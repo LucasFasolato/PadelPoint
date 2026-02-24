@@ -139,6 +139,19 @@ export class PlayersService {
     return { ok: true };
   }
 
+  async listFavoriteIds(userId: string): Promise<{ ids: string[] }> {
+    const rows = await this.favoriteRepo.find({
+      where: { userId },
+      select: { favoriteUserId: true },
+      order: { createdAt: 'DESC', id: 'DESC' },
+      take: 500,
+    });
+
+    return {
+      ids: rows.map((row) => row.favoriteUserId).filter(Boolean).slice(0, 500),
+    };
+  }
+
   async listFavorites(
     userId: string,
     opts: { limit?: number; cursor?: string },

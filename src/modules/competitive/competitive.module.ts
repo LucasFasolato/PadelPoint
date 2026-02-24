@@ -11,6 +11,7 @@ import { MatchResult } from '../matches/match-result.entity';
 import { Challenge } from '../challenges/challenge.entity';
 import { UsersModule } from '../users/users.module';
 import { PlayerProfile } from '../players/player-profile.entity';
+import { PlayerFavorite } from '../players/player-favorite.entity';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PlayerProfile } from '../players/player-profile.entity';
       MatchResult,
       Challenge,
       PlayerProfile,
+      PlayerFavorite,
     ]),
   ],
   controllers: [CompetitiveController],
