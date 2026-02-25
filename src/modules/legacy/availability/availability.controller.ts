@@ -14,7 +14,7 @@ import { BulkCreateAvailabilityDto } from './dto/bulk-create-availability.dto';
 import { AvailabilityRangeQueryDto } from './dto/availability-range-query.dto';
 import { AvailabilitySlotDto } from './dto/availability-slot.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';
 
 @Controller('availability')

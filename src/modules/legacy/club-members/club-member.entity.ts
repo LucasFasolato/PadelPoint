@@ -9,7 +9,7 @@ import {
   Index,
   JoinColumn,
 } from 'typeorm';
-import { User } from '@core/users/user.entity';
+import { User } from '@core/users/entities/user.entity';
 import { Club } from '../clubs/club.entity';
 import { ClubMemberRole } from './enums/club-member-role.enum';
 

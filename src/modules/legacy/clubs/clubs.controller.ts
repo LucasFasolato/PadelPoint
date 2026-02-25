@@ -15,10 +15,10 @@ import { ClubsService } from './clubs.service';
 import { CreateClubDto } from './dto/create-club.dto';
 import { UpdateClubDto } from './dto/update-club.dto';
 
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { RolesGuard } from '@core/auth/roles.guard';
-import { Roles } from '@core/auth/roles.decorator';
-import { UserRole } from '@core/users/user-role.enum';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
+import { Roles } from '@/modules/core/auth/decorators/roles.decorator';
+import { UserRole } from '@/modules/core/users/enums/user-role.enum';
 import { Request } from 'express';
 import { ClubRoles } from '@legacy/club-members/club-roles.decorator';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';

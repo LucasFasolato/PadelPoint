@@ -8,7 +8,7 @@ import { ClubsController } from './clubs.controller';
 import { PublicClubsController } from './public-clubs.controller';
 
 import { Court } from '@legacy/courts/court.entity';
-import { MediaAsset } from '@core/media/media-asset.entity';
+import { MediaAsset } from '@core/media/entities/media-asset.entity';
 import { ClubMember } from '@legacy/club-members/club-member.entity';
 import { ClubMembersModule } from '@legacy/club-members/club-members.module';
 

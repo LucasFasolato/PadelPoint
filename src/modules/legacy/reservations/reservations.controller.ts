@@ -16,7 +16,7 @@ import { CreateHoldDto } from './dto/create-hold.dto';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';
 import { ReservationsRangeQueryDto } from './dto/reservations-range-query.dto';
 import { ReservationStatus } from './reservation.entity';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 
 const RES_STATUS_VALUES = new Set<string>([
   'hold',

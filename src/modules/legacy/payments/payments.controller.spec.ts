@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { RolesGuard } from '@core/auth/roles.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
 
 describe('PaymentsController', () => {
   let controller: PaymentsController;

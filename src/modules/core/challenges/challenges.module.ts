@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Challenge } from './challenge.entity';
-import { ChallengeInvite } from './challenge-invite.entity';
-import { ChallengesController } from './challenges.controller';
-import { ChallengesService } from './challenges.service';
-import { ChallengeInvitesController } from './challenge-invites.controller';
-import { ChallengeInvitesService } from './challenge-invites.service';
+import { Challenge } from './entities/challenge.entity';
+import { ChallengeInvite } from './entities/challenge-invite.entity';
+import { ChallengesController } from './controllers/challenges.controller';
+import { ChallengesService } from './services/challenges.service';
+import { ChallengeInvitesController } from './controllers/challenge-invites.controller';
+import { ChallengeInvitesService } from './services/challenge-invites.service';
 import { UsersModule } from '../users/users.module';
 import { CompetitiveModule } from '../competitive/competitive.module';
 import { NotificationsModule } from '@/modules/core/notifications/notifications.module';

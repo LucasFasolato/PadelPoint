@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PLAYER_PLAY_STYLE_TAGS } from '../player-profile.constants';
+import { PLAYER_PLAY_STYLE_TAGS } from '../utils/player-profile.constants';
 
 export class PlayerLookingForResponseDto {
   @ApiProperty()

@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClubsController } from './clubs.controller';
 import { ClubsService } from './clubs.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { RolesGuard } from '@core/auth/roles.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';
 
 describe('ClubsController', () => {

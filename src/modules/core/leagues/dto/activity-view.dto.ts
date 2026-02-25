@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LeagueActivityType } from '../league-activity-type.enum';
+import { LeagueActivityType } from '../enums/league-activity-type.enum';
 
 export class ActivityViewDto {
   @ApiProperty()

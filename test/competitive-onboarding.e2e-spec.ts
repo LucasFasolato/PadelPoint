@@ -6,11 +6,11 @@ import {
 } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { CompetitiveController } from '@core/competitive/competitive.controller';
-import { CompetitiveService } from '@core/competitive/competitive.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { CompetitiveGoal } from '@core/competitive/competitive-goal.enum';
-import { PlayingFrequency } from '@core/competitive/playing-frequency.enum';
+import { CompetitiveController } from '@core/competitive/controllers/competitive.controller';
+import { CompetitiveService } from '@/modules/core/competitive/services/competitive.service';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { CompetitiveGoal } from '@/modules/core/competitive/enums/competitive-goal.enum';
+import { PlayingFrequency } from '@/modules/core/competitive/enums/playing-frequency.enum';
 
 const FAKE_USER = {
   userId: '00000000-0000-0000-0000-000000000001',

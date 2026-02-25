@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import { ClubsService } from './clubs.service';
 import { Club } from './club.entity';
 import { Court } from '@legacy/courts/court.entity';
-import { MediaAsset } from '@core/media/media-asset.entity';
+import { MediaAsset } from '@core/media/entities/media-asset.entity';
 import { createMockRepo } from '@/test-utils/mock-repo';
 import { createMockDataSource } from '@/test-utils/mock-datasource';
 

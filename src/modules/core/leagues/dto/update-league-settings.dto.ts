@@ -14,7 +14,7 @@ import {
   ValidationArguments,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { TieBreaker } from '../league-settings.type';
+import type { TieBreaker } from '../types/league-settings.type';
 
 const VALID_TIE_BREAKERS: TieBreaker[] = [
   'points',

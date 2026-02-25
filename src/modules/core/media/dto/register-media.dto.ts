@@ -6,8 +6,8 @@ import {
   IsUUID,
   IsUrl,
 } from 'class-validator';
-import { MediaOwnerType } from '../media-owner-type.enum';
-import { MediaKind } from '../media-kind.enum';
+import { MediaOwnerType } from '../enums/media-owner-type.enum';
+import { MediaKind } from '../enums/media-kind.enum';
 
 export class RegisterMediaDto {
   @IsEnum(MediaOwnerType)

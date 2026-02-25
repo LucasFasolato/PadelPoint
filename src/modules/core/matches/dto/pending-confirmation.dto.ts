@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MatchResultStatus, WinnerTeam } from '../match-result.entity';
+import { MatchResultStatus, WinnerTeam } from '../entities/match-result.entity';
 
 export class PlayerRefDto {
   @ApiPropertyOptional()

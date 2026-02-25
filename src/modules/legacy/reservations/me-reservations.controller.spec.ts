@@ -3,8 +3,8 @@ import { ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { MeReservationsController } from './me-reservations.controller';
 import { ReservationsService } from './reservations.service';
-import { RolesGuard } from '@core/auth/roles.guard';
-import { UserRole } from '@core/users/user-role.enum';
+import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
+import { UserRole } from '@/modules/core/users/enums/user-role.enum';
 
 describe('MeReservationsController', () => {
   let controller: MeReservationsController;

@@ -2,9 +2,9 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { CompetitiveController } from '@core/competitive/competitive.controller';
-import { CompetitiveService } from '@core/competitive/competitive.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { CompetitiveController } from '@core/competitive/controllers/competitive.controller';
+import { CompetitiveService } from '@/modules/core/competitive/services/competitive.service';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 
 const FAKE_USER = {
   userId: '00000000-0000-0000-0000-000000000001',

@@ -8,7 +8,7 @@ import { Repository } from 'typeorm';
 
 import { ClubMember } from './club-member.entity';
 import { ClubMemberRole } from './enums/club-member-role.enum';
-import { UsersService } from '@core/users/users.service';
+import { UsersService } from '@/modules/core/users/services/users.service';
 
 @Injectable()
 export class ClubMembersService {

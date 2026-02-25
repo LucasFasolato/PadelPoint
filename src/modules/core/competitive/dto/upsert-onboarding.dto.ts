@@ -1,6 +1,6 @@
 import { IsEnum, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
-import { CompetitiveGoal } from '../competitive-goal.enum';
-import { PlayingFrequency } from '../playing-frequency.enum';
+import { CompetitiveGoal } from '../enums/competitive-goal.enum';
+import { PlayingFrequency } from '../enums/playing-frequency.enum';
 
 export class UpsertOnboardingDto {
   @IsOptional()

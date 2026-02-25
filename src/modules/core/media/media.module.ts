@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { MediaAsset } from './media-asset.entity';
-import { MediaService } from './media.service';
-import { MediaController } from './media.controller';
+import { MediaAsset } from './entities/media-asset.entity';
+import { MediaService } from './services/media.service';
+import { MediaController } from './controllers/media.controller';
 import { Court } from '@legacy/courts/court.entity';
-import { PublicMediaController } from './public-media.controller';
+import { PublicMediaController } from './controllers/public-media.controller';
 import { ClubMembersModule } from '@legacy/club-members/club-members.module';
 import { ClubMember } from '@legacy/club-members/club-member.entity';
 import { ConfigModule } from '@nestjs/config';

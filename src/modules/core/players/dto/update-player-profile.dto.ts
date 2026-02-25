@@ -14,7 +14,7 @@ import {
   PLAYER_PLAY_STYLE_TAGS,
   PLAYER_PROFILE_LIMITS,
   type PlayerPlayStyleTag,
-} from '../player-profile.constants';
+} from '../utils/player-profile.constants';
 
 function trimOrNull(value: unknown): unknown {
   if (typeof value !== 'string') return value;

@@ -13,12 +13,12 @@ import { UpdateClubDto } from './dto/update-club.dto';
 
 import { ClubMember } from '@legacy/club-members/club-member.entity';
 import { ClubMemberRole } from '@legacy/club-members/enums/club-member-role.enum';
-import { User } from '@core/users/user.entity';
+import { User } from '@core/users/entities/user.entity';
 
 import { Court } from '@legacy/courts/court.entity';
-import { MediaAsset } from '@core/media/media-asset.entity';
-import { MediaOwnerType } from '@core/media/media-owner-type.enum';
-import { MediaKind } from '@core/media/media-kind.enum';
+import { MediaAsset } from '@core/media/entities/media-asset.entity';
+import { MediaOwnerType } from '@/modules/core/media/enums/media-owner-type.enum';
+import { MediaKind } from '@/modules/core/media/enums/media-kind.enum';
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();

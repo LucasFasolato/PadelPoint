@@ -8,10 +8,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { RolesGuard } from '@core/auth/roles.guard';
-import { Roles } from '@core/auth/roles.decorator';
-import { UserRole } from '@core/users/user-role.enum';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
+import { Roles } from '@/modules/core/auth/decorators/roles.decorator';
+import { UserRole } from '@/modules/core/users/enums/user-role.enum';
 import { ReservationsService } from './reservations.service';
 
 type AuthUser = { userId: string; email: string; role: UserRole };

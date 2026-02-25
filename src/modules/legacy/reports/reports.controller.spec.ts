@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';
 
 describe('ReportsController', () => {

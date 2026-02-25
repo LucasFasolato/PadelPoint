@@ -1,5 +1,5 @@
 import { IsEnum, IsISO8601, IsOptional, IsUUID } from 'class-validator';
-import { NotificationEventType } from '../notification-event.entity';
+import { NotificationEventType } from '../entities/notification-event.entity';
 
 export class NotificationEventsQueryDto {
   @IsOptional()

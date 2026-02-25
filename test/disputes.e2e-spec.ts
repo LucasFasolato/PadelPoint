@@ -3,12 +3,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { MatchesController } from '@core/matches/matches.controller';
-import { MatchesService } from '@core/matches/matches.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
-import { MatchResultStatus } from '@core/matches/match-result.entity';
-import { DisputeStatus } from '@core/matches/dispute-status.enum';
-import { DisputeReasonCode } from '@core/matches/dispute-reason.enum';
+import { MatchesController } from '@/modules/core/matches/controllers/matches.controller';
+import { MatchesService } from '@/modules/core/matches/services/matches.service';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { MatchResultStatus } from '@/modules/core/matches/entities/match-result.entity';
+import { DisputeStatus } from '@/modules/core/matches/enums/dispute-status.enum';
+import { DisputeReasonCode } from '@/modules/core/matches/enums/dispute-reason.enum';
 import { DisputeResolution } from '@core/matches/dto/resolve-dispute.dto';
 import {
   ForbiddenException,

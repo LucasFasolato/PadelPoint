@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ClubMembersService } from './club-members.service';
 import { ClubMember } from './club-member.entity';
-import { UsersService } from '@core/users/users.service';
+import { UsersService } from '@/modules/core/users/services/users.service';
 import { createMockRepo } from '@/test-utils/mock-repo';
 
 describe('ClubMembersService', () => {

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../users/user.entity';
-import { PlayerProfile } from './player-profile.entity';
-import { PlayerFavorite } from './player-favorite.entity';
-import { PlayersService } from './players.service';
-import { PlayersMeProfileController } from './players-me-profile.controller';
-import { PlayersFavoritesController } from './players-favorites.controller';
+import { User } from '../users/entities/user.entity';
+import { PlayerProfile } from './entities/player-profile.entity';
+import { PlayerFavorite } from './entities/player-favorite.entity';
+import { PlayersService } from './services/players.service';
+import { PlayersMeProfileController } from './controllers/players-me-profile.controller';
+import { PlayersFavoritesController } from './controllers/players-favorites.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, PlayerProfile, PlayerFavorite])],

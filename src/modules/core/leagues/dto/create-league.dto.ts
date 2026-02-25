@@ -7,7 +7,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LeagueMode } from '../league-mode.enum';
+import { LeagueMode } from '../enums/league-mode.enum';
 
 export class CreateLeagueDto {
   @ApiProperty({ example: 'Liga de Amigos' })

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ClubMembersService } from './club-members.service';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 // Import your ClubAccessGuard if you want to ensure only Admins can list members
 import { ClubAccessGuard } from './club-access.guard';
 

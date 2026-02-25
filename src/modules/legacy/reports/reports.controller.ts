@@ -8,7 +8,7 @@ import { SummaryQueryDto } from './dto/summary-query.dto';
 import { ClubAccessGuard } from '@legacy/club-members/club-access.guard';
 import { ClubRoles } from '@legacy/club-members/club-roles.decorator';
 import { ClubMemberRole } from '@legacy/club-members/enums/club-member-role.enum';
-import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 
 @Controller('reports')
 export class ReportsController {

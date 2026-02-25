@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { CompetitiveController } from './competitive.controller';
-import { CompetitiveService } from './competitive.service';
-import { CompetitiveProfile } from './competitive-profile.entity';
-import { EloHistory } from './elo-history.entity';
-import { EloService } from './elo.service';
+import { CompetitiveController } from './controllers/competitive.controller';
+import { CompetitiveService } from './services/competitive.service';
+import { CompetitiveProfile } from './entities/competitive-profile.entity';
+import { EloHistory } from './entities/elo-history.entity';
+import { EloService } from './services/elo.service';
 
-import { MatchResult } from '../matches/match-result.entity';
-import { Challenge } from '../challenges/challenge.entity';
+import { MatchResult } from '../matches/entities/match-result.entity';
+import { Challenge } from '../challenges/entities/challenge.entity';
 import { UsersModule } from '../users/users.module';
-import { PlayerProfile } from '../players/player-profile.entity';
-import { PlayerFavorite } from '../players/player-favorite.entity';
+import { PlayerProfile } from '../players/entities/player-profile.entity';
+import { PlayerFavorite } from '../players/entities/player-favorite.entity';
 
 @Module({
   imports: [

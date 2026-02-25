@@ -13,7 +13,7 @@ import type { Request } from 'express';
 import { CLUB_ROLES_KEY } from './club-roles.decorator';
 import { ClubMember } from './club-member.entity';
 import { ClubMemberRole } from './enums/club-member-role.enum';
-import { UserRole } from '@core/users/user-role.enum';
+import { UserRole } from '@/modules/core/users/enums/user-role.enum';
 import { Court } from '@legacy/courts/court.entity'; // 👈 ajustá path
 
 type AuthUser = { userId: string; email: string; role: UserRole };

@@ -6,13 +6,13 @@ import { ReservationsService } from './reservations.service';
 import { Reservation, ReservationStatus } from './reservation.entity';
 import { Court } from '@legacy/courts/court.entity';
 
-import { NotificationEventsService } from '@/modules/core/notifications/notification-events.service';
-import { NotificationsService } from '@/modules/core/notifications/notifications.service';
-import { NotificationService } from '@/modules/core/notifications/notification.service';
+import { NotificationEventsService } from '@/modules/core/notifications/services/notification-events.service';
+import { NotificationsService } from '@/modules/core/notifications/services/notifications.service';
+import { NotificationService } from '@/modules/core/notifications/services/notification.service';
 import {
   NotificationEventType,
   NotificationEventChannel,
-} from '@/modules/core/notifications/notification-event.entity';
+} from '@/modules/core/notifications/entities/notification-event.entity';
 
 type RepoMock<T> = {
   findOne: jest.Mock<Promise<T | null>, any>;
