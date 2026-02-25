@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { DynamicModule, Logger, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -23,38 +23,64 @@ import { ResendEmailSender } from './email/resend-email-sender';
 import { EMAIL_SENDER } from './email/email-sender';
 import { PasswordResetRateLimiter } from './guards/password-reset-rate-limiter';
 import { AuthPasswordController } from './controllers/auth-password.controller';
+import { isAppleOAuthEnabled } from './utils/apple-oauth.util';
 
-@Module({
-  imports: [
-    TypeOrmModule.forFeature([AuthIdentity, RefreshToken, PasswordResetToken]),
-    UsersModule,
-    PassportModule,
-    ConfigModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const secret = (config.get<string>('JWT_SECRET') ?? '').trim();
-        if (!secret) throw new Error('JWT_SECRET is missing/empty');
+const logger = new Logger('AuthModule');
 
-        return {
-          secret,
-          signOptions: { expiresIn: '15m' }, // keep literal for TS
-        };
-      },
-    }),
-  ],
-  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController, AuthAppleController, AuthPasswordController],
-  providers: [
-    AuthService,
-    RefreshTokenService,
-    OAuthService,
-    JwtStrategy,
-    GoogleStrategy,
-    AppleStrategy,
-    PasswordResetService,
-    PasswordResetRateLimiter,
-    { provide: EMAIL_SENDER, useClass: ResendEmailSender },
-  ],
-})
-export class AuthModule {}
+@Module({})
+export class AuthModule {
+  /**
+   * Returns a DynamicModule so Apple OAuth providers/routes are only registered
+   * when all APPLE_* env vars are present.
+   *
+   * ConfigModule.forRoot() (listed first in AppModule's imports) calls dotenv.config()
+   * synchronously before this method runs, so process.env is fully populated
+   * even for .env-based local-dev setups.  new ConfigService() reads directly
+   * from process.env — no DI required at this point.
+   */
+  static register(): DynamicModule {
+    const config = new ConfigService();
+    const appleEnabled = isAppleOAuthEnabled(config);
+
+    if (!appleEnabled) {
+      logger.warn('Apple OAuth disabled (missing APPLE_* env vars)');
+    }
+
+    return {
+      module: AuthModule,
+      imports: [
+        TypeOrmModule.forFeature([AuthIdentity, RefreshToken, PasswordResetToken]),
+        UsersModule,
+        PassportModule,
+        ConfigModule,
+        JwtModule.registerAsync({
+          imports: [ConfigModule],
+          inject: [ConfigService],
+          useFactory: (cfg: ConfigService) => {
+            const secret = (cfg.get<string>('JWT_SECRET') ?? '').trim();
+            if (!secret) throw new Error('JWT_SECRET is missing/empty');
+            return { secret, signOptions: { expiresIn: '15m' } }; // keep literal for TS
+          },
+        }),
+      ],
+      controllers: [
+        AuthController,
+        AuthAdminBootstrapController,
+        AuthGoogleController,
+        ...(appleEnabled ? [AuthAppleController] : []),
+        AuthPasswordController,
+      ],
+      providers: [
+        AuthService,
+        RefreshTokenService,
+        OAuthService,
+        JwtStrategy,
+        GoogleStrategy,
+        ...(appleEnabled ? [AppleStrategy] : []),
+        PasswordResetService,
+        PasswordResetRateLimiter,
+        { provide: EMAIL_SENDER, useClass: ResendEmailSender },
+      ],
+    };
+  }
+}

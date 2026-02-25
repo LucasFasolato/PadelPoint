@@ -22,14 +22,26 @@ interface AppleProfile {
 @Injectable()
 export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
   constructor(config: ConfigService) {
-    super({
-      clientID: config.get<string>('APPLE_CLIENT_ID') ?? '',
-      teamID: config.get<string>('APPLE_TEAM_ID') ?? '',
-      keyID: config.get<string>('APPLE_KEY_ID') ?? '',
-      privateKeyString: (config.get<string>('APPLE_PRIVATE_KEY') ?? '').replace(/\\n/g, '\n'),
-      callbackURL: config.get<string>('APPLE_CALLBACK_URL') ?? '',
-      scope: ['name', 'email'],
-    });
+    const clientID = config.get<string>('APPLE_CLIENT_ID') ?? '';
+    const teamID = config.get<string>('APPLE_TEAM_ID') ?? '';
+    const keyID = config.get<string>('APPLE_KEY_ID') ?? '';
+    const privateKeyString = (config.get<string>('APPLE_PRIVATE_KEY') ?? '').replace(/\\n/g, '\n');
+    const callbackURL = config.get<string>('APPLE_CALLBACK_URL') ?? '';
+
+    // Validate before super() so the error message is actionable
+    const missing = [
+      !clientID && 'APPLE_CLIENT_ID',
+      !teamID && 'APPLE_TEAM_ID',
+      !keyID && 'APPLE_KEY_ID',
+      !privateKeyString && 'APPLE_PRIVATE_KEY',
+      !callbackURL && 'APPLE_CALLBACK_URL',
+    ].filter(Boolean) as string[];
+
+    if (missing.length > 0) {
+      throw new Error(`AppleStrategy: missing required env vars: ${missing.join(', ')}`);
+    }
+
+    super({ clientID, teamID, keyID, privateKeyString, callbackURL, scope: ['name', 'email'] });
   }
 
   validate(

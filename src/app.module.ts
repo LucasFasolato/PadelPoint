@@ -39,7 +39,7 @@ import { PlayersModule } from './modules/core/players/players.module';
     AgendaModule,
     ReportsModule,
     UsersModule,
-    AuthModule,
+    AuthModule.register(),
     CompetitiveModule,
     ChallengesModule,
     MatchesModule,
