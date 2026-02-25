@@ -27,6 +27,7 @@ import { LeagueRole } from './league-role.enum';
 import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { User } from '../users/user.entity';
 import { MediaAsset } from '../media/media-asset.entity';
+import { MatchResult } from '../matches/match-result.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { UserNotification } from '../../notifications/user-notification.entity';
@@ -70,6 +71,8 @@ export class LeaguesService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(MediaAsset)
     private readonly mediaAssetRepo: Repository<MediaAsset>,
+    @InjectRepository(MatchResult)
+    private readonly matchResultRepo: Repository<MatchResult>,
     private readonly userNotifications: UserNotificationsService,
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly leagueActivityService: LeagueActivityService,
@@ -88,8 +91,10 @@ export class LeaguesService {
     }
 
     const mode = dto.mode ?? LeagueMode.SCHEDULED;
-    const startDate = dto.startDate ?? null;
-    const endDate = dto.endDate ?? null;
+    const requestedStartDate = this.normalizeLeagueDateInput(dto.startDate);
+    const requestedEndDate = this.normalizeLeagueDateInput(dto.endDate);
+    let startDate = requestedStartDate;
+    let endDate = requestedEndDate;
     if ((startDate && !endDate) || (!startDate && endDate)) {
       throw new BadRequestException({
         statusCode: 400,
@@ -97,7 +102,7 @@ export class LeaguesService {
         message: 'startDate and endDate must be provided together',
       });
     }
-    const hasDateRange = Boolean(startDate && endDate);
+    const hasDateRange = Boolean(requestedStartDate && requestedEndDate);
     if (
       dto.isPermanent !== undefined &&
       dto.dateRangeEnabled !== undefined &&
@@ -116,6 +121,11 @@ export class LeaguesService {
       mode === LeagueMode.OPEN || mode === LeagueMode.MINI
         ? true
         : (dto.isPermanent ?? !dateRangeEnabled) === true;
+
+    if (!dateRangeEnabled || isPermanent) {
+      startDate = null;
+      endDate = null;
+    }
 
     if (mode === LeagueMode.SCHEDULED && dateRangeEnabled) {
       if (!startDate || !endDate) {
@@ -258,8 +268,7 @@ export class LeaguesService {
       status: toApiStatus(l.status),
       isPermanent: this.isPermanentLeague(l),
       dateRangeEnabled: this.isDateRangeEnabledLeague(l),
-      startDate: l.startDate,
-      endDate: l.endDate,
+      ...this.toLeagueDatesView(l),
       avatarUrl: l.avatarUrl ?? null,
       avatarMediaAssetId: l.avatarMediaAssetId ?? null,
       creatorId: l.creatorId,
@@ -310,7 +319,7 @@ export class LeaguesService {
       });
     }
 
-    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+    await this.assertMembership(leagueId, userId);
 
     if (league.shareToken) {
       return this.toShareEnableView(leagueId, league.shareToken);
@@ -320,6 +329,7 @@ export class LeaguesService {
       league.shareToken = this.generateLeagueShareToken();
       try {
         await this.leagueRepo.save(league);
+        this.logShareEnabledAudit(userId, leagueId);
         return this.toShareEnableView(leagueId, league.shareToken);
       } catch (err: any) {
         if (String(err?.code) !== '23505') {
@@ -355,10 +365,34 @@ export class LeaguesService {
     return { ok: true };
   }
 
+  async getShareStatus(userId: string, leagueId: string) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertMembership(leagueId, userId);
+
+    if (!league.shareToken) {
+      return { enabled: false as const };
+    }
+
+    const share = this.toShareEnableView(leagueId, league.shareToken);
+    return {
+      enabled: true as const,
+      shareUrl: share.shareUrl,
+      shareText: share.shareText,
+    };
+  }
+
   async getPublicStandingsByShareToken(leagueId: string, token: string) {
     const league = await this.leagueRepo.findOne({
       where: { id: leagueId },
-      select: ['id', 'name', 'shareToken'],
+      select: ['id', 'name', 'avatarUrl', 'shareToken'],
     });
 
     if (!league) {
@@ -387,6 +421,7 @@ export class LeaguesService {
         league: {
           id: league.id,
           name: league.name,
+          avatarUrl: league.avatarUrl ?? null,
         },
         standings: [],
         version: 0,
@@ -405,6 +440,7 @@ export class LeaguesService {
         league: {
           id: league.id,
           name: league.name,
+          avatarUrl: league.avatarUrl ?? null,
         },
         standings: [],
         version: 0,
@@ -436,6 +472,7 @@ export class LeaguesService {
       league: {
         id: league.id,
         name: league.name,
+        avatarUrl: league.avatarUrl ?? null,
       },
       standings,
       version: snapshot.version,
@@ -455,6 +492,45 @@ export class LeaguesService {
         points: row.points,
         ...(row.delta !== undefined ? { delta: row.delta } : {}),
       })),
+    };
+  }
+
+  async deleteLeague(userId: string, leagueId: string) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    const matchesCount = await this.matchResultRepo.count({ where: { leagueId } });
+    if (matchesCount > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'LEAGUE_DELETE_HAS_MATCHES',
+        message: 'League cannot be deleted because it has matches',
+        reason: 'HAS_MATCHES',
+      });
+    }
+
+    const membersCount = await this.memberRepo.count({ where: { leagueId } });
+    if (membersCount > 1) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'LEAGUE_DELETE_HAS_MEMBERS',
+        message: 'League cannot be deleted because it has members',
+        reason: 'HAS_MEMBERS',
+      });
+    }
+
+    await this.leagueRepo.delete({ id: leagueId } as any);
+    return {
+      ok: true,
+      deletedLeagueId: leagueId,
     };
   }
 
@@ -685,8 +761,7 @@ export class LeaguesService {
         name: invite.league.name,
         mode: invite.league.mode,
         status: toApiStatus(invite.league.status),
-        startDate: invite.league.startDate,
-        endDate: invite.league.endDate,
+        ...this.toLeagueDatesView(invite.league),
       },
     };
   }
@@ -1278,8 +1353,7 @@ export class LeaguesService {
       creatorId: league.creatorId,
       isPermanent: this.isPermanentLeague(league),
       dateRangeEnabled: this.isDateRangeEnabledLeague(league),
-      startDate: league.startDate,
-      endDate: league.endDate,
+      ...this.toLeagueDatesView(league),
       avatarUrl: league.avatarUrl ?? null,
       avatarMediaAssetId: league.avatarMediaAssetId ?? null,
       status: toApiStatus(status),
@@ -1342,6 +1416,14 @@ export class LeaguesService {
     return email.trim().toLowerCase();
   }
 
+  private normalizeLeagueDateInput(dateValue?: string | null): string | null {
+    if (typeof dateValue !== 'string') {
+      return null;
+    }
+    const trimmed = dateValue.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   private isPermanentLeague(league: Pick<League, 'mode' | 'isPermanent'>): boolean {
     if (league.mode === LeagueMode.OPEN || league.mode === LeagueMode.MINI) {
       return true;
@@ -1353,6 +1435,21 @@ export class LeaguesService {
     league: Pick<League, 'mode' | 'isPermanent'>,
   ): boolean {
     return !this.isPermanentLeague(league);
+  }
+
+  private toLeagueDatesView(
+    league: Pick<League, 'mode' | 'isPermanent' | 'startDate' | 'endDate'>,
+  ) {
+    if (!this.isDateRangeEnabledLeague(league)) {
+      return {
+        startDate: null,
+        endDate: null,
+      };
+    }
+    return {
+      startDate: league.startDate ?? null,
+      endDate: league.endDate ?? null,
+    };
   }
 
   private async applyAvatarPatch(
@@ -1399,6 +1496,32 @@ export class LeaguesService {
 
   private generateLeagueShareToken(): string {
     return crypto.randomBytes(LEAGUE_SHARE_TOKEN_BYTES).toString('base64url');
+  }
+
+  private logShareEnabledAudit(userId: string, leagueId: string): void {
+    void this.userRepo
+      .findOne({
+        where: { id: userId },
+        select: ['id', 'email'],
+      })
+      .then((user) => {
+        const emailPrefix = user?.email ? this.toEmailPrefix(user.email) : null;
+        this.logger.log(
+          `league share enabled leagueId=${leagueId} enabledByUserId=${userId}${emailPrefix ? ` enabledByEmailPrefix=${emailPrefix}` : ''}`,
+        );
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'unknown';
+        this.logger.warn(
+          `failed to write league share audit leagueId=${leagueId} enabledByUserId=${userId} error=${message}`,
+        );
+      });
+  }
+
+  private toEmailPrefix(email: string): string {
+    const localPart = (email.split('@')[0] ?? '').trim();
+    if (!localPart) return 'unknown';
+    return localPart.slice(0, 4);
   }
 
   private toShareEnableView(leagueId: string, shareToken: string) {

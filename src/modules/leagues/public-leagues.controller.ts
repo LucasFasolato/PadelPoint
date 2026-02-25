@@ -6,6 +6,7 @@ import {
   Param,
   Query,
 } from '@nestjs/common';
+import { ApiForbiddenResponse, ApiOkResponse, ApiQuery } from '@nestjs/swagger';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
 
@@ -16,6 +17,31 @@ export class PublicLeaguesController {
   @Get(':id/standings')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiQuery({ name: 'token', type: String, required: true })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        league: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            avatarUrl: { type: 'string', nullable: true },
+          },
+          required: ['id', 'name', 'avatarUrl'],
+        },
+        standings: {
+          type: 'array',
+          items: { type: 'object' },
+        },
+        version: { type: 'number' },
+        computedAt: { type: 'string', nullable: true },
+      },
+      required: ['league', 'standings', 'version', 'computedAt'],
+    },
+  })
+  @ApiForbiddenResponse({ description: 'Missing or invalid share token' })
   getPublicStandings(
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Query('token') token?: string,
@@ -29,6 +55,7 @@ export class PublicLeaguesController {
   @Get(':id/og')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiQuery({ name: 'token', type: String, required: true })
   getPublicOgData(
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
     @Query('token') token?: string,

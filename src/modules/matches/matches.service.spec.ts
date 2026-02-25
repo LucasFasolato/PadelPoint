@@ -888,6 +888,60 @@ describe('MatchesService', () => {
       expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
+    it('should inherit leagueId from challenge metadata when dto.leagueId is missing', async () => {
+      const readyChallenge = {
+        ...fakeChallenge(),
+        status: ChallengeStatus.READY,
+        reservationId: null,
+        leagueId: 'league-1',
+      } as Challenge & { leagueId: string };
+
+      txChallengeRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(readyChallenge),
+      });
+      txLeagueRepo.findOne.mockResolvedValue({
+        id: 'league-1',
+        mode: 'scheduled',
+        status: 'active',
+      } as any);
+      txMemberRepo.count.mockResolvedValue(4);
+      txMemberRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(4),
+      } as any);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+      txMatchRepo.create.mockImplementation((input: any) => ({
+        ...fakeMatch({
+          id: 'match-league-linked-1',
+          challengeId: 'challenge-1',
+          status: MatchResultStatus.PENDING_CONFIRM,
+          reportedByUserId: USER_A1,
+          confirmedByUserId: null,
+          eloApplied: false,
+        }),
+        ...input,
+      }));
+      txMatchRepo.save.mockImplementation(async (input: any) => input);
+
+      const result = await service.reportMatch(USER_A1, {
+        challengeId: 'challenge-1',
+        sets: [{ a: 6, b: 3 }, { a: 6, b: 4 }],
+      });
+
+      expect(txMatchRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ leagueId: 'league-1' }),
+      );
+      expect(result.leagueId).toBe('league-1');
+      expect(result.status).toBe(MatchResultStatus.PENDING_CONFIRM);
+    });
+
     // Test 2: confirm match → ELO applied idempotently (already CONFIRMED)
     it('should apply ELO idempotently when match is already CONFIRMED', async () => {
       const confirmedMatch = fakeMatch({ status: MatchResultStatus.CONFIRMED, eloApplied: true });

@@ -3,7 +3,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { LeaguesController } from '../src/modules/leagues/leagues.controller';
 import { PublicLeaguesController } from '../src/modules/leagues/public-leagues.controller';
@@ -102,7 +106,9 @@ describe('Leagues (e2e)', () => {
       acceptInvite: jest.fn(),
       declineInvite: jest.fn(),
       enableShare: jest.fn(),
+      getShareStatus: jest.fn(),
       disableShare: jest.fn(),
+      deleteLeague: jest.fn(),
       updateLeagueProfile: jest.fn(),
       setLeagueAvatar: jest.fn(),
       getPublicStandingsByShareToken: jest.fn(),
@@ -297,6 +303,43 @@ describe('Leagues (e2e)', () => {
     });
   });
 
+  describe('GET /leagues/:id/share', () => {
+    it('should return enabled=false when sharing is disabled', async () => {
+      leaguesService.getShareStatus.mockResolvedValue({ enabled: false });
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/share`)
+        .expect(200);
+
+      expect(res.body).toEqual({ enabled: false });
+      expect(leaguesService.getShareStatus).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        LEAGUE_ID,
+      );
+    });
+
+    it('should return shareUrl/shareText when sharing is enabled', async () => {
+      leaguesService.getShareStatus.mockResolvedValue({
+        enabled: true,
+        shareUrl: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareText: `Sumate a mi liga en PadelPoint: /public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/share`)
+        .set('x-test-user', 'invitee')
+        .expect(200);
+
+      expect(res.body.enabled).toBe(true);
+      expect(res.body.shareUrl).toContain(`/public/leagues/${LEAGUE_ID}/standings`);
+      expect(res.body.shareText).toContain('PadelPoint');
+      expect(leaguesService.getShareStatus).toHaveBeenCalledWith(
+        FAKE_INVITEE.userId,
+        LEAGUE_ID,
+      );
+    });
+  });
+
   describe('POST /leagues/:id/share/disable', () => {
     it('should disable league sharing', async () => {
       leaguesService.disableShare.mockResolvedValue({ ok: true });
@@ -310,6 +353,43 @@ describe('Leagues (e2e)', () => {
         FAKE_CREATOR.userId,
         LEAGUE_ID,
       );
+    });
+  });
+
+  describe('DELETE /leagues/:id', () => {
+    it('should delete an empty league for owner/admin', async () => {
+      leaguesService.deleteLeague.mockResolvedValue({
+        ok: true,
+        deletedLeagueId: LEAGUE_ID,
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/leagues/${LEAGUE_ID}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ ok: true, deletedLeagueId: LEAGUE_ID });
+      expect(leaguesService.deleteLeague).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        LEAGUE_ID,
+      );
+    });
+
+    it('should return 409 when league is not deletable', async () => {
+      leaguesService.deleteLeague.mockRejectedValue(
+        new ConflictException({
+          statusCode: 409,
+          code: 'LEAGUE_DELETE_HAS_MATCHES',
+          message: 'League cannot be deleted because it has matches',
+          reason: 'HAS_MATCHES',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .delete(`/leagues/${LEAGUE_ID}`)
+        .expect(409);
+
+      expect(res.body.code).toBe('LEAGUE_DELETE_HAS_MATCHES');
+      expect(res.body.reason).toBe('HAS_MATCHES');
     });
   });
 

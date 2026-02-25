@@ -503,10 +503,24 @@ export class MatchesService {
       }
 
       // Validate league linkage if provided
+      const challengeLeagueId =
+        typeof (challenge as { leagueId?: unknown }).leagueId === 'string' &&
+        (challenge as { leagueId?: string }).leagueId
+          ? ((challenge as { leagueId?: string }).leagueId as string)
+          : null;
+      if (dto.leagueId && challengeLeagueId && dto.leagueId !== challengeLeagueId) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_MATCH_CHALLENGE_MISMATCH',
+          message: 'challenge leagueId does not match request leagueId',
+        });
+      }
+
       let leagueId: string | null = null;
-      if (dto.leagueId) {
+      const resolvedLeagueId = dto.leagueId ?? challengeLeagueId ?? null;
+      if (resolvedLeagueId) {
         // League match requires a reservation-backed challenge
-        if (!challenge.reservationId) {
+        if (!challenge.reservationId && !challengeLeagueId) {
           throw new BadRequestException({
             statusCode: 400,
             code: 'LEAGUE_MATCH_NO_RESERVATION',
@@ -517,7 +531,7 @@ export class MatchesService {
 
         await this.assertLeagueReadyForMatchUsage(
           manager,
-          dto.leagueId,
+          resolvedLeagueId,
           true,
         );
 
@@ -525,7 +539,7 @@ export class MatchesService {
         const memberCount = await manager
           .getRepository(LeagueMember)
           .createQueryBuilder('m')
-          .where('m."leagueId" = :leagueId', { leagueId: dto.leagueId })
+          .where('m."leagueId" = :leagueId', { leagueId: resolvedLeagueId })
           .andWhere('m."userId" IN (:...playerIds)', {
             playerIds: participants.all,
           })
@@ -539,7 +553,7 @@ export class MatchesService {
           });
         }
 
-        leagueId = dto.leagueId;
+        leagueId = resolvedLeagueId;
       }
 
       // race-safe: check existing match for this challenge

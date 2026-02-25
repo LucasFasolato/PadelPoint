@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -14,7 +15,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiOkResponse } from '@nestjs/swagger';
+import {
+  ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
@@ -139,7 +145,58 @@ export class LeaguesController {
     return this.leaguesService.setLeagueAvatar(user.userId, id, dto);
   }
 
+  @Get(':id/share')
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: {
+            enabled: { type: 'boolean', example: false },
+          },
+          required: ['enabled'],
+        },
+        {
+          type: 'object',
+          properties: {
+            enabled: { type: 'boolean', example: true },
+            shareUrl: {
+              type: 'string',
+              example:
+                '/public/leagues/123e4567-e89b-12d3-a456-426614174000/standings?token=abc',
+            },
+            shareText: {
+              type: 'string',
+              example:
+                'Sumate a mi liga en PadelPoint: /public/leagues/123e4567-e89b-12d3-a456-426614174000/standings?token=abc',
+            },
+          },
+          required: ['enabled', 'shareUrl', 'shareText'],
+        },
+      ],
+    },
+  })
+  getShare(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.getShareStatus(user.userId, id);
+  }
+
   @Post(':id/share/enable')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        shareToken: { type: 'string' },
+        shareUrlPath: { type: 'string' },
+        shareUrl: { type: 'string' },
+        shareText: { type: 'string' },
+      },
+      required: ['shareToken', 'shareUrlPath', 'shareUrl', 'shareText'],
+    },
+  })
   enableShare(
     @Req() req: Request,
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
@@ -155,6 +212,41 @@ export class LeaguesController {
   ) {
     const user = req.user as AuthUser;
     return this.leaguesService.disableShare(user.userId, id);
+  }
+
+  @Delete(':id')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', example: true },
+        deletedLeagueId: { type: 'string', format: 'uuid' },
+      },
+      required: ['ok', 'deletedLeagueId'],
+    },
+  })
+  @ApiConflictResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 409 },
+        code: {
+          type: 'string',
+          example: 'LEAGUE_DELETE_HAS_MATCHES',
+        },
+        message: { type: 'string' },
+        reason: { type: 'string', example: 'HAS_MATCHES' },
+      },
+    },
+  })
+  @ApiForbiddenResponse({ description: 'Caller is not owner/admin of the league' })
+  @ApiNotFoundResponse({ description: 'League not found' })
+  deleteLeague(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.deleteLeague(user.userId, id);
   }
 
   @Patch(':id/members/:memberId/role')

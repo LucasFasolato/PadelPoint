@@ -18,6 +18,7 @@ import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { InviteStatus } from './invite-status.enum';
 import { User } from '../users/user.entity';
 import { MediaAsset } from '../media/media-asset.entity';
+import { MatchResult } from '../matches/match-result.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { LeagueStandingsService } from './league-standings.service';
@@ -91,6 +92,7 @@ describe('LeaguesService', () => {
   let inviteRepo: MockRepo<LeagueInvite>;
   let userRepo: MockRepo<User>;
   let mediaAssetRepo: MockRepo<MediaAsset>;
+  let matchResultRepo: MockRepo<MatchResult>;
   let userNotifications: {
     create: jest.Mock;
     markInviteNotificationReadByInviteId: jest.Mock;
@@ -115,6 +117,7 @@ describe('LeaguesService', () => {
     inviteRepo = createMockRepo<LeagueInvite>();
     userRepo = createMockRepo<User>();
     mediaAssetRepo = createMockRepo<MediaAsset>();
+    matchResultRepo = createMockRepo<MatchResult>();
     userNotifications = {
       create: jest.fn().mockResolvedValue({}),
       markInviteNotificationReadByInviteId: jest
@@ -217,6 +220,7 @@ describe('LeaguesService', () => {
         { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(MediaAsset), useValue: mediaAssetRepo },
+        { provide: getRepositoryToken(MatchResult), useValue: matchResultRepo },
         { provide: UserNotificationsService, useValue: userNotifications },
         { provide: DataSource, useValue: dataSource },
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
@@ -373,6 +377,36 @@ describe('LeaguesService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should null out dates when permanent payload includes date defaults', async () => {
+      const saved = fakeLeague({
+        mode: LeagueMode.SCHEDULED,
+        startDate: null,
+        endDate: null,
+        isPermanent: true,
+        status: LeagueStatus.ACTIVE,
+      });
+      leagueRepo.create.mockReturnValue(saved);
+      leagueRepo.save.mockResolvedValue(saved);
+      memberRepo.create.mockReturnValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.save.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+
+      await service.createLeague(FAKE_USER_ID, {
+        name: 'Permanent',
+        mode: LeagueMode.SCHEDULED,
+        isPermanent: true,
+        startDate: '1970-01-01',
+        endDate: '1970-01-01',
+      });
+
+      expect(leagueRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isPermanent: true,
+          startDate: null,
+          endDate: null,
+        }),
+      );
+    });
   });
 
   // -- getLeagueDetail -------------------------------------------
@@ -414,6 +448,24 @@ describe('LeaguesService', () => {
       expect(result.id).toBe('league-1');
       expect(result.members).toHaveLength(1);
     });
+
+    it('should return null date range for permanent leagues even if stored dates exist', async () => {
+      leagueRepo.findOne.mockResolvedValue(
+        fakeLeague({
+          isPermanent: true,
+          startDate: '1970-01-01',
+          endDate: '1970-01-01',
+        }),
+      );
+      memberRepo.find.mockResolvedValue([fakeMember()]);
+
+      const result = await service.getLeagueDetail(FAKE_USER_ID, 'league-1');
+
+      expect(result.isPermanent).toBe(true);
+      expect(result.dateRangeEnabled).toBe(false);
+      expect(result.startDate).toBeNull();
+      expect(result.endDate).toBeNull();
+    });
   });
 
   describe('league share token', () => {
@@ -447,6 +499,47 @@ describe('LeaguesService', () => {
 
       expect(result.shareToken).toBe('existing-share-token');
       expect(leagueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('enableShare should allow a regular member and remain idempotent', async () => {
+      const league = fakeLeague({
+        id: 'league-share-member-1',
+        shareToken: 'member-visible-token',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      const result = await service.enableShare(FAKE_USER_ID, league.id);
+
+      expect(result.shareUrl).toContain(`/public/leagues/${league.id}/standings`);
+      expect(leagueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('getShareStatus should return disabled=false payload for members', async () => {
+      const league = fakeLeague({ id: 'league-share-status-1', shareToken: null });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      await expect(service.getShareStatus(FAKE_USER_ID, league.id)).resolves.toEqual({
+        enabled: false,
+      });
+    });
+
+    it('getShareStatus should return shareUrl/shareText when enabled', async () => {
+      const league = fakeLeague({
+        id: 'league-share-status-2',
+        shareToken: 'share-enabled-token',
+      });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      const result = await service.getShareStatus(FAKE_USER_ID, league.id);
+
+      expect(result).toEqual({
+        enabled: true,
+        shareUrl: expect.stringContaining(`/public/leagues/${league.id}/standings`),
+        shareText: expect.stringContaining('PadelPoint'),
+      });
     });
 
     it('disableShare should clear the token and persist', async () => {
@@ -558,7 +651,11 @@ describe('LeaguesService', () => {
         'share-token-123',
       );
 
-      expect(result.league).toEqual({ id: league.id, name: 'Shared League' });
+      expect(result.league).toEqual({
+        id: league.id,
+        name: 'Shared League',
+        avatarUrl: null,
+      });
       expect(result.version).toBe(3);
       expect(result.computedAt).toBe('2026-02-23T10:00:00.000Z');
       expect(result.standings[0]).toEqual(
@@ -588,7 +685,7 @@ describe('LeaguesService', () => {
       );
 
       expect(result).toEqual({
-        league: { id: league.id, name: 'Empty Shared League' },
+        league: { id: league.id, name: 'Empty Shared League', avatarUrl: null },
         computedAt: null,
         top: [],
       });
@@ -639,7 +736,11 @@ describe('LeaguesService', () => {
         'share-token-og-1',
       );
 
-      expect(result.league).toEqual({ id: league.id, name: league.name });
+      expect(result.league).toEqual({
+        id: league.id,
+        name: league.name,
+        avatarUrl: null,
+      });
       expect(result.computedAt).toBe('2026-02-23T22:00:00.000Z');
       expect(result.top).toHaveLength(5);
       expect(result.top[0]).toEqual({
@@ -654,6 +755,52 @@ describe('LeaguesService', () => {
         displayName: 'Player 5',
         points: 16,
       });
+    });
+  });
+
+  describe('deleteLeague', () => {
+    it('deletes an empty league when caller is owner/admin', async () => {
+      const league = fakeLeague({ id: 'league-delete-1' });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      matchResultRepo.count.mockResolvedValue(0);
+      memberRepo.count.mockResolvedValue(1);
+      leagueRepo.delete.mockResolvedValue({ affected: 1 });
+
+      const result = await service.deleteLeague(FAKE_USER_ID, league.id);
+
+      expect(result).toEqual({ ok: true, deletedLeagueId: league.id });
+      expect(leagueRepo.delete).toHaveBeenCalledWith({ id: league.id });
+    });
+
+    it('returns 409 when league has matches', async () => {
+      const league = fakeLeague({ id: 'league-delete-2' });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      matchResultRepo.count.mockResolvedValue(2);
+
+      await expect(service.deleteLeague(FAKE_USER_ID, league.id)).rejects.toMatchObject({
+        response: {
+          code: 'LEAGUE_DELETE_HAS_MATCHES',
+          reason: 'HAS_MATCHES',
+        },
+      });
+    });
+
+    it('returns 409 when league has more than one member', async () => {
+      const league = fakeLeague({ id: 'league-delete-3' });
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      matchResultRepo.count.mockResolvedValue(0);
+      memberRepo.count.mockResolvedValue(2);
+
+      await expect(service.deleteLeague(FAKE_USER_ID, league.id)).rejects.toMatchObject({
+        response: {
+          code: 'LEAGUE_DELETE_HAS_MEMBERS',
+          reason: 'HAS_MEMBERS',
+        },
+      });
+      expect(leagueRepo.delete).not.toHaveBeenCalled();
     });
   });
 
