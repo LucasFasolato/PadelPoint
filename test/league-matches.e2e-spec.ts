@@ -73,6 +73,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       reportFromReservation: jest.fn(),
       getEligibleReservations: jest.fn(),
       submitLeagueMatchResult: jest.fn(),
+      getLeaguePendingConfirmations: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -311,6 +312,41 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         .expect(200);
 
       expect(res.body).toEqual([]);
+    });
+  });
+
+  describe('GET /leagues/:leagueId/pending-confirmations', () => {
+    it('should return league-scoped pending confirmations', async () => {
+      matchesService.getLeaguePendingConfirmations!.mockResolvedValue({
+        items: [
+          {
+            matchId: MATCH_ID,
+            challengeId: 'challenge-1',
+            leagueId: LEAGUE_ID,
+            status: 'pending_confirm',
+            playedAt: '2025-06-10T10:00:00.000Z',
+            score: { sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }] },
+            winnerTeam: 'A',
+            teamA: { player1: { userId: 'u1', displayName: 'A1' }, player2: null },
+            teamB: { player1: { userId: 'u2', displayName: 'B1' }, player2: null },
+            reportedBy: { userId: 'u1', displayName: 'A1' },
+            canConfirm: true,
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/pending-confirmations?limit=10`)
+        .expect(200);
+
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].canConfirm).toBe(true);
+      expect(matchesService.getLeaguePendingConfirmations).toHaveBeenCalledWith(
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+        { cursor: undefined, limit: 10 },
+      );
     });
   });
 });

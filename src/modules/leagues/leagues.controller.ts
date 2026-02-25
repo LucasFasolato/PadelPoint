@@ -24,6 +24,8 @@ import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateMiniLeagueDto } from './dto/create-mini-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
 import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
+import { UpdateLeagueProfileDto } from './dto/update-league-profile.dto';
+import { SetLeagueAvatarDto } from './dto/set-league-avatar.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { LeagueActivityQueryDto } from './dto/league-activity-query.dto';
 import { LeagueStandingsHistoryQueryDto } from './dto/league-standings-history-query.dto';
@@ -115,6 +117,26 @@ export class LeaguesController {
   ) {
     const user = req.user as AuthUser;
     return this.leaguesService.updateLeagueSettings(user.userId, id, dto);
+  }
+
+  @Patch(':id')
+  updateProfile(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Body() dto: UpdateLeagueProfileDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.updateLeagueProfile(user.userId, id, dto);
+  }
+
+  @Patch(':id/avatar')
+  updateAvatar(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Body() dto: SetLeagueAvatarDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.setLeagueAvatar(user.userId, id, dto);
   }
 
   @Post(':id/share/enable')

@@ -48,6 +48,9 @@ export class League {
   @Column({ type: 'date', nullable: true })
   endDate!: string | null;
 
+  @Column({ type: 'boolean', default: false })
+  isPermanent!: boolean;
+
   @Column({
     type: 'enum',
     enum: LeagueStatus,
@@ -64,6 +67,12 @@ export class League {
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 128, nullable: true })
   shareToken!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  avatarMediaAssetId!: string | null;
+
+  @Column({ type: 'varchar', length: 600, nullable: true })
+  avatarUrl!: string | null;
 
   @OneToMany(() => LeagueMember, (m) => m.league)
   members!: LeagueMember[];

@@ -19,6 +19,7 @@ import { DisputeMatchDto } from './dto/dispute-match.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { UserRole } from '../users/user-role.enum';
 import { PendingConfirmationsResponseDto } from './dto/pending-confirmation.dto';
+import { PendingConfirmationsQueryDto } from './dto/pending-confirmations-query.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -37,13 +38,12 @@ export class MatchesController {
   @ApiOkResponse({ type: PendingConfirmationsResponseDto })
   async getPendingConfirmations(
     @Req() req: Request,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
+    @Query() query: PendingConfirmationsQueryDto,
   ) {
     const user = req.user as AuthUser;
     return this.service.getPendingConfirmations(user.userId, {
-      cursor,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      cursor: query.cursor,
+      limit: query.limit,
     });
   }
 
@@ -57,6 +57,12 @@ export class MatchesController {
   confirm(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.service.confirmMatch(user.userId, id);
+  }
+
+  @Patch(':id/admin-confirm')
+  adminConfirm(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    return this.service.adminConfirmMatch(user.userId, id);
   }
 
   @Patch(':id/reject')
@@ -103,8 +109,9 @@ export class MatchesController {
   }
 
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.service.getById(id);
+  getById(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    return this.service.getById(id, user.userId);
   }
 
   @Get()

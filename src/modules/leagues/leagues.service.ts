@@ -20,10 +20,13 @@ import { CreateLeagueDto } from './dto/create-league.dto';
 import { CreateMiniLeagueDto } from './dto/create-mini-league.dto';
 import { CreateInvitesDto } from './dto/create-invites.dto';
 import { UpdateLeagueSettingsDto } from './dto/update-league-settings.dto';
+import { UpdateLeagueProfileDto } from './dto/update-league-profile.dto';
+import { SetLeagueAvatarDto } from './dto/set-league-avatar.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { LeagueRole } from './league-role.enum';
 import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { User } from '../users/user.entity';
+import { MediaAsset } from '../media/media-asset.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { UserNotification } from '../../notifications/user-notification.entity';
@@ -65,6 +68,8 @@ export class LeaguesService {
     private readonly inviteRepo: Repository<LeagueInvite>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(MediaAsset)
+    private readonly mediaAssetRepo: Repository<MediaAsset>,
     private readonly userNotifications: UserNotificationsService,
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly leagueActivityService: LeagueActivityService,
@@ -83,33 +88,61 @@ export class LeaguesService {
     }
 
     const mode = dto.mode ?? LeagueMode.SCHEDULED;
+    const startDate = dto.startDate ?? null;
+    const endDate = dto.endDate ?? null;
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_DATES_REQUIRED',
+        message: 'startDate and endDate must be provided together',
+      });
+    }
+    const hasDateRange = Boolean(startDate && endDate);
+    if (
+      dto.isPermanent !== undefined &&
+      dto.dateRangeEnabled !== undefined &&
+      dto.isPermanent === dto.dateRangeEnabled
+    ) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_DATE_RANGE_FLAGS_CONFLICT',
+        message: 'isPermanent and dateRangeEnabled must be opposites',
+      });
+    }
+    const dateRangeEnabled =
+      dto.dateRangeEnabled ??
+      (dto.isPermanent !== undefined ? !dto.isPermanent : hasDateRange);
+    const isPermanent =
+      mode === LeagueMode.OPEN || mode === LeagueMode.MINI
+        ? true
+        : (dto.isPermanent ?? !dateRangeEnabled) === true;
 
-    if (mode === LeagueMode.SCHEDULED) {
-      if (!dto.startDate || !dto.endDate) {
+    if (mode === LeagueMode.SCHEDULED && dateRangeEnabled) {
+      if (!startDate || !endDate) {
         throw new BadRequestException({
           statusCode: 400,
           code: 'LEAGUE_DATES_REQUIRED',
-          message: 'startDate and endDate are required for SCHEDULED leagues',
-        });
-      }
-      if (dto.endDate <= dto.startDate) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'LEAGUE_INVALID_DATES',
-          message: 'endDate must be after startDate',
+          message:
+            'startDate and endDate are required when dateRangeEnabled=true',
         });
       }
     }
 
-    const startDate = dto.startDate ?? null;
-    const endDate = dto.endDate ?? null;
-
-    // Validate dates if both provided (even for OPEN)
-    if (startDate && endDate && endDate <= startDate) {
+    // Validate dates if both provided (even for OPEN/MINI for backward compatibility)
+    if (startDate && endDate && endDate < startDate) {
       throw new BadRequestException({
         statusCode: 400,
         code: 'LEAGUE_INVALID_DATES',
-        message: 'endDate must be after startDate',
+        message: 'endDate must be on or after startDate',
+      });
+    }
+
+    if (mode === LeagueMode.SCHEDULED && !isPermanent && !hasDateRange) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_DATES_REQUIRED',
+        message:
+          'startDate and endDate are required for non-permanent SCHEDULED leagues',
       });
     }
 
@@ -119,7 +152,7 @@ export class LeaguesService {
       status = LeagueStatus.ACTIVE;
     } else {
       status =
-        startDate && startDate <= today
+        isPermanent || (startDate && startDate <= today)
           ? LeagueStatus.ACTIVE
           : LeagueStatus.DRAFT;
     }
@@ -130,7 +163,10 @@ export class LeaguesService {
       mode,
       startDate,
       endDate,
+      isPermanent,
       status,
+      avatarMediaAssetId: null,
+      avatarUrl: null,
       settings:
         mode === LeagueMode.MINI
           ? { ...MINI_LEAGUE_SETTINGS }
@@ -220,8 +256,12 @@ export class LeaguesService {
       name: l.name,
       mode: l.mode,
       status: toApiStatus(l.status),
+      isPermanent: this.isPermanentLeague(l),
+      dateRangeEnabled: this.isDateRangeEnabledLeague(l),
       startDate: l.startDate,
       endDate: l.endDate,
+      avatarUrl: l.avatarUrl ?? null,
+      avatarMediaAssetId: l.avatarMediaAssetId ?? null,
       creatorId: l.creatorId,
       createdAt: l.createdAt.toISOString(),
     }));
@@ -965,6 +1005,44 @@ export class LeaguesService {
     return league.settings;
   }
 
+  async updateLeagueProfile(
+    userId: string,
+    leagueId: string,
+    dto: UpdateLeagueProfileDto,
+  ) {
+    const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    if (dto.name !== undefined) {
+      const normalizedName = dto.name.trim();
+      if (!normalizedName) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'LEAGUE_NAME_REQUIRED',
+          message: 'name is required',
+        });
+      }
+      league.name = normalizedName;
+    }
+
+    await this.applyAvatarPatch(league, dto);
+    await this.leagueRepo.save(league);
+
+    return this.getLeagueDetail(userId, leagueId);
+  }
+
+  async setLeagueAvatar(userId: string, leagueId: string, dto: SetLeagueAvatarDto) {
+    return this.updateLeagueProfile(userId, leagueId, dto);
+  }
+
   async updateMemberRole(
     userId: string,
     leagueId: string,
@@ -1198,8 +1276,12 @@ export class LeaguesService {
       name: league.name,
       mode: league.mode,
       creatorId: league.creatorId,
+      isPermanent: this.isPermanentLeague(league),
+      dateRangeEnabled: this.isDateRangeEnabledLeague(league),
       startDate: league.startDate,
       endDate: league.endDate,
+      avatarUrl: league.avatarUrl ?? null,
+      avatarMediaAssetId: league.avatarMediaAssetId ?? null,
       status: toApiStatus(status),
       canRecordMatches,
       ...(reason ? { reason } : {}),
@@ -1260,14 +1342,72 @@ export class LeaguesService {
     return email.trim().toLowerCase();
   }
 
+  private isPermanentLeague(league: Pick<League, 'mode' | 'isPermanent'>): boolean {
+    if (league.mode === LeagueMode.OPEN || league.mode === LeagueMode.MINI) {
+      return true;
+    }
+    return Boolean(league.isPermanent);
+  }
+
+  private isDateRangeEnabledLeague(
+    league: Pick<League, 'mode' | 'isPermanent'>,
+  ): boolean {
+    return !this.isPermanentLeague(league);
+  }
+
+  private async applyAvatarPatch(
+    league: League,
+    dto: SetLeagueAvatarDto,
+  ): Promise<void> {
+    const hasMediaAssetId = Object.prototype.hasOwnProperty.call(dto, 'mediaAssetId');
+    const hasUrl = Object.prototype.hasOwnProperty.call(dto, 'url');
+    const hasAvatarUrl = Object.prototype.hasOwnProperty.call(dto, 'avatarUrl');
+
+    if (!hasMediaAssetId && !hasUrl && !hasAvatarUrl) {
+      return;
+    }
+
+    const requestedUrl = (dto.url ?? dto.avatarUrl ?? null)?.trim() ?? null;
+    const requestedMediaAssetId = dto.mediaAssetId ?? null;
+
+    if (requestedMediaAssetId) {
+      const asset = await this.mediaAssetRepo.findOne({
+        where: { id: requestedMediaAssetId, active: true },
+      });
+      if (!asset) {
+        throw new NotFoundException({
+          statusCode: 404,
+          code: 'LEAGUE_AVATAR_MEDIA_NOT_FOUND',
+          message: 'Media asset not found',
+        });
+      }
+      league.avatarMediaAssetId = asset.id;
+      league.avatarUrl = asset.secureUrl || asset.url;
+      return;
+    }
+
+    if (requestedUrl) {
+      league.avatarMediaAssetId = null;
+      league.avatarUrl = requestedUrl;
+      return;
+    }
+
+    // Explicit null/empty clears avatar
+    league.avatarMediaAssetId = null;
+    league.avatarUrl = null;
+  }
+
   private generateLeagueShareToken(): string {
     return crypto.randomBytes(LEAGUE_SHARE_TOKEN_BYTES).toString('base64url');
   }
 
   private toShareEnableView(leagueId: string, shareToken: string) {
+    const shareUrl = `/public/leagues/${leagueId}/standings?token=${encodeURIComponent(shareToken)}`;
     return {
       shareToken,
-      shareUrlPath: `/public/leagues/${leagueId}/standings?token=${encodeURIComponent(shareToken)}`,
+      shareUrlPath: shareUrl,
+      shareUrl,
+      shareText: `Sumate a mi liga en PadelPoint: ${shareUrl}`,
     };
   }
 }

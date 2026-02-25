@@ -20,6 +20,7 @@ import { HistoryQueryDto } from './dto/history-query.dto';
 import { SkillRadarResponseDto } from './dto/skill-radar-response.dto';
 import { MatchmakingRivalsQueryDto } from './dto/matchmaking-rivals-query.dto';
 import { MatchmakingRivalsResponseDto } from './dto/matchmaking-rivals-response.dto';
+import { CompetitiveChallengesQueryDto } from './dto/competitive-challenges-query.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -93,6 +94,14 @@ export class CompetitiveController {
       city: q.city,
       province: q.province,
       country: q.country,
+    });
+  }
+
+  @Get('challenges')
+  listChallenges(@Req() req: Request, @Query() q: CompetitiveChallengesQueryDto) {
+    const user = req.user as AuthUser;
+    return this.competitive.listChallenges(user.userId, {
+      view: q.view ?? 'inbox',
     });
   }
 

@@ -8,6 +8,7 @@ import { LeagueStandingsSnapshot } from './league-standings-snapshot.entity';
 import { LeagueChallenge } from './league-challenge.entity';
 import { MatchResult } from '../matches/match-result.entity';
 import { User } from '../users/user.entity';
+import { MediaAsset } from '../media/media-asset.entity';
 import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';
@@ -29,6 +30,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       LeagueChallenge,
       MatchResult,
       User,
+      MediaAsset,
     ]),
     NotificationsModule,
   ],

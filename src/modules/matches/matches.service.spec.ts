@@ -1118,4 +1118,157 @@ describe('MatchesService', () => {
       expect(result.nextCursor).toBeNull();
     });
   });
+
+  describe('getLeaguePendingConfirmations', () => {
+    it('returns only league pending confirmations the caller can confirm', async () => {
+      const dsMemberRepo = createMockRepo<LeagueMember>();
+      dsMemberRepo.findOne.mockResolvedValue({
+        id: 'm1',
+        leagueId: 'league-1',
+        userId: USER_B1,
+      });
+      dataSource.getRepository.mockImplementation((entity: any) => {
+        if (entity === LeagueMember) return dsMemberRepo;
+        return createMockRepo();
+      });
+
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([
+          fakeMatch({
+            id: 'match-pending-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.PENDING_CONFIRM,
+            reportedByUserId: USER_A1,
+          }),
+        ]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
+      challengeRepo.find.mockResolvedValue([fakeChallenge()]);
+      userRepo.find.mockResolvedValue([
+        { id: USER_A1, displayName: 'A1', email: 'a1@test.com' } as any,
+        { id: USER_A2, displayName: 'A2', email: 'a2@test.com' } as any,
+        { id: USER_B1, displayName: 'B1', email: 'b1@test.com' } as any,
+        { id: USER_B2, displayName: 'B2', email: 'b2@test.com' } as any,
+      ]);
+
+      const result = await service.getLeaguePendingConfirmations(USER_B1, 'league-1', {
+        limit: 10,
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          matchId: 'match-pending-1',
+          leagueId: 'league-1',
+          canConfirm: true,
+        }),
+      );
+    });
+  });
+
+  describe('adminConfirmMatch', () => {
+    it('allows league admin to confirm pending league match and writes audit log', async () => {
+      const pendingMatch = fakeMatch({
+        status: MatchResultStatus.PENDING_CONFIRM,
+        reportedByUserId: USER_A1,
+        confirmedByUserId: null,
+        leagueId: 'league-1',
+      });
+      const eloService = (service as any).eloService as { applyForMatchTx: jest.Mock };
+      eloService.applyForMatchTx.mockResolvedValue({ ok: true });
+
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(pendingMatch),
+      });
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: ADMIN,
+        role: 'admin',
+      });
+      txChallengeRepo.findOne.mockResolvedValue(fakeChallenge());
+      txMatchRepo.save.mockResolvedValue({
+        ...pendingMatch,
+        status: MatchResultStatus.CONFIRMED,
+        confirmedByUserId: ADMIN,
+      });
+      txAuditRepo.create.mockImplementation((v: any) => v);
+      txAuditRepo.save.mockResolvedValue({ id: 'audit-admin-confirm' });
+      txMatchRepo.findOne.mockResolvedValue({
+        ...pendingMatch,
+        status: MatchResultStatus.CONFIRMED,
+        confirmedByUserId: ADMIN,
+      });
+
+      const result = await service.adminConfirmMatch(ADMIN, 'match-1');
+
+      expect(result?.status).toBe(MatchResultStatus.CONFIRMED);
+      expect(txAuditRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: MatchAuditAction.ADMIN_CONFIRM,
+          payload: { reason: 'ADMIN_CONFIRM' },
+        }),
+      );
+      expect(leagueStandingsService.recomputeForMatch).toHaveBeenCalledWith(
+        expect.any(Object),
+        'match-1',
+      );
+    });
+
+    it('rejects when caller is not league admin', async () => {
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            status: MatchResultStatus.PENDING_CONFIRM,
+            leagueId: 'league-1',
+            confirmedByUserId: null,
+          }),
+        ),
+      });
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+        role: 'member',
+      });
+
+      await expect(service.adminConfirmMatch(USER_B1, 'match-1')).rejects.toMatchObject({
+        response: { code: 'LEAGUE_FORBIDDEN' },
+      });
+    });
+  });
+
+  describe('getById flags', () => {
+    it('returns action flags for the current user', async () => {
+      matchRepo.findOne.mockResolvedValue({
+        ...fakeMatch({
+          status: MatchResultStatus.PENDING_CONFIRM,
+          reportedByUserId: USER_A1,
+          confirmedByUserId: null,
+          leagueId: 'league-1',
+        }),
+        challenge: fakeChallenge(),
+      } as any);
+
+      const result = await service.getById('match-1', USER_B1);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          canConfirm: true,
+          awaitingMyConfirmation: true,
+          isReporter: false,
+          canDispute: false,
+          leagueId: 'league-1',
+        }),
+      );
+    });
+  });
 });

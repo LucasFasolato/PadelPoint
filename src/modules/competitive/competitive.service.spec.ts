@@ -1198,6 +1198,78 @@ describe('CompetitiveService', () => {
     });
   });
 
+  describe('listChallenges', () => {
+    it('defaults to inbox and excludes completed challenges', async () => {
+      challengeRepo.find.mockResolvedValue([
+        {
+          id: 'ch-active',
+          type: 'direct',
+          status: ChallengeStatus.PENDING,
+          teamA1Id: FAKE_USER_ID,
+          teamA1: { id: FAKE_USER_ID, displayName: 'Me' },
+          teamB1: { id: 'u2', displayName: 'Rival' },
+          invitedOpponent: { id: 'u2', displayName: 'Rival' },
+          reservationId: null,
+          targetCategory: 4,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          updatedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+        {
+          id: 'ch-done',
+          type: 'direct',
+          status: ChallengeStatus.READY,
+          teamA1Id: FAKE_USER_ID,
+          teamA1: { id: FAKE_USER_ID, displayName: 'Me' },
+          teamB1: { id: 'u3', displayName: 'Done Rival' },
+          invitedOpponent: { id: 'u3', displayName: 'Done Rival' },
+          reservationId: null,
+          targetCategory: 4,
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+          updatedAt: new Date('2026-01-02T00:00:00Z'),
+        },
+      ] as any);
+      matchRepo.find.mockResolvedValue([
+        {
+          id: 'match-done',
+          challengeId: 'ch-done',
+          status: 'confirmed',
+          leagueId: null,
+          playedAt: new Date('2026-01-02T10:00:00Z'),
+          updatedAt: new Date('2026-01-02T10:00:00Z'),
+        },
+      ] as any);
+
+      const result = await service.listChallenges(FAKE_USER_ID);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('ch-active');
+    });
+
+    it('returns past view with completed or declined/cancelled challenges', async () => {
+      challengeRepo.find.mockResolvedValue([
+        {
+          id: 'ch-cancelled',
+          type: 'open',
+          status: ChallengeStatus.CANCELLED,
+          teamA1Id: FAKE_USER_ID,
+          teamA1: { id: FAKE_USER_ID, displayName: 'Me' },
+          teamB1: null,
+          invitedOpponent: null,
+          reservationId: null,
+          targetCategory: 3,
+          createdAt: new Date('2026-01-03T00:00:00Z'),
+          updatedAt: new Date('2026-01-03T00:00:00Z'),
+        },
+      ] as any);
+      matchRepo.find.mockResolvedValue([]);
+
+      const result = await service.listChallenges(FAKE_USER_ID, { view: 'past' });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toBe(ChallengeStatus.CANCELLED);
+    });
+  });
+
   describe('findPartnerSuggestions', () => {
     it('excludes current user, respects range/sameCategory, and uses Spanish reason strings', async () => {
       const me = fakeProfile({

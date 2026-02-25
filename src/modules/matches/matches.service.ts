@@ -129,6 +129,51 @@ export class MatchesService {
     };
   }
 
+  private getParticipantIds(ch: Challenge | null | undefined): string[] {
+    if (!ch) return [];
+    return [
+      ch.teamA1Id,
+      ch.teamA2Id,
+      ch.teamB1Id,
+      ch.teamB2Id,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+  }
+
+  private buildMatchActionFlags(
+    match: MatchResult,
+    challenge: Challenge | null,
+    userId?: string,
+  ) {
+    const participants = userId ? this.getParticipantIds(challenge) : [];
+    const isParticipant = Boolean(userId && participants.includes(userId));
+    const isReporter = Boolean(userId && match.reportedByUserId === userId);
+    const canConfirm =
+      Boolean(userId) &&
+      match.status === MatchResultStatus.PENDING_CONFIRM &&
+      isParticipant &&
+      !isReporter;
+
+    let canDispute = false;
+    if (
+      userId &&
+      isParticipant &&
+      match.status === MatchResultStatus.CONFIRMED &&
+      match.updatedAt instanceof Date
+    ) {
+      const hoursElapsed =
+        (Date.now() - match.updatedAt.getTime()) / (1000 * 60 * 60);
+      canDispute = hoursElapsed <= this.disputeWindowHours;
+    }
+
+    return {
+      canConfirm,
+      canDispute,
+      isReporter,
+      awaitingMyConfirmation: canConfirm,
+      leagueId: match.leagueId ?? null,
+    };
+  }
+
   private validateSets(sets: Array<{ a: number; b: number }>) {
     if (!Array.isArray(sets) || sets.length < 2 || sets.length > 3) {
       throw new BadRequestException('Sets must be 2 or 3');
@@ -1203,71 +1248,77 @@ export class MatchesService {
       ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
       : null;
 
-    // Step 3: bulk-resolve display names (single query)
-    const allUserIds = new Set<string>();
-    for (const m of items) {
-      const ch = challengeMap.get(m.challengeId ?? '');
-      if (ch) {
-        [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id].forEach(
-          (id) => id && allUserIds.add(id),
-        );
-      }
-      if (m.reportedByUserId) allUserIds.add(m.reportedByUserId);
-    }
-
-    const userIdArray = [...allUserIds];
-    const users =
-      userIdArray.length > 0
-        ? await this.userRepo.find({
-            where: { id: In(userIdArray) },
-            select: ['id', 'displayName', 'email'],
-          })
-        : [];
-
-    const userMap = new Map<string, string | null>();
-    for (const u of users) {
-      userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
-    }
-
-    const resolvePlayer = (id: string | null | undefined): PlayerRef => ({
-      userId: id ?? null,
-      displayName: id ? (userMap.get(id) ?? null) : null,
-    });
-
-    // Step 4: shape response
-    const result: PendingConfirmationView[] = items.map((m) => {
-      const ch = challengeMap.get(m.challengeId ?? '');
-      const sets: Array<{ a: number; b: number }> = [];
-      if (m.teamASet1 != null && m.teamBSet1 != null)
-        sets.push({ a: m.teamASet1, b: m.teamBSet1 });
-      if (m.teamASet2 != null && m.teamBSet2 != null)
-        sets.push({ a: m.teamASet2, b: m.teamBSet2 });
-      if (m.teamASet3 != null && m.teamBSet3 != null)
-        sets.push({ a: m.teamASet3, b: m.teamBSet3 });
-
-      return {
-        matchId: m.id,
-        challengeId: m.challengeId ?? null,
-        leagueId: m.leagueId ?? null,
-        status: m.status,
-        playedAt: m.playedAt ? m.playedAt.toISOString() : null,
-        score: { sets },
-        winnerTeam: m.winnerTeam ?? null,
-        teamA: {
-          player1: resolvePlayer(ch?.teamA1Id),
-          player2: ch?.teamA2Id ? resolvePlayer(ch.teamA2Id) : null,
-        },
-        teamB: {
-          player1: resolvePlayer(ch?.teamB1Id),
-          player2: ch?.teamB2Id ? resolvePlayer(ch.teamB2Id) : null,
-        },
-        reportedBy: resolvePlayer(m.reportedByUserId),
-        canConfirm: true,
-      };
-    });
+    const result = await this.toPendingConfirmationViews(items, challengeMap);
 
     this.logger.debug(
       `getPendingConfirmations: userId=${userId} candidateChallenges=${challengeIds.length} matchesFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
+    );
+
+    return { items: result, nextCursor };
+  }
+
+  async getLeaguePendingConfirmations(
+    userId: string,
+    leagueId: string,
+    opts: { cursor?: string; limit?: number },
+  ): Promise<{ items: PendingConfirmationView[]; nextCursor: string | null }> {
+    const startMs = Date.now();
+    const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+
+    const member = await this.dataSource.getRepository(LeagueMember).findOne({
+      where: { leagueId, userId },
+      select: ['id', 'leagueId', 'userId'],
+    });
+    if (!member) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      });
+    }
+
+    const qb = this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
+      .where('m."leagueId" = :leagueId', { leagueId })
+      .andWhere('m.status = :status', { status: MatchResultStatus.PENDING_CONFIRM })
+      .andWhere('m."reportedByUserId" != :userId', { userId })
+      .andWhere(
+        '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
+        { userId },
+      )
+      .orderBy('m."playedAt"', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(limit + 1);
+
+    if (opts.cursor) {
+      const parts = opts.cursor.split('|');
+      qb.andWhere('(m."playedAt", m.id) < (:cursorDate, :cursorId)', {
+        cursorDate: new Date(parts[0]),
+        cursorId: parts[1],
+      });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor = hasMore
+      ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
+      : null;
+
+    const challengeIds = [...new Set(items.map((m) => m.challengeId).filter(Boolean))];
+    const challenges =
+      challengeIds.length > 0
+        ? await this.challengeRepo.find({
+            where: { id: In(challengeIds as string[]) } as any,
+          })
+        : [];
+    const challengeMap = new Map(challenges.map((ch) => [ch.id, ch]));
+
+    const result = await this.toPendingConfirmationViews(items, challengeMap);
+
+    this.logger.debug(
+      `getLeaguePendingConfirmations: userId=${userId} leagueId=${leagueId} matchesFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
     );
 
     return { items: result, nextCursor };
@@ -1352,6 +1403,100 @@ export class MatchesService {
       );
 
       return repo.findOne({ where: { id: match.id } });
+    });
+  }
+
+  async adminConfirmMatch(userId: string, matchId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const matchRepo = manager.getRepository(MatchResult);
+      const chRepo = manager.getRepository(Challenge);
+      const memberRepo = manager.getRepository(LeagueMember);
+      const auditRepo = manager.getRepository(MatchAuditLog);
+
+      const match = await matchRepo
+        .createQueryBuilder('m')
+        .setLock('pessimistic_write')
+        .where('m.id = :id', { id: matchId })
+        .getOne();
+
+      if (!match) throw new NotFoundException('Match result not found');
+
+      if (!match.leagueId) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_NOT_LEAGUE',
+          message: 'This match is not associated with a league',
+        });
+      }
+
+      if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_INVALID_STATE',
+          message: 'Only pending-confirm matches can be admin confirmed',
+        });
+      }
+
+      const leagueAdmin = await memberRepo.findOne({
+        where: { leagueId: match.leagueId, userId },
+      });
+      if (
+        !leagueAdmin ||
+        ![LeagueRole.OWNER, LeagueRole.ADMIN].includes(leagueAdmin.role)
+      ) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'Only league OWNER or ADMIN can admin confirm matches',
+        });
+      }
+
+      if (match.reportedByUserId === userId) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'MATCH_ADMIN_CONFIRM_REPORTER_FORBIDDEN',
+          message: 'Reporter cannot admin confirm their own result',
+        });
+      }
+
+      const challenge = await chRepo.findOne({
+        where: { id: match.challengeId as any },
+      });
+      if (!challenge) throw new NotFoundException('Challenge not found');
+      const participants = this.getParticipantsOrThrow(challenge);
+
+      match.status = MatchResultStatus.CONFIRMED;
+      match.confirmedByUserId = userId;
+      match.rejectionReason = null;
+      await matchRepo.save(match);
+
+      await this.eloService.applyForMatchTx(manager, match.id);
+      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+
+      await auditRepo.save(
+        auditRepo.create({
+          matchId: match.id,
+          actorUserId: userId,
+          action: MatchAuditAction.ADMIN_CONFIRM,
+          payload: { reason: 'ADMIN_CONFIRM' },
+        }),
+      );
+
+      this.notifyMatchConfirmed(match, participants.all, userId).catch((err) =>
+        this.logger.error(
+          `failed to send match-confirmed notifications: ${err.message}`,
+        ),
+      );
+
+      this.logLeagueActivity(
+        match.leagueId,
+        LeagueActivityType.MATCH_CONFIRMED,
+        userId,
+        match.id,
+        { participantIds: participants.all },
+      );
+
+      return matchRepo.findOne({ where: { id: match.id } });
     });
   }
 
@@ -1782,6 +1927,72 @@ export class MatchesService {
     });
   }
 
+  private async toPendingConfirmationViews(
+    items: MatchResult[],
+    challengeMap: Map<string, Challenge>,
+  ): Promise<PendingConfirmationView[]> {
+    const allUserIds = new Set<string>();
+    for (const m of items) {
+      const ch = challengeMap.get(m.challengeId ?? '');
+      if (ch) {
+        [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id].forEach(
+          (id) => id && allUserIds.add(id),
+        );
+      }
+      if (m.reportedByUserId) allUserIds.add(m.reportedByUserId);
+    }
+
+    const userIdArray = [...allUserIds];
+    const users =
+      userIdArray.length > 0
+        ? await this.userRepo.find({
+            where: { id: In(userIdArray) },
+            select: ['id', 'displayName', 'email'],
+          })
+        : [];
+
+    const userMap = new Map<string, string | null>();
+    for (const u of users) {
+      userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+    }
+
+    const resolvePlayer = (id: string | null | undefined): PlayerRef => ({
+      userId: id ?? null,
+      displayName: id ? (userMap.get(id) ?? null) : null,
+    });
+
+    return items.map((m) => {
+      const ch = challengeMap.get(m.challengeId ?? '');
+      const sets: Array<{ a: number; b: number }> = [];
+      if (m.teamASet1 != null && m.teamBSet1 != null)
+        sets.push({ a: m.teamASet1, b: m.teamBSet1 });
+      if (m.teamASet2 != null && m.teamBSet2 != null)
+        sets.push({ a: m.teamASet2, b: m.teamBSet2 });
+      if (m.teamASet3 != null && m.teamBSet3 != null)
+        sets.push({ a: m.teamASet3, b: m.teamBSet3 });
+
+      return {
+        matchId: m.id,
+        challengeId: m.challengeId ?? null,
+        leagueId: m.leagueId ?? null,
+        status: m.status,
+        playedAt: m.playedAt ? m.playedAt.toISOString() : null,
+        score: { sets },
+        winnerTeam: m.winnerTeam ?? null,
+        teamA: {
+          player1: resolvePlayer(ch?.teamA1Id),
+          player2: ch?.teamA2Id ? resolvePlayer(ch.teamA2Id) : null,
+        },
+        teamB: {
+          player1: resolvePlayer(ch?.teamB1Id),
+          player2: ch?.teamB2Id ? resolvePlayer(ch.teamB2Id) : null,
+        },
+        reportedBy: resolvePlayer(m.reportedByUserId),
+        canConfirm: true as const,
+      };
+    });
+  }
+
   // ------------------------
   // notification helpers
   // ------------------------
@@ -1904,13 +2115,16 @@ export class MatchesService {
   // queries
   // ------------------------
 
-  async getById(id: string) {
+  async getById(id: string, userId?: string) {
     const m = await this.matchRepo.findOne({
       where: { id },
       relations: ['challenge'],
     });
     if (!m) throw new NotFoundException('Match result not found');
-    return m;
+    return {
+      ...m,
+      ...this.buildMatchActionFlags(m, m.challenge ?? null, userId),
+    };
   }
 
   async getByChallenge(challengeId: string) {

@@ -7,6 +7,7 @@ import {
   Patch,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,7 +22,9 @@ import {
   SubmitLeagueMatchResultDto,
 } from './dto/submit-league-match-result.dto';
 import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
-import { ApiBody } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse } from '@nestjs/swagger';
+import { PendingConfirmationsResponseDto } from './dto/pending-confirmation.dto';
+import { PendingConfirmationsQueryDto } from './dto/pending-confirmations-query.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -39,6 +42,22 @@ export class LeagueMatchesController {
   ) {
     const user = req.user as AuthUser;
     return this.matchesService.listLeagueMatches(user.userId, leagueId);
+  }
+
+  @Get(':leagueId/pending-confirmations')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: PendingConfirmationsResponseDto })
+  getLeaguePendingConfirmations(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Query() query: PendingConfirmationsQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.matchesService.getLeaguePendingConfirmations(user.userId, leagueId, {
+      cursor: query.cursor,
+      limit: query.limit,
+    });
   }
 
   @Post(':leagueId/matches')

@@ -69,9 +69,13 @@ describe('Leagues (e2e)', () => {
     id: LEAGUE_ID,
     name: 'Summer League',
     mode: 'scheduled',
+    isPermanent: false,
+    dateRangeEnabled: true,
     creatorId: FAKE_CREATOR.userId,
     startDate: '2025-06-01',
     endDate: '2025-06-30',
+    avatarUrl: null,
+    avatarMediaAssetId: null,
     status: 'upcoming',
     createdAt: '2025-01-01T12:00:00.000Z',
     members: [
@@ -99,6 +103,8 @@ describe('Leagues (e2e)', () => {
       declineInvite: jest.fn(),
       enableShare: jest.fn(),
       disableShare: jest.fn(),
+      updateLeagueProfile: jest.fn(),
+      setLeagueAvatar: jest.fn(),
       getPublicStandingsByShareToken: jest.fn(),
       getPublicStandingsOgByShareToken: jest.fn(),
     };
@@ -214,6 +220,30 @@ describe('Leagues (e2e)', () => {
       expect(res.body.endDate).toBeNull();
     });
 
+    it('should accept permanent scheduled league payload without dates', async () => {
+      leaguesService.createLeague.mockResolvedValue({
+        ...leagueView,
+        mode: 'scheduled',
+        isPermanent: true,
+        dateRangeEnabled: false,
+        startDate: null,
+        endDate: null,
+        status: 'active',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/leagues')
+        .send({ name: 'Liga Permanente', mode: 'scheduled', isPermanent: true })
+        .expect(201);
+
+      expect(res.body.isPermanent).toBe(true);
+      expect(res.body.dateRangeEnabled).toBe(false);
+      expect(leaguesService.createLeague).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        expect.objectContaining({ isPermanent: true }),
+      );
+    });
+
     it('should create SCHEDULED league with dates fails 400 when dates missing', async () => {
       leaguesService.createLeague.mockRejectedValue(
         new BadRequestException({
@@ -246,6 +276,8 @@ describe('Leagues (e2e)', () => {
       leaguesService.enableShare.mockResolvedValue({
         shareToken: 'share-token-abc',
         shareUrlPath: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareUrl: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareText: `Sumate a mi liga en PadelPoint: /public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
       });
 
       const res = await request(app.getHttpServer())
@@ -256,6 +288,8 @@ describe('Leagues (e2e)', () => {
       expect(res.body.shareUrlPath).toContain(
         `/public/leagues/${LEAGUE_ID}/standings`,
       );
+      expect(res.body.shareUrl).toBe(res.body.shareUrlPath);
+      expect(res.body.shareText).toContain('PadelPoint');
       expect(leaguesService.enableShare).toHaveBeenCalledWith(
         FAKE_CREATOR.userId,
         LEAGUE_ID,
@@ -336,6 +370,49 @@ describe('Leagues (e2e)', () => {
         .expect(403);
 
       expect(res.body.code).toBe('LEAGUE_SHARE_INVALID_TOKEN');
+    });
+  });
+
+  describe('PATCH /leagues/:id and /leagues/:id/avatar', () => {
+    it('should update league profile (name + avatar)', async () => {
+      leaguesService.updateLeagueProfile.mockResolvedValue({
+        ...leagueView,
+        name: 'Renamed League',
+        avatarUrl: 'https://cdn.test/league.png',
+        avatarMediaAssetId: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/leagues/${LEAGUE_ID}`)
+        .send({
+          name: 'Renamed League',
+          avatarUrl: 'https://cdn.test/league.png',
+        })
+        .expect(200);
+
+      expect(res.body.name).toBe('Renamed League');
+      expect(res.body.avatarUrl).toBe('https://cdn.test/league.png');
+      expect(leaguesService.updateLeagueProfile).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        LEAGUE_ID,
+        expect.objectContaining({ name: 'Renamed League' }),
+      );
+    });
+
+    it('should update avatar via dedicated endpoint', async () => {
+      leaguesService.setLeagueAvatar.mockResolvedValue({
+        ...leagueView,
+        avatarUrl: 'https://cdn.test/league.png',
+        avatarMediaAssetId: 'media-1',
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/leagues/${LEAGUE_ID}/avatar`)
+        .send({ mediaAssetId: '11111111-1111-4111-8111-111111111111' })
+        .expect(200);
+
+      expect(res.body.avatarMediaAssetId).toBe('media-1');
+      expect(leaguesService.setLeagueAvatar).toHaveBeenCalled();
     });
   });
 

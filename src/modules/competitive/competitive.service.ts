@@ -177,6 +177,8 @@ type RivalSuggestionScoredItem = RivalSuggestionItem & {
   _score: number;
 };
 
+type CompetitiveChallengesView = 'inbox' | 'past';
+
 type ReasonBuilderInput = {
   myCategory: number;
   candidateCategory: number;
@@ -504,6 +506,51 @@ export class CompetitiveService {
     return this.findSuggestionsCore(userId, params, (input) =>
       this.buildPartnerReasons(input),
     );
+  }
+
+  async listChallenges(
+    userId: string,
+    params: { view?: CompetitiveChallengesView } = {},
+  ) {
+    const view: CompetitiveChallengesView = params.view ?? 'inbox';
+    const rows = await this.challengeRepo.find({
+      where: [
+        { teamA1Id: userId } as any,
+        { teamA2Id: userId } as any,
+        { teamB1Id: userId } as any,
+        { teamB2Id: userId } as any,
+        { invitedOpponentId: userId } as any,
+      ],
+      relations: ['teamA1', 'teamA2', 'teamB1', 'teamB2', 'invitedOpponent'],
+      order: { updatedAt: 'DESC', id: 'DESC' },
+      take: 100,
+    });
+
+    if (rows.length === 0) return [];
+
+    const challengeIds = rows.map((row) => row.id);
+    const linkedMatches = await this.matchRepo.find({
+      where: { challengeId: In(challengeIds) } as any,
+      order: { updatedAt: 'DESC', id: 'DESC' } as any,
+    });
+    const matchByChallengeId = new Map<string, MatchResult>();
+    for (const m of linkedMatches) {
+      if (!matchByChallengeId.has(m.challengeId)) {
+        matchByChallengeId.set(m.challengeId, m);
+      }
+    }
+
+    return rows
+      .filter((challenge) =>
+        this.challengeMatchesView(view, challenge, matchByChallengeId.get(challenge.id)),
+      )
+      .map((challenge) =>
+        this.toCompetitiveChallengeListItem(
+          userId,
+          challenge,
+          matchByChallengeId.get(challenge.id) ?? null,
+        ),
+      );
   }
 
   private async findSuggestionsCore(
@@ -1055,6 +1102,61 @@ export class CompetitiveService {
     }
 
     return favoriteUserIds;
+  }
+
+  private challengeMatchesView(
+    view: CompetitiveChallengesView,
+    challenge: Challenge,
+    match: MatchResult | undefined,
+  ): boolean {
+    const challengePast =
+      challenge.status === ChallengeStatus.REJECTED ||
+      challenge.status === ChallengeStatus.CANCELLED;
+    const matchCompleted =
+      match?.status === MatchResultStatus.CONFIRMED ||
+      match?.status === MatchResultStatus.RESOLVED;
+
+    if (view === 'past') {
+      return challengePast || matchCompleted;
+    }
+
+    return !challengePast && !matchCompleted;
+  }
+
+  private toCompetitiveChallengeListItem(
+    viewerUserId: string,
+    challenge: Challenge,
+    match: MatchResult | null,
+  ) {
+    const counterpart =
+      challenge.teamA1Id === viewerUserId
+        ? challenge.teamB1 ?? challenge.invitedOpponent ?? null
+        : challenge.teamA1 ?? null;
+
+    return {
+      id: challenge.id,
+      type: challenge.type,
+      status: challenge.status,
+      reservationId: challenge.reservationId,
+      targetCategory: challenge.targetCategory,
+      createdAt: challenge.createdAt,
+      updatedAt: challenge.updatedAt,
+      counterpart: counterpart
+        ? {
+            userId: counterpart.id,
+            displayName: counterpart.displayName ?? null,
+            avatarUrl: null,
+          }
+        : null,
+      match: match
+        ? {
+            id: match.id,
+            status: match.status,
+            leagueId: match.leagueId ?? null,
+            playedAt: match.playedAt ? match.playedAt.toISOString() : null,
+          }
+        : null,
+    };
   }
 
   private normalizeLocationFilter(input: {

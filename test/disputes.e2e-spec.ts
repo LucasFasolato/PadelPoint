@@ -60,6 +60,7 @@ describe('Disputes (e2e)', () => {
     matchesService = {
       reportMatch: jest.fn(),
       confirmMatch: jest.fn(),
+      adminConfirmMatch: jest.fn(),
       rejectMatch: jest.fn(),
       getById: jest.fn(),
       getByChallenge: jest.fn(),
@@ -266,6 +267,43 @@ describe('Disputes (e2e)', () => {
           note: 'Match was not played',
         }),
       );
+    });
+  });
+
+  describe('PATCH /matches/:id/admin-confirm', () => {
+    it('should allow league admin/owner flow when service approves', async () => {
+      matchesService.adminConfirmMatch.mockResolvedValue({
+        id: 'match-1',
+        status: MatchResultStatus.CONFIRMED,
+        confirmedByUserId: FAKE_ADMIN.userId,
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch('/matches/match-1/admin-confirm')
+        .set('x-test-user', 'admin')
+        .expect(200);
+
+      expect(res.body.status).toBe('confirmed');
+      expect(matchesService.adminConfirmMatch).toHaveBeenCalledWith(
+        FAKE_ADMIN.userId,
+        'match-1',
+      );
+    });
+
+    it('should propagate LEAGUE_FORBIDDEN', async () => {
+      matchesService.adminConfirmMatch.mockRejectedValue(
+        new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'Only league OWNER or ADMIN can admin confirm matches',
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .patch('/matches/match-1/admin-confirm')
+        .expect(403);
+
+      expect(res.body.code).toBe('LEAGUE_FORBIDDEN');
     });
   });
 });

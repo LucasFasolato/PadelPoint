@@ -17,6 +17,7 @@ import { LeagueRole } from './league-role.enum';
 import { DEFAULT_LEAGUE_SETTINGS } from './league-settings.type';
 import { InviteStatus } from './invite-status.enum';
 import { User } from '../users/user.entity';
+import { MediaAsset } from '../media/media-asset.entity';
 import { UserNotificationsService } from '../../notifications/user-notifications.service';
 import { UserNotificationType } from '../../notifications/user-notification-type.enum';
 import { LeagueStandingsService } from './league-standings.service';
@@ -38,6 +39,9 @@ function fakeLeague(overrides: Partial<League> = {}): League {
     status: LeagueStatus.DRAFT,
     settings: DEFAULT_LEAGUE_SETTINGS,
     shareToken: null,
+    isPermanent: false,
+    avatarMediaAssetId: null,
+    avatarUrl: null,
     createdAt: new Date('2025-01-01T12:00:00Z'),
     updatedAt: new Date('2025-01-01T12:00:00Z'),
     members: [],
@@ -86,6 +90,7 @@ describe('LeaguesService', () => {
   let memberRepo: MockRepo<LeagueMember>;
   let inviteRepo: MockRepo<LeagueInvite>;
   let userRepo: MockRepo<User>;
+  let mediaAssetRepo: MockRepo<MediaAsset>;
   let userNotifications: {
     create: jest.Mock;
     markInviteNotificationReadByInviteId: jest.Mock;
@@ -109,6 +114,7 @@ describe('LeaguesService', () => {
     memberRepo = createMockRepo<LeagueMember>();
     inviteRepo = createMockRepo<LeagueInvite>();
     userRepo = createMockRepo<User>();
+    mediaAssetRepo = createMockRepo<MediaAsset>();
     userNotifications = {
       create: jest.fn().mockResolvedValue({}),
       markInviteNotificationReadByInviteId: jest
@@ -210,6 +216,7 @@ describe('LeaguesService', () => {
         { provide: getRepositoryToken(LeagueMember), useValue: memberRepo },
         { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getRepositoryToken(MediaAsset), useValue: mediaAssetRepo },
         { provide: UserNotificationsService, useValue: userNotifications },
         { provide: DataSource, useValue: dataSource },
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
@@ -286,11 +293,12 @@ describe('LeaguesService', () => {
       expect(result.mode).toBe(LeagueMode.OPEN);
     });
 
-    it('should reject SCHEDULED league without dates', async () => {
+    it('should reject SCHEDULED league without dates when dateRangeEnabled=true', async () => {
       await expect(
         service.createLeague(FAKE_USER_ID, {
           name: 'Bad League',
           mode: LeagueMode.SCHEDULED,
+          dateRangeEnabled: true,
         }),
       ).rejects.toThrow(BadRequestException);
 
@@ -298,6 +306,7 @@ describe('LeaguesService', () => {
         await service.createLeague(FAKE_USER_ID, {
           name: 'Bad League',
           mode: LeagueMode.SCHEDULED,
+          dateRangeEnabled: true,
         });
       } catch (e: any) {
         expect(e.response.code).toBe('LEAGUE_DATES_REQUIRED');
@@ -322,6 +331,47 @@ describe('LeaguesService', () => {
       expect(leagueRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ mode: LeagueMode.SCHEDULED }),
       );
+    });
+
+    it('should create permanent SCHEDULED league without dates when isPermanent=true', async () => {
+      const saved = fakeLeague({
+        mode: LeagueMode.SCHEDULED,
+        startDate: null,
+        endDate: null,
+        isPermanent: true,
+        status: LeagueStatus.ACTIVE,
+      });
+      leagueRepo.create.mockReturnValue(saved);
+      leagueRepo.save.mockResolvedValue(saved);
+      memberRepo.create.mockReturnValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.save.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+
+      const result = await service.createLeague(FAKE_USER_ID, {
+        name: 'Always On',
+        mode: LeagueMode.SCHEDULED,
+        isPermanent: true,
+      });
+
+      expect(leagueRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: LeagueMode.SCHEDULED,
+          isPermanent: true,
+          startDate: null,
+          endDate: null,
+        }),
+      );
+      expect(result.isPermanent).toBe(true);
+      expect(result.dateRangeEnabled).toBe(false);
+    });
+
+    it('should require dates when dateRangeEnabled=true', async () => {
+      await expect(
+        service.createLeague(FAKE_USER_ID, {
+          name: 'Scheduled',
+          mode: LeagueMode.SCHEDULED,
+          dateRangeEnabled: true,
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -381,6 +431,8 @@ describe('LeaguesService', () => {
       expect(result.shareToken).toEqual(expect.any(String));
       expect(result.shareToken.length).toBeGreaterThanOrEqual(40);
       expect(result.shareUrlPath).toContain(`/public/leagues/${league.id}/standings?token=`);
+      expect(result.shareUrl).toBe(result.shareUrlPath);
+      expect(result.shareText).toContain('PadelPoint');
     });
 
     it('enableShare should return the existing token when already enabled', async () => {
@@ -412,6 +464,53 @@ describe('LeaguesService', () => {
       expect(leagueRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: league.id, shareToken: null }),
       );
+    });
+  });
+
+  describe('updateLeagueProfile / setLeagueAvatar', () => {
+    it('should forbid avatar update for non-admin/non-owner member', async () => {
+      const league = fakeLeague();
+      leagueRepo.findOne.mockResolvedValue(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+
+      await expect(
+        service.setLeagueAvatar(FAKE_USER_ID, league.id, {
+          url: 'https://example.com/avatar.png',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('should allow admin to update name and avatar via mediaAssetId', async () => {
+      const league = fakeLeague();
+      const members = [fakeMember({ role: LeagueRole.ADMIN })];
+      leagueRepo.findOne
+        .mockResolvedValueOnce(league)
+        .mockResolvedValueOnce(league)
+        .mockResolvedValueOnce(league);
+      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      memberRepo.find.mockResolvedValue(members);
+      mediaAssetRepo.findOne.mockResolvedValue({
+        id: 'media-1',
+        url: 'http://cdn.test/league.png',
+        secureUrl: 'https://cdn.test/league.png',
+        active: true,
+      } as MediaAsset);
+      leagueRepo.save.mockImplementation(async (value: any) => value);
+
+      const result = await service.updateLeagueProfile(FAKE_USER_ID, league.id, {
+        name: 'Renamed League',
+        mediaAssetId: 'media-1',
+      });
+
+      expect(leagueRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Renamed League',
+          avatarMediaAssetId: 'media-1',
+          avatarUrl: 'https://cdn.test/league.png',
+        }),
+      );
+      expect(result.name).toBe('Renamed League');
+      expect(result.avatarMediaAssetId).toBe('media-1');
     });
   });
 
