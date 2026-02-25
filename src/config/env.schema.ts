@@ -36,6 +36,7 @@ export const envSchema = z.object({
 
   // Email (Resend)
   RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().optional(),
   EMAIL_FROM: z.string().default('PadelPoint <noreply@padelpoint.app>'),
   APP_URL: z.string().default('http://localhost:3000'),
   APP_PUBLIC_URL: z.string().url().optional(),

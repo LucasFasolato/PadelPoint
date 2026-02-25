@@ -18,6 +18,11 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { AuthGoogleController } from './controllers/auth-google.controller';
 import { AppleStrategy } from './strategies/apple.strategy';
 import { AuthAppleController } from './controllers/auth-apple.controller';
+import { PasswordResetService } from './services/password-reset.service';
+import { ResendEmailSender } from './email/resend-email-sender';
+import { EMAIL_SENDER } from './email/email-sender';
+import { PasswordResetRateLimiter } from './guards/password-reset-rate-limiter';
+import { AuthPasswordController } from './controllers/auth-password.controller';
 
 @Module({
   imports: [
@@ -39,7 +44,17 @@ import { AuthAppleController } from './controllers/auth-apple.controller';
       },
     }),
   ],
-  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController, AuthAppleController],
-  providers: [AuthService, RefreshTokenService, OAuthService, JwtStrategy, GoogleStrategy, AppleStrategy],
+  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController, AuthAppleController, AuthPasswordController],
+  providers: [
+    AuthService,
+    RefreshTokenService,
+    OAuthService,
+    JwtStrategy,
+    GoogleStrategy,
+    AppleStrategy,
+    PasswordResetService,
+    PasswordResetRateLimiter,
+    { provide: EMAIL_SENDER, useClass: ResendEmailSender },
+  ],
 })
 export class AuthModule {}
