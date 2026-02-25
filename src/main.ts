@@ -1,10 +1,12 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { setupOpenApi } from '@/openapi/openapi';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
   app.enableCors({
     origin: true, // This allows all origins (easiest for dev)
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

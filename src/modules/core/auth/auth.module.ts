@@ -12,6 +12,7 @@ import { AuthAdminBootstrapController } from './controllers/auth-admin-bootstrap
 import { AuthIdentity } from './entities/auth-identity.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
+import { RefreshTokenService } from './services/refresh-token.service';
 
 @Module({
   imports: [
@@ -28,12 +29,12 @@ import { PasswordResetToken } from './entities/password-reset-token.entity';
 
         return {
           secret,
-          signOptions: { expiresIn: '7d' }, // keep literal for TS
+          signOptions: { expiresIn: '15m' }, // keep literal for TS
         };
       },
     }),
   ],
   controllers: [AuthController, AuthAdminBootstrapController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, RefreshTokenService, JwtStrategy],
 })
 export class AuthModule {}

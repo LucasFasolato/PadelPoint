@@ -45,6 +45,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "cloudinary": "^2.9.0",
+    "cookie-parser": "^1.4.7",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "https-proxy-agent": "^7.0.6",
@@ -66,6 +67,7 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
@@ -99,7 +101,13 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/$1"
+      "^@/(.*)$": "<rootDir>/$1",
+      "^@core/(.*)$": "<rootDir>/modules/core/$1",
+      "^@legacy/(.*)$": "<rootDir>/modules/legacy/$1",
+      "^@modules/(.*)$": "<rootDir>/modules/$1",
+      "^@common/(.*)$": "<rootDir>/common/$1",
+      "^@config/(.*)$": "<rootDir>/config/$1",
+      "^@db/(.*)$": "<rootDir>/database/$1"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

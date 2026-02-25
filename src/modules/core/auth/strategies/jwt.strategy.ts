@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { UsersService } from '../../users/services/users.service';
 
 type JwtPayload = { sub: string; email: string; role: string };
@@ -16,8 +17,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!secret) throw new Error('JWT_SECRET is missing/empty');
 
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (req: Request) => (req?.cookies as Record<string, string>)?.['pp_at'] ?? null,
+      ]),
       secretOrKey: secret,
+      ignoreExpiration: false,
     });
   }
 
