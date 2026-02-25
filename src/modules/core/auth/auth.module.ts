@@ -13,6 +13,9 @@ import { AuthIdentity } from './entities/auth-identity.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { RefreshTokenService } from './services/refresh-token.service';
+import { OAuthService } from './services/oauth.service';
+import { GoogleStrategy } from './strategies/google.strategy';
+import { AuthGoogleController } from './controllers/auth-google.controller';
 
 @Module({
   imports: [
@@ -34,7 +37,7 @@ import { RefreshTokenService } from './services/refresh-token.service';
       },
     }),
   ],
-  controllers: [AuthController, AuthAdminBootstrapController],
-  providers: [AuthService, RefreshTokenService, JwtStrategy],
+  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController],
+  providers: [AuthService, RefreshTokenService, OAuthService, JwtStrategy, GoogleStrategy],
 })
 export class AuthModule {}

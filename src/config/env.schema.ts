@@ -50,6 +50,24 @@ export const envSchema = z.object({
   DISPUTE_WINDOW_HOURS: z
     .preprocess((val) => Number(val), z.number())
     .default(48),
+
+  // Application environment (for multi-env routing)
+  APP_ENV: z.enum(['staging', 'production']).default('staging'),
+
+  // Frontend URLs
+  FRONT_STAGING_URL: z
+    .string()
+    .url()
+    .default('https://staging-padel-point-front.vercel.app'),
+  FRONT_PROD_URL: z
+    .string()
+    .url()
+    .default('https://padel-point-front.vercel.app'),
+
+  // Google OAuth (optional — routes gracefully fail if unset)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALLBACK_URL: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
