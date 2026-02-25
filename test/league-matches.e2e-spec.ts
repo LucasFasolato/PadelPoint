@@ -8,10 +8,10 @@ import {
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
-import { LeagueMatchesController } from '../src/modules/matches/league-matches.controller';
-import { MatchesService } from '../src/modules/matches/matches.service';
-import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { MatchResultStatus } from '../src/modules/matches/match-result.entity';
+import { LeagueMatchesController } from '@core/matches/league-matches.controller';
+import { MatchesService } from '@core/matches/matches.service';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { MatchResultStatus } from '@core/matches/match-result.entity';
 
 const FAKE_MEMBER = {
   userId: 'a1111111-1111-4111-a111-111111111111',

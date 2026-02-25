@@ -4,23 +4,23 @@ import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 
-import { ClubsModule } from './modules/clubs/clubs.module';
-import { CourtsModule } from './modules/courts/courts.module';
-import { AvailabilityModule } from './modules/availability/availability.module';
-import { ReservationsModule } from './modules/reservations/reservations.module';
-import { AgendaModule } from './modules/agenda/agenda.module';
-import { ReportsModule } from './modules/reports/reports.module';
-import { UsersModule } from './modules/users/users.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { CompetitiveModule } from './modules/competitive/competitive.module';
-import { ChallengesModule } from './modules/challenges/challenges.module';
-import { MatchesModule } from './modules/matches/matches.module';
-import { PaymentsModule } from './modules/payments/payments.module';
-import { ClubMembersModule } from './modules/club-members/club-members.module';
-import { MediaModule } from './modules/media/media.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
-import { LeaguesModule } from './modules/leagues/leagues.module';
-import { PlayersModule } from './modules/players/players.module';
+import { ClubsModule } from './modules/legacy/clubs/clubs.module';
+import { CourtsModule } from './modules/legacy/courts/courts.module';
+import { AvailabilityModule } from './modules/legacy/availability/availability.module';
+import { ReservationsModule } from './modules/legacy/reservations/reservations.module';
+import { AgendaModule } from './modules/legacy/agenda/agenda.module';
+import { ReportsModule } from './modules/legacy/reports/reports.module';
+import { UsersModule } from './modules/core/users/users.module';
+import { AuthModule } from './modules/core/auth/auth.module';
+import { CompetitiveModule } from './modules/core/competitive/competitive.module';
+import { ChallengesModule } from './modules/core/challenges/challenges.module';
+import { MatchesModule } from './modules/core/matches/matches.module';
+import { PaymentsModule } from './modules/legacy/payments/payments.module';
+import { ClubMembersModule } from './modules/legacy/club-members/club-members.module';
+import { MediaModule } from './modules/core/media/media.module';
+import { NotificationsModule } from './modules/core/notifications/notifications.module';
+import { LeaguesModule } from './modules/core/leagues/leagues.module';
+import { PlayersModule } from './modules/core/players/players.module';
 
 @Module({
   imports: [

@@ -22,6 +22,8 @@
     "paths": {
       "@/*": ["src/*"],
       "@modules/*": ["src/modules/*"],
+      "@core/*": ["src/modules/core/*"],
+      "@legacy/*": ["src/modules/legacy/*"],
       "@common/*": ["src/common/*"],
       "@config/*": ["src/config/*"],
       "@db/*": ["src/database/*"]

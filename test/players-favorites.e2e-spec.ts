@@ -2,10 +2,10 @@ import { BadRequestException, INestApplication, ValidationPipe } from '@nestjs/c
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { RolesGuard } from '../src/modules/auth/roles.guard';
-import { PlayersFavoritesController } from '../src/modules/players/players-favorites.controller';
-import { PlayersService } from '../src/modules/players/players.service';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { RolesGuard } from '@core/auth/roles.guard';
+import { PlayersFavoritesController } from '@core/players/players-favorites.controller';
+import { PlayersService } from '@core/players/players.service';
 
 const FAKE_PLAYER = {
   userId: '11111111-1111-4111-8111-111111111111',

@@ -2,11 +2,11 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { ChallengesController } from '../src/modules/challenges/challenges.controller';
-import { ChallengesService } from '../src/modules/challenges/challenges.service';
-import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { ChallengeStatus } from '../src/modules/challenges/challenge-status.enum';
-import { ChallengeType } from '../src/modules/challenges/challenge-type.enum';
+import { ChallengesController } from '@core/challenges/challenges.controller';
+import { ChallengesService } from '@core/challenges/challenges.service';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { ChallengeStatus } from '@core/challenges/challenge-status.enum';
+import { ChallengeType } from '@core/challenges/challenge-type.enum';
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',

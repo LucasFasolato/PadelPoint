@@ -9,15 +9,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
-import { LeaguesController } from '../src/modules/leagues/leagues.controller';
-import { PublicLeaguesController } from '../src/modules/leagues/public-leagues.controller';
-import { LeaguesService } from '../src/modules/leagues/leagues.service';
-import { LeagueStandingsService } from '../src/modules/leagues/league-standings.service';
-import { LeagueActivityService } from '../src/modules/leagues/league-activity.service';
-import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { UserNotificationsController } from '@modules/notifications/user-notifications.controller';
-import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
-import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
+import { LeaguesController } from '@core/leagues/leagues.controller';
+import { PublicLeaguesController } from '@core/leagues/public-leagues.controller';
+import { LeaguesService } from '@core/leagues/leagues.service';
+import { LeagueStandingsService } from '@core/leagues/league-standings.service';
+import { LeagueActivityService } from '@core/leagues/league-activity.service';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { UserNotificationsController } from '@/modules/core/notifications/user-notifications.controller';
+import { UserNotificationsService } from '@/modules/core/notifications/user-notifications.service';
+import { UserNotificationType } from '@/modules/core/notifications/user-notification-type.enum';
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',

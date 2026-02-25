@@ -1,0 +1,90 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
+import { Court } from '@legacy/courts/court.entity';
+
+export enum ReservationStatus {
+  HOLD = 'hold',
+  PAYMENT_PENDING = 'payment_pending',
+  CONFIRMED = 'confirmed',
+  CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
+}
+
+@Entity({ name: 'reservations' })
+@Index(['court', 'startAt', 'endAt', 'status'])
+export class Reservation {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @ManyToOne(() => Court, { nullable: false, onDelete: 'CASCADE' })
+  court!: Court;
+
+  @Column({ type: 'timestamptz' })
+  startAt!: Date;
+
+  @Column({ type: 'timestamptz' })
+  endAt!: Date;
+
+  @Column({
+    type: 'enum',
+    enum: ReservationStatus,
+    default: ReservationStatus.HOLD,
+  })
+  status!: ReservationStatus;
+
+  // HOLD
+  @Column({ type: 'timestamptz', nullable: true })
+  expiresAt!: Date | null;
+
+  // checkout público (para hold/confirm/cancel)
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  checkoutToken!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  checkoutTokenExpiresAt!: Date | null;
+
+  // ✅ receipt token (para success / comprobante)
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  receiptToken!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  receiptTokenExpiresAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  confirmedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
+
+  @Column({ type: 'varchar', length: 120 })
+  clienteNombre!: string;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  clienteEmail!: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  clienteTelefono!: string | null;
+
+  @Column('decimal', {
+    precision: 10,
+    scale: 2,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string): number => parseFloat(value),
+    },
+  })
+  precio!: number;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+}

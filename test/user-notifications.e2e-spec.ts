@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { UserNotificationsController } from '@modules/notifications/user-notifications.controller';
-import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
-import { HealthController } from '@modules/notifications/health.controller';
-import { NotificationService } from '@modules/notifications/notification.service';
-import { JwtAuthGuard } from '../src/modules/auth/jwt-auth.guard';
-import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
+import { UserNotificationsController } from '@/modules/core/notifications/user-notifications.controller';
+import { UserNotificationsService } from '@/modules/core/notifications/user-notifications.service';
+import { HealthController } from '@/modules/core/notifications/health.controller';
+import { NotificationService } from '@/modules/core/notifications/notification.service';
+import { JwtAuthGuard } from '@core/auth/jwt-auth.guard';
+import { UserNotificationType } from '@/modules/core/notifications/user-notification-type.enum';
 
 const FAKE_USER = {
   userId: '00000000-0000-0000-0000-000000000001',
