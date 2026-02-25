@@ -36,5 +36,8 @@ export default () => {
       enabled: env.EMAIL_ENABLED,
       logOnly: env.EMAIL_LOG_ONLY,
     },
+    app: {
+      publicUrl: env.APP_PUBLIC_URL ?? env.APP_URL,
+    },
   };
 };

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -28,6 +29,7 @@ import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 const FAKE_USER_ID_2 = '00000000-0000-0000-0000-000000000002';
+const PUBLIC_APP_URL = 'https://app.padelpoint.test';
 
 function fakeLeague(overrides: Partial<League> = {}): League {
   return {
@@ -110,6 +112,7 @@ describe('LeaguesService', () => {
     where: jest.Mock;
     getOne: jest.Mock;
   };
+  let configService: { get: jest.Mock };
 
   beforeEach(async () => {
     leagueRepo = createMockRepo<League>();
@@ -132,6 +135,12 @@ describe('LeaguesService', () => {
     leagueActivityService = {
       create: jest.fn().mockResolvedValue({}),
       list: jest.fn(),
+    };
+    configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'app.publicUrl') return PUBLIC_APP_URL;
+        return undefined;
+      }),
     };
 
     const notificationUpdateQb = {
@@ -225,6 +234,7 @@ describe('LeaguesService', () => {
         { provide: DataSource, useValue: dataSource },
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
         { provide: LeagueActivityService, useValue: leagueActivityService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -483,8 +493,8 @@ describe('LeaguesService', () => {
       expect(result.shareToken).toEqual(expect.any(String));
       expect(result.shareToken.length).toBeGreaterThanOrEqual(40);
       expect(result.shareUrlPath).toContain(`/public/leagues/${league.id}/standings?token=`);
-      expect(result.shareUrl).toBe(result.shareUrlPath);
-      expect(result.shareText).toContain('PadelPoint');
+      expect(result.shareUrl).toBe(`${PUBLIC_APP_URL}${result.shareUrlPath}`);
+      expect(result.shareText).toContain(result.shareUrl);
     });
 
     it('enableShare should return the existing token when already enabled', async () => {
@@ -498,6 +508,7 @@ describe('LeaguesService', () => {
       const result = await service.enableShare(FAKE_USER_ID, league.id);
 
       expect(result.shareToken).toBe('existing-share-token');
+      expect(result.shareUrl).toBe(`${PUBLIC_APP_URL}${result.shareUrlPath}`);
       expect(leagueRepo.save).not.toHaveBeenCalled();
     });
 
@@ -511,7 +522,7 @@ describe('LeaguesService', () => {
 
       const result = await service.enableShare(FAKE_USER_ID, league.id);
 
-      expect(result.shareUrl).toContain(`/public/leagues/${league.id}/standings`);
+      expect(result.shareUrl).toContain(`${PUBLIC_APP_URL}/public/leagues/${league.id}/standings`);
       expect(leagueRepo.save).not.toHaveBeenCalled();
     });
 
@@ -537,8 +548,10 @@ describe('LeaguesService', () => {
 
       expect(result).toEqual({
         enabled: true,
-        shareUrl: expect.stringContaining(`/public/leagues/${league.id}/standings`),
-        shareText: expect.stringContaining('PadelPoint'),
+        shareUrl: expect.stringContaining(
+          `${PUBLIC_APP_URL}/public/leagues/${league.id}/standings`,
+        ),
+        shareText: expect.stringContaining(PUBLIC_APP_URL),
       });
     });
 

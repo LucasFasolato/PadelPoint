@@ -38,6 +38,7 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('PadelPoint <noreply@padelpoint.app>'),
   APP_URL: z.string().default('http://localhost:3000'),
+  APP_PUBLIC_URL: z.string().url().optional(),
   EMAIL_ENABLED: z
     .preprocess((val) => val !== 'false', z.boolean())
     .default(true),

@@ -39,6 +39,7 @@ const FAKE_OUTSIDER = {
 
 const LEAGUE_ID = 'd4444444-4444-4444-8444-444444444444';
 const INVITE_ID = 'e5555555-5555-4555-8555-555555555555';
+const PUBLIC_APP_URL = 'https://app.padelpoint.test';
 
 // Simulates different users by reading x-test-user header
 function fakeGuard() {
@@ -282,8 +283,8 @@ describe('Leagues (e2e)', () => {
       leaguesService.enableShare.mockResolvedValue({
         shareToken: 'share-token-abc',
         shareUrlPath: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
-        shareUrl: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
-        shareText: `Sumate a mi liga en PadelPoint: /public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareUrl: `${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareText: `Sumate a mi liga en PadelPoint: ${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
       });
 
       const res = await request(app.getHttpServer())
@@ -294,8 +295,8 @@ describe('Leagues (e2e)', () => {
       expect(res.body.shareUrlPath).toContain(
         `/public/leagues/${LEAGUE_ID}/standings`,
       );
-      expect(res.body.shareUrl).toBe(res.body.shareUrlPath);
-      expect(res.body.shareText).toContain('PadelPoint');
+      expect(res.body.shareUrl).toBe(`${PUBLIC_APP_URL}${res.body.shareUrlPath}`);
+      expect(res.body.shareText).toContain(res.body.shareUrl);
       expect(leaguesService.enableShare).toHaveBeenCalledWith(
         FAKE_CREATOR.userId,
         LEAGUE_ID,
@@ -321,8 +322,8 @@ describe('Leagues (e2e)', () => {
     it('should return shareUrl/shareText when sharing is enabled', async () => {
       leaguesService.getShareStatus.mockResolvedValue({
         enabled: true,
-        shareUrl: `/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
-        shareText: `Sumate a mi liga en PadelPoint: /public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareUrl: `${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
+        shareText: `Sumate a mi liga en PadelPoint: ${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings?token=share-token-abc`,
       });
 
       const res = await request(app.getHttpServer())
@@ -331,8 +332,8 @@ describe('Leagues (e2e)', () => {
         .expect(200);
 
       expect(res.body.enabled).toBe(true);
-      expect(res.body.shareUrl).toContain(`/public/leagues/${LEAGUE_ID}/standings`);
-      expect(res.body.shareText).toContain('PadelPoint');
+      expect(res.body.shareUrl).toContain(`${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings`);
+      expect(res.body.shareText).toContain(res.body.shareUrl);
       expect(leaguesService.getShareStatus).toHaveBeenCalledWith(
         FAKE_INVITEE.userId,
         LEAGUE_ID,

@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -73,6 +74,7 @@ export class LeaguesService {
     private readonly mediaAssetRepo: Repository<MediaAsset>,
     @InjectRepository(MatchResult)
     private readonly matchResultRepo: Repository<MatchResult>,
+    private readonly configService: ConfigService,
     private readonly userNotifications: UserNotificationsService,
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly leagueActivityService: LeagueActivityService,
@@ -1525,12 +1527,24 @@ export class LeaguesService {
   }
 
   private toShareEnableView(leagueId: string, shareToken: string) {
-    const shareUrl = `/public/leagues/${leagueId}/standings?token=${encodeURIComponent(shareToken)}`;
+    const shareUrlPath = `/public/leagues/${leagueId}/standings?token=${encodeURIComponent(shareToken)}`;
+    const shareUrl = `${this.getPublicAppUrlBase()}${shareUrlPath}`;
     return {
       shareToken,
-      shareUrlPath: shareUrl,
+      shareUrlPath,
       shareUrl,
       shareText: `Sumate a mi liga en PadelPoint: ${shareUrl}`,
     };
+  }
+
+  private getPublicAppUrlBase(): string {
+    const raw =
+      this.configService.get<string>('app.publicUrl') ??
+      this.configService.get<string>('FRONTEND_URL') ??
+      this.configService.get<string>('publicUrl') ??
+      this.configService.get<string>('email.appUrl') ??
+      this.configService.get<string>('APP_URL') ??
+      'http://localhost:3000';
+    return raw.replace(/\/+$/, '');
   }
 }
