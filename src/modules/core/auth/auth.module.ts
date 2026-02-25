@@ -16,6 +16,8 @@ import { RefreshTokenService } from './services/refresh-token.service';
 import { OAuthService } from './services/oauth.service';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { AuthGoogleController } from './controllers/auth-google.controller';
+import { AppleStrategy } from './strategies/apple.strategy';
+import { AuthAppleController } from './controllers/auth-apple.controller';
 
 @Module({
   imports: [
@@ -37,7 +39,7 @@ import { AuthGoogleController } from './controllers/auth-google.controller';
       },
     }),
   ],
-  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController],
-  providers: [AuthService, RefreshTokenService, OAuthService, JwtStrategy, GoogleStrategy],
+  controllers: [AuthController, AuthAdminBootstrapController, AuthGoogleController, AuthAppleController],
+  providers: [AuthService, RefreshTokenService, OAuthService, JwtStrategy, GoogleStrategy, AppleStrategy],
 })
 export class AuthModule {}

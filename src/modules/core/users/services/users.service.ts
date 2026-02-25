@@ -163,6 +163,15 @@ export class UsersService {
     return this.toPlayerProfile(saved);
   }
 
+  /** Sets displayName only when the user currently has none. No-op if already set. */
+  async updateDisplayNameIfEmpty(userId: string, displayName: string): Promise<void> {
+    const user = await this.repo.findOne({ where: { id: userId } });
+    if (user && !user.displayName) {
+      user.displayName = displayName;
+      await this.repo.save(user);
+    }
+  }
+
   private toPlayerProfile(user: User) {
     return {
       userId: user.id,
