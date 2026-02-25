@@ -19,8 +19,8 @@ export class User {
   @Column({ type: 'varchar', length: 120 })
   email!: string;
 
-  @Column({ type: 'varchar', length: 120 })
-  passwordHash!: string;
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  passwordHash!: string | null;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.PLAYER })
   role!: UserRole;
