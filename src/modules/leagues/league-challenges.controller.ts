@@ -13,7 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LeagueChallengesService } from './league-challenges.service';
 import { CreateLeagueChallengeDto } from './dto/create-league-challenge.dto';
 import { ListLeagueChallengesQueryDto } from './dto/list-league-challenges-query.dto';
-import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
+import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
 
 type AuthUser = { userId: string; email: string; role: string };
 

@@ -14,7 +14,7 @@ import { Reservation } from '../reservations/reservation.entity';
 import { Court } from '../courts/court.entity';
 import { CompetitiveModule } from '../competitive/competitive.module';
 import { LeaguesModule } from '../leagues/leagues.module';
-import { NotificationsModule } from '../../notifications/notifications.module';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
   imports: [

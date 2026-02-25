@@ -47,8 +47,8 @@ import { MatchSource } from './match-source.enum';
 import { LeagueRole } from '../leagues/league-role.enum';
 import { LeagueActivityService } from '../leagues/league-activity.service';
 import { LeagueActivityType } from '../leagues/league-activity-type.enum';
-import { UserNotificationsService } from '../../notifications/user-notifications.service';
-import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
+import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
 
 const TZ = 'America/Argentina/Cordoba';
 

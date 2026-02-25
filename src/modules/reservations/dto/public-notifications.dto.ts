@@ -2,7 +2,7 @@ import { IsNotEmpty, IsString } from 'class-validator';
 import {
   NotificationEventChannel,
   NotificationEventType,
-} from '@/notifications/notification-event.entity';
+} from '@modules/notifications/notification-event.entity';
 
 export class PublicNotificationsQueryDto {
   @IsString()

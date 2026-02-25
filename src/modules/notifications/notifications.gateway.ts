@@ -12,7 +12,7 @@ import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { ConfigService } from '@nestjs/config';
 import { verify } from 'jsonwebtoken';
-import { LeagueMember } from '../modules/leagues/league-member.entity';
+import { LeagueMember } from '@modules/leagues/league-member.entity';
 
 type JwtPayload = { sub: string; email: string; role: string };
 

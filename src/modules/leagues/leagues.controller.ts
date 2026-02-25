@@ -22,7 +22,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
+import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
 import { LeagueStandingsService } from './league-standings.service';
 import { LeagueActivityService } from './league-activity.service';

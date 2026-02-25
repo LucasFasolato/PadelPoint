@@ -21,7 +21,7 @@ import {
   SubmitLeagueMatchResultCanonicalBodyDto,
   SubmitLeagueMatchResultDto,
 } from './dto/submit-league-match-result.dto';
-import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
+import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
 import { ApiBody, ApiOkResponse } from '@nestjs/swagger';
 import { PendingConfirmationsResponseDto } from './dto/pending-confirmation.dto';
 import { PendingConfirmationsQueryDto } from './dto/pending-confirmations-query.dto';

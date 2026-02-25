@@ -8,7 +8,7 @@ import { ChallengeInvitesController } from './challenge-invites.controller';
 import { ChallengeInvitesService } from './challenge-invites.service';
 import { UsersModule } from '../users/users.module';
 import { CompetitiveModule } from '../competitive/competitive.module';
-import { NotificationsModule } from '../../notifications/notifications.module';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
   imports: [

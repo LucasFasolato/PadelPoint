@@ -13,8 +13,8 @@ import { LeagueChallengeStatus } from './league-challenge-status.enum';
 import { LeagueMember } from './league-member.entity';
 import { League } from './league.entity';
 import { MatchResult, MatchResultStatus } from '../matches/match-result.entity';
-import { UserNotificationsService } from '../../notifications/user-notifications.service';
-import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
+import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
 import { LeagueActivityService } from './league-activity.service';
 import { LeagueActivityType } from './league-activity-type.enum';
 

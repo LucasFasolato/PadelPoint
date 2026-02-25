@@ -5,7 +5,7 @@ import { In, Repository } from 'typeorm';
 import { LeagueActivity } from './league-activity.entity';
 import { LeagueActivityType } from './league-activity-type.enum';
 import { User } from '../users/user.entity';
-import { NotificationsGateway } from '../../notifications/notifications.gateway';
+import { NotificationsGateway } from '@modules/notifications/notifications.gateway';
 
 export type CreateLeagueActivityInput = {
   leagueId: string;

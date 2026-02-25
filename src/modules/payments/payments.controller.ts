@@ -17,10 +17,10 @@ import { MockPaymentWebhookDto } from './dto/mock-webhook.dto';
 import { AdminListPaymentIntentsDto } from './dto/admin-list-payment-intents.dto';
 import { PaymentIntent } from './payment-intent.entity';
 
-import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
-import { RolesGuard } from '../modules/auth/roles.guard';
-import { Roles } from '../modules/auth/roles.decorator';
-import { UserRole } from '../modules/users/user-role.enum';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { UserRole } from '../users/user-role.enum';
 
 type AuthUser = { userId: string; email: string; role: string };
 

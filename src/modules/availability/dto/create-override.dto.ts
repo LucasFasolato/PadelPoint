@@ -8,7 +8,7 @@ import {
   Length,
   Matches,
 } from 'class-validator';
-import { toBoolean } from '../../../common/transforms/to-boolean.transform';
+import { toBoolean } from '@common/transforms/to-boolean.transform';
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 

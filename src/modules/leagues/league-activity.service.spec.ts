@@ -4,7 +4,7 @@ import { LeagueActivityService } from './league-activity.service';
 import { LeagueActivity } from './league-activity.entity';
 import { LeagueActivityType } from './league-activity-type.enum';
 import { User } from '../users/user.entity';
-import { NotificationsGateway } from '../../notifications/notifications.gateway';
+import { NotificationsGateway } from '@modules/notifications/notifications.gateway';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 
 const LEAGUE_ID = 'league-1';

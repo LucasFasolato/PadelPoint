@@ -8,7 +8,7 @@ import {
   Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { toBoolean } from '../../../common/transforms/to-boolean.transform';
+import { toBoolean } from '@common/transforms/to-boolean.transform';
 
 export class CreateCourtDto {
   @IsString()

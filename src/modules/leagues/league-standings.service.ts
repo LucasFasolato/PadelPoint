@@ -22,8 +22,8 @@ import {
 } from './standings/standings-diff';
 import { LeagueActivityService } from './league-activity.service';
 import { LeagueActivityType } from './league-activity-type.enum';
-import { UserNotificationsService } from '../../notifications/user-notifications.service';
-import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
+import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
 
 /** Max user notifications emitted per league per snapshot. */
 const MAX_NOTIFICATIONS_PER_SNAPSHOT = 10;

@@ -10,9 +10,9 @@ import { Repository, In, DataSource } from 'typeorm';
 
 import { UsersService } from '../users/users.service';
 import { CompetitiveService } from '../competitive/competitive.service';
-import { UserNotificationsService } from '../../notifications/user-notifications.service';
-import { NotificationsGateway } from '../../notifications/notifications.gateway';
-import { UserNotificationType } from '../../notifications/user-notification-type.enum';
+import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
+import { NotificationsGateway } from '@modules/notifications/notifications.gateway';
+import { UserNotificationType } from '@modules/notifications/user-notification-type.enum';
 import { Challenge } from './challenge.entity';
 import { ChallengeStatus } from './challenge-status.enum';
 import { ChallengeType } from './challenge-type.enum';

@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { JwtAuthGuard } from '../modules/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '@modules/auth/jwt-auth.guard';
 import { UserNotificationsService } from './user-notifications.service';
 import { UserNotificationsQueryDto } from './dto/user-notifications-query.dto';
 

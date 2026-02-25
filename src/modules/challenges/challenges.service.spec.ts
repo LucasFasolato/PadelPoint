@@ -9,8 +9,8 @@ import { ChallengeStatus } from './challenge-status.enum';
 import { ChallengeType } from './challenge-type.enum';
 import { UsersService } from '../users/users.service';
 import { CompetitiveService } from '../competitive/competitive.service';
-import { UserNotificationsService } from '../../notifications/user-notifications.service';
-import { NotificationsGateway } from '../../notifications/notifications.gateway';
+import { UserNotificationsService } from '@modules/notifications/user-notifications.service';
+import { NotificationsGateway } from '@modules/notifications/notifications.gateway';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 import { createMockDataSource, MockDataSource } from '@/test-utils/mock-datasource';
 

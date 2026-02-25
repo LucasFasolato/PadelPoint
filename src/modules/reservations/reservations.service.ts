@@ -14,16 +14,16 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { Reservation, ReservationStatus } from './reservation.entity';
 import { Court } from '../courts/court.entity';
 import { CreateHoldDto } from './dto/create-hold.dto';
-import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationsService } from '@modules/notifications/notifications.service';
 import {
   NotificationEventChannel,
   NotificationEventPayload,
   NotificationEventType,
   NotificationEvent,
-} from '@/notifications/notification-event.entity';
-import { NotificationEventsService } from '@/notifications/notification-events.service';
+} from '@modules/notifications/notification-event.entity';
+import { NotificationEventsService } from '@modules/notifications/notification-events.service';
 import { PublicNotificationEventDto } from './dto/public-notifications.dto';
-import { NotificationService } from '@/notifications/notification.service';
+import { NotificationService } from '@modules/notifications/notification.service';
 
 // Configuration
 const TZ = 'America/Argentina/Cordoba';

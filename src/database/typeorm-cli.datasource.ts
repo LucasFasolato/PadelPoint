@@ -1,7 +1,7 @@
 import 'dotenv/config'; // Carga .env local si existe
 import { DataSource } from 'typeorm';
 import { join } from 'path';
-import { validateEnv } from '../config/env.schema'; // Asegúrate que la ruta sea correcta
+import { validateEnv } from '@config/env.schema'; // Asegúrate que la ruta sea correcta
 
 // Validamos las variables antes de crear la conexión
 const env = validateEnv(process.env);

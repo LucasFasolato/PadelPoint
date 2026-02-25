@@ -29,7 +29,7 @@ import { PaymentTransactionStatus } from './enums/payment-transaction-status.enu
 import {
   Reservation,
   ReservationStatus,
-} from '../modules/reservations/reservation.entity';
+} from '../reservations/reservation.entity';
 import { randomBytes } from 'crypto';
 
 type JsonObject = Record<string, any>;

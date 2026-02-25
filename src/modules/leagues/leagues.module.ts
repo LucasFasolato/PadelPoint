@@ -17,7 +17,7 @@ import { PublicLeaguesController } from './public-leagues.controller';
 import { LeagueChallengesController } from './league-challenges.controller';
 import { LeagueChallengeActionsController } from './league-challenge-actions.controller';
 import { LeagueChallengesService } from './league-challenges.service';
-import { NotificationsModule } from '../../notifications/notifications.module';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 
 @Module({
   imports: [

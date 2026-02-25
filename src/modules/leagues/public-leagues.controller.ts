@@ -7,7 +7,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiForbiddenResponse, ApiOkResponse, ApiQuery } from '@nestjs/swagger';
-import { ParseRequiredUuidPipe } from '../../common/pipes/parse-required-uuid.pipe';
+import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
 import { LeaguesService } from './leagues.service';
 
 @Controller('public/leagues')
