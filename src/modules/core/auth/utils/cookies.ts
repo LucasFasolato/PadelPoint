@@ -17,6 +17,14 @@ export function cookieBaseOptions(): CookieOptions {
     };
   }
 
+  // NOTE:
+  // We are using SameSite='none' because frontend (vercel.app)
+  // and backend (railway.app) are on different domains.
+  // When we migrate to a shared root domain (e.g. app.padelpoint.com + api.padelpoint.com),
+  // we should switch this to:
+  //   sameSite: 'lax'
+  //   and optionally set domain: '.padelpoint.com'
+  // This will improve security and avoid third-party cookie behavior.
   return {
     httpOnly: true,
     sameSite: 'none',

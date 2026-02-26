@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { setupOpenApi } from '@/openapi/openapi';
+import { OriginCsrfGuard } from '@/common/guards/origin-csrf.guard';
 
 function normalizeOrigin(url: string): string {
   return url.trim().replace(/\/+$/, '');
@@ -39,6 +40,7 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
+  app.useGlobalGuards(new OriginCsrfGuard());
 
   app.useGlobalPipes(
     new ValidationPipe({
