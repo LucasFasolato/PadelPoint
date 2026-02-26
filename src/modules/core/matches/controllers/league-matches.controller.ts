@@ -14,6 +14,7 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { MatchesService } from '../services/matches.service';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { ReportFromReservationDto } from '../dto/report-from-reservation.dto';
 import { ReportManualDto } from '../dto/report-manual.dto';
 import { CreateLeagueMatchDto } from '../dto/create-league-match.dto';
@@ -29,7 +30,7 @@ import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query
 type AuthUser = { userId: string; email: string; role: string };
 
 @Controller('leagues')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CityRequiredGuard)
 export class LeagueMatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 
@@ -54,10 +55,14 @@ export class LeagueMatchesController {
     @Query() query: PendingConfirmationsQueryDto,
   ) {
     const user = req.user as AuthUser;
-    return this.matchesService.getLeaguePendingConfirmations(user.userId, leagueId, {
-      cursor: query.cursor,
-      limit: query.limit,
-    });
+    return this.matchesService.getLeaguePendingConfirmations(
+      user.userId,
+      leagueId,
+      {
+        cursor: query.cursor,
+        limit: query.limit,
+      },
+    );
   }
 
   @Post(':leagueId/matches')

@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -43,10 +45,16 @@ import {
   scaleCappedToScore,
   scaleSignedRangeToScore,
 } from '../utils/competitive-radar.util';
-import { PlayerProfile, type PlayerLocation } from '../../players/entities/player-profile.entity';
+import {
+  PlayerProfile,
+  type PlayerLocation,
+} from '../../players/entities/player-profile.entity';
 import { PlayerFavorite } from '../../players/entities/player-favorite.entity';
 import { Challenge } from '../../challenges/entities/challenge.entity';
 import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
+import { User } from '../../users/entities/user.entity';
+import { City } from '../../geo/entities/city.entity';
+import { CITY_REQUIRED_ERROR } from '@common/guards/city-required.guard';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -88,6 +96,7 @@ type RankingParams = {
   limit?: number;
   category?: number;
   cursor?: string;
+  cityId?: string;
 };
 
 type RankingItem = {
@@ -115,6 +124,7 @@ type MatchmakingRivalsParams = {
   city?: string;
   province?: string;
   country?: string;
+  scopeCityId?: string;
 };
 
 type SkillRadarRow = {
@@ -204,6 +214,10 @@ export class CompetitiveService {
     private readonly playerProfileRepo: Repository<PlayerProfile>,
     @InjectRepository(PlayerFavorite)
     private readonly favoriteRepo: Repository<PlayerFavorite>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    @InjectRepository(City)
+    private readonly cityRepo: Repository<City>,
   ) {}
 
   async getOrCreateProfile(userId: string) {
@@ -253,7 +267,9 @@ export class CompetitiveService {
 
   async ranking(params: RankingParams | number = 50) {
     const options =
-      typeof params === 'number' ? ({ limit: params } as RankingParams) : params;
+      typeof params === 'number'
+        ? ({ limit: params } as RankingParams)
+        : params;
     const n = Math.max(1, Math.min(200, options.limit ?? 50));
 
     let cursor: RankingCursorPayload | null = null;
@@ -272,6 +288,10 @@ export class CompetitiveService {
       .addOrderBy('p.matchesPlayed', 'DESC')
       .addOrderBy('p.userId', 'ASC')
       .take(n + 1);
+
+    if (options.cityId) {
+      qb.andWhere('u."cityId" = :cityId', { cityId: options.cityId });
+    }
 
     if (options.category !== undefined) {
       const { minInclusive, maxExclusive } = getEloRangeForCategory(
@@ -356,7 +376,9 @@ export class CompetitiveService {
     }
 
     const options =
-      typeof params === 'number' ? ({ limit: params } as EloHistoryParams) : params;
+      typeof params === 'number'
+        ? ({ limit: params } as EloHistoryParams)
+        : params;
     const n = Math.max(1, Math.min(100, options.limit ?? 20));
 
     let cursor: EloHistoryCursorPayload | null = null;
@@ -443,7 +465,9 @@ export class CompetitiveService {
         .createQueryBuilder('h')
         .select('h.delta', 'delta')
         .where('h."profileId" = :profileId', { profileId: profile.id })
-        .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+        .andWhere('h.reason = :reason', {
+          reason: EloHistoryReason.MATCH_RESULT,
+        })
         .orderBy('h."createdAt"', 'DESC')
         .addOrderBy('h.id', 'DESC')
         .limit(10)
@@ -475,9 +499,14 @@ export class CompetitiveService {
       .map((row) => Number(row.delta))
       .filter((value) => Number.isFinite(value));
 
-    const momentumDelta30d = await this.getRadarMomentumDelta30d(profile.id, cutoff);
+    const momentumDelta30d = await this.getRadarMomentumDelta30d(
+      profile.id,
+      cutoff,
+    );
     const momentum =
-      deltas.length > 0 ? scaleSignedRangeToScore(momentumDelta30d, -50, 50) : 50;
+      deltas.length > 0
+        ? scaleSignedRangeToScore(momentumDelta30d, -50, 50)
+        : 50;
     const consistency = consistencyFromDeltas(deltas);
 
     const scoreMetrics = this.computeScoreMetrics(recentMatches, userId);
@@ -496,13 +525,19 @@ export class CompetitiveService {
     };
   }
 
-  async findRivalSuggestions(userId: string, params: MatchmakingRivalsParams = {}) {
+  async findRivalSuggestions(
+    userId: string,
+    params: MatchmakingRivalsParams = {},
+  ) {
     return this.findSuggestionsCore(userId, params, (input) =>
       this.buildRivalReasons(input),
     );
   }
 
-  async findPartnerSuggestions(userId: string, params: MatchmakingRivalsParams = {}) {
+  async findPartnerSuggestions(
+    userId: string,
+    params: MatchmakingRivalsParams = {},
+  ) {
     return this.findSuggestionsCore(userId, params, (input) =>
       this.buildPartnerReasons(input),
     );
@@ -542,7 +577,11 @@ export class CompetitiveService {
 
     return rows
       .filter((challenge) =>
-        this.challengeMatchesView(view, challenge, matchByChallengeId.get(challenge.id)),
+        this.challengeMatchesView(
+          view,
+          challenge,
+          matchByChallengeId.get(challenge.id),
+        ),
       )
       .map((challenge) =>
         this.toCompetitiveChallengeListItem(
@@ -564,11 +603,15 @@ export class CompetitiveService {
     ]);
 
     const myTags = Array.isArray(myPlayerProfile?.playStyleTags)
-      ? [...myPlayerProfile!.playStyleTags]
+      ? [...myPlayerProfile.playStyleTags]
       : [];
     const myLocation = this.normalizeLocationForResponse(
       myPlayerProfile?.location ?? null,
     );
+    const scopeCityId = params.scopeCityId ?? me.user.cityId ?? null;
+    if (!scopeCityId) {
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+    }
 
     const limit = Math.max(1, Math.min(50, params.limit ?? 20));
     const range = Math.max(1, Math.min(500, params.range ?? 100));
@@ -580,6 +623,7 @@ export class CompetitiveService {
 
     const allProfiles = await this.profileRepo.find({ relations: ['user'] });
     let candidates = allProfiles.filter((c) => c.userId !== userId);
+    candidates = candidates.filter((c) => c.user?.cityId === scopeCityId);
     candidates = candidates.filter((c) => Math.abs(c.elo - me.elo) <= range);
 
     if (sameCategory) {
@@ -599,12 +643,23 @@ export class CompetitiveService {
       candidatePlayerProfiles.map((p) => [p.userId, p]),
     );
 
-    const locationFilter = this.normalizeLocationFilter({
-      city: params.city,
-      province: params.province,
-      country: params.country,
-    });
-    if (locationFilter.city || locationFilter.province || locationFilter.country) {
+    const scopeGeo = await this.getCityWithHierarchy(scopeCityId);
+    const locationFilter: {
+      city?: string;
+      province?: string;
+      country?: string;
+    } = scopeGeo
+      ? this.normalizeLocationFilter({
+          city: scopeGeo.name,
+          province: scopeGeo.province?.name,
+          country: scopeGeo.province?.country?.name,
+        })
+      : {};
+    if (
+      locationFilter.city ||
+      locationFilter.province ||
+      locationFilter.country
+    ) {
       candidates = candidates.filter((c) =>
         this.matchesLocationFilter(
           playerProfileByUserId.get(c.userId)?.location ?? null,
@@ -626,62 +681,66 @@ export class CompetitiveService {
     const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
     const [matches30dByUserId, momentum30dByProfileId, favoriteUserIds] =
       await Promise.all([
-      this.getMatches30dByUserIds(filteredUserIds, cutoff),
-      this.getMomentum30dByProfileIds(filteredProfileIds, cutoff),
-      this.getFavoriteUserIdsForMatchmaking(userId, filteredUserIds),
-    ]);
+        this.getMatches30dByUserIds(filteredUserIds, cutoff),
+        this.getMomentum30dByProfileIds(filteredProfileIds, cutoff),
+        this.getFavoriteUserIdsForMatchmaking(userId, filteredUserIds),
+      ]);
 
-    const scoredItems: RivalSuggestionScoredItem[] = candidates.map((candidate) => {
-      const absDiff = Math.abs(candidate.elo - me.elo);
-      const matches30d = matches30dByUserId.get(candidate.userId) ?? 0;
-      const momentum30d = momentum30dByProfileId.get(candidate.id) ?? 0;
-      const playerProfile = playerProfileByUserId.get(candidate.userId);
-      const category = categoryFromElo(candidate.elo);
-      const location = this.normalizeLocationForResponse(
-        playerProfile?.location ?? null,
-      );
-      const tags = Array.isArray(playerProfile?.playStyleTags)
-        ? [...playerProfile!.playStyleTags]
-        : [];
+    const scoredItems: RivalSuggestionScoredItem[] = candidates.map(
+      (candidate) => {
+        const absDiff = Math.abs(candidate.elo - me.elo);
+        const matches30d = matches30dByUserId.get(candidate.userId) ?? 0;
+        const momentum30d = momentum30dByProfileId.get(candidate.id) ?? 0;
+        const playerProfile = playerProfileByUserId.get(candidate.userId);
+        const category = categoryFromElo(candidate.elo);
+        const location = this.normalizeLocationForResponse(
+          playerProfile?.location ?? null,
+        );
+        const tags = Array.isArray(playerProfile?.playStyleTags)
+          ? [...playerProfile.playStyleTags]
+          : [];
 
-      const scoreBreakdown = computeMatchmakingScore({
-        absDiff,
-        range,
-        matches30d,
-        momentum30d,
-        candidateLocation: location,
-        myLocation,
-        candidateTags: tags,
-        myTags,
-      });
-      const isFavorite = favoriteUserIds.has(candidate.userId);
-      const reasons = buildReasonsFn({
-        myCategory,
-        candidateCategory: category,
-        matches30d,
-        location,
-        locationFilter,
-        tagOverlapScore: scoreBreakdown.tagOverlapScore,
-      });
-      if (isFavorite) {
-        reasons.push('Favorito');
-      }
+        const scoreBreakdown = computeMatchmakingScore({
+          absDiff,
+          range,
+          matches30d,
+          momentum30d,
+          candidateLocation: location,
+          myLocation,
+          candidateTags: tags,
+          myTags,
+        });
+        const isFavorite = favoriteUserIds.has(candidate.userId);
+        const reasons = buildReasonsFn({
+          myCategory,
+          candidateCategory: category,
+          matches30d,
+          location,
+          locationFilter,
+          tagOverlapScore: scoreBreakdown.tagOverlapScore,
+        });
+        if (isFavorite) {
+          reasons.push('Favorito');
+        }
 
-      return {
-        userId: candidate.userId,
-        displayName: candidate.user.displayName?.trim() || 'Player',
-        avatarUrl: null,
-        elo: candidate.elo,
-        category,
-        matches30d,
-        momentum30d,
-        tags,
-        location,
-        reasons,
-        _absDiff: absDiff,
-        _score: scoreBreakdown.total + (isFavorite ? MATCHMAKING_FAVORITE_SCORE_BOOST : 0),
-      };
-    });
+        return {
+          userId: candidate.userId,
+          displayName: candidate.user.displayName?.trim() || 'Player',
+          avatarUrl: null,
+          elo: candidate.elo,
+          category,
+          matches30d,
+          momentum30d,
+          tags,
+          location,
+          reasons,
+          _absDiff: absDiff,
+          _score:
+            scoreBreakdown.total +
+            (isFavorite ? MATCHMAKING_FAVORITE_SCORE_BOOST : 0),
+        };
+      },
+    );
 
     scoredItems.sort((a, b) => this.compareRivalCandidates(a, b));
 
@@ -705,7 +764,12 @@ export class CompetitiveService {
         : null;
 
     return {
-      items: slice.map(({ _absDiff: _a, _score: _s, ...item }) => item),
+      items: slice.map((row) => {
+        const { _absDiff, _score, ...item } = row;
+        void _absDiff;
+        void _score;
+        return item;
+      }),
       nextCursor,
     };
   }
@@ -756,11 +820,13 @@ export class CompetitiveService {
 
   async getOnboarding(userId: string) {
     const profile = await this.getOrCreateProfileEntity(userId);
-    return this.toOnboardingView(profile);
+    const user = await this.getUserWithGeoOrThrow(userId);
+    return this.toOnboardingView(profile, user);
   }
 
   async upsertOnboarding(userId: string, dto: UpsertOnboardingDto) {
     const profile = await this.getOrCreateProfileEntity(userId);
+    const user = await this.getUserWithGeoOrThrow(userId);
 
     if (dto.category !== undefined) {
       if (profile.matchesPlayed > 0 || profile.categoryLocked) {
@@ -805,16 +871,30 @@ export class CompetitiveService {
       profile.preferences = dto.preferences;
     }
 
+    if (this.hasGeoInput(dto)) {
+      const city = await this.resolveOnboardingCityOrThrow(dto);
+      user.cityId = city.id;
+      user.city = city;
+      await this.userRepo.save(user);
+      profile.user.cityId = city.id;
+      profile.user.city = city;
+    }
+
     profile.onboardingComplete =
       profile.initialCategory != null &&
       profile.primaryGoal != null &&
-      profile.playingFrequency != null;
+      profile.playingFrequency != null &&
+      Boolean(user.cityId);
 
     const saved = await this.profileRepo.save(profile);
-    return this.toOnboardingView(saved);
+    const savedUser = await this.getUserWithGeoOrThrow(userId);
+    return this.toOnboardingView(saved, savedUser);
   }
 
-  private toOnboardingView(p: CompetitiveProfile) {
+  private toOnboardingView(p: CompetitiveProfile, user?: User | null) {
+    const city = user?.city ?? null;
+    const province = city?.province ?? null;
+    const country = province?.country ?? null;
     return {
       userId: p.userId,
       category: categoryFromElo(p.elo),
@@ -822,6 +902,12 @@ export class CompetitiveService {
       primaryGoal: p.primaryGoal,
       playingFrequency: p.playingFrequency,
       preferences: p.preferences,
+      countryId: country?.id ?? null,
+      country: country?.name ?? null,
+      provinceId: province?.id ?? null,
+      province: province?.name ?? null,
+      cityId: city?.id ?? user?.cityId ?? null,
+      city: city?.name ?? null,
       onboardingComplete: p.onboardingComplete,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
@@ -844,6 +930,113 @@ export class CompetitiveService {
       updatedAt: p.updatedAt,
       createdAt: p.createdAt,
     };
+  }
+
+  private hasGeoInput(dto: UpsertOnboardingDto) {
+    return (
+      dto.cityId !== undefined ||
+      dto.provinceId !== undefined ||
+      dto.countryId !== undefined ||
+      dto.city !== undefined ||
+      dto.province !== undefined ||
+      dto.country !== undefined
+    );
+  }
+
+  private async getUserWithGeoOrThrow(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['city', 'city.province', 'city.province.country'],
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  private async getCityWithHierarchy(cityId: string) {
+    return this.cityRepo.findOne({
+      where: { id: cityId },
+      relations: ['province', 'province.country'],
+    });
+  }
+
+  private async resolveOnboardingCityOrThrow(dto: UpsertOnboardingDto) {
+    if (dto.cityId) {
+      const city = await this.getCityWithHierarchy(dto.cityId);
+      if (!city) {
+        throw new BadRequestException('Invalid cityId');
+      }
+      this.assertGeoSelectionConsistency(city, dto);
+      return city;
+    }
+
+    const hasAnyNames = Boolean(dto.country || dto.province || dto.city);
+    if (hasAnyNames) {
+      if (!dto.country || !dto.province || !dto.city) {
+        throw new BadRequestException(
+          'country, province and city are required when using geo names',
+        );
+      }
+
+      const city = await this.cityRepo
+        .createQueryBuilder('city')
+        .innerJoinAndSelect('city.province', 'province')
+        .innerJoinAndSelect('province.country', 'country')
+        .where('LOWER(city.name) = LOWER(:cityName)', { cityName: dto.city })
+        .andWhere('LOWER(province.name) = LOWER(:provinceName)', {
+          provinceName: dto.province,
+        })
+        .andWhere('LOWER(country.name) = LOWER(:countryName)', {
+          countryName: dto.country,
+        })
+        .getOne();
+
+      if (!city) {
+        throw new BadRequestException(
+          'City not found for provided country/province/city',
+        );
+      }
+
+      this.assertGeoSelectionConsistency(city, dto);
+      return city;
+    }
+
+    if (dto.countryId || dto.provinceId) {
+      throw new BadRequestException(
+        'cityId is required when using countryId/provinceId',
+      );
+    }
+
+    throw new BadRequestException('City selection is required');
+  }
+
+  private assertGeoSelectionConsistency(city: City, dto: UpsertOnboardingDto) {
+    if (dto.provinceId && city.provinceId !== dto.provinceId) {
+      throw new BadRequestException('provinceId does not match cityId');
+    }
+    if (dto.countryId && city.province.countryId !== dto.countryId) {
+      throw new BadRequestException('countryId does not match cityId');
+    }
+
+    if (
+      dto.city &&
+      city.name.trim().toLowerCase() !== dto.city.trim().toLowerCase()
+    ) {
+      throw new BadRequestException('city does not match cityId');
+    }
+    if (
+      dto.province &&
+      city.province.name.trim().toLowerCase() !==
+        dto.province.trim().toLowerCase()
+    ) {
+      throw new BadRequestException('province does not match cityId');
+    }
+    if (
+      dto.country &&
+      city.province.country.name.trim().toLowerCase() !==
+        dto.country.trim().toLowerCase()
+    ) {
+      throw new BadRequestException('country does not match cityId');
+    }
   }
 
   private async getProfileEngagementAggregates(
@@ -1130,8 +1323,8 @@ export class CompetitiveService {
   ) {
     const counterpart =
       challenge.teamA1Id === viewerUserId
-        ? challenge.teamB1 ?? challenge.invitedOpponent ?? null
-        : challenge.teamA1 ?? null;
+        ? (challenge.teamB1 ?? challenge.invitedOpponent ?? null)
+        : (challenge.teamA1 ?? null);
 
     return {
       id: challenge.id,
@@ -1215,7 +1408,9 @@ export class CompetitiveService {
       reasons.push('Active recently');
     }
     if (input.location && input.locationFilter.city) {
-      if (input.location.city?.trim().toLowerCase() === input.locationFilter.city) {
+      if (
+        input.location.city?.trim().toLowerCase() === input.locationFilter.city
+      ) {
         reasons.push('Same city');
       }
     } else if (input.location && input.locationFilter.province) {
@@ -1227,7 +1422,8 @@ export class CompetitiveService {
       }
     } else if (input.location && input.locationFilter.country) {
       if (
-        input.location.country?.trim().toLowerCase() === input.locationFilter.country
+        input.location.country?.trim().toLowerCase() ===
+        input.locationFilter.country
       ) {
         reasons.push('Same country');
       }
@@ -1249,7 +1445,9 @@ export class CompetitiveService {
       reasons.push('Activo recientemente');
     }
     if (input.location && input.locationFilter.city) {
-      if (input.location.city?.trim().toLowerCase() === input.locationFilter.city) {
+      if (
+        input.location.city?.trim().toLowerCase() === input.locationFilter.city
+      ) {
         reasons.push('Misma ciudad');
       }
     } else if (input.location && input.locationFilter.province) {
@@ -1261,7 +1459,8 @@ export class CompetitiveService {
       }
     } else if (input.location && input.locationFilter.country) {
       if (
-        input.location.country?.trim().toLowerCase() === input.locationFilter.country
+        input.location.country?.trim().toLowerCase() ===
+        input.locationFilter.country
       ) {
         reasons.push('Mismo país');
       }
@@ -1273,7 +1472,10 @@ export class CompetitiveService {
     return reasons;
   }
 
-  private compareRivalCandidates(a: RivalSuggestionScoredItem, b: RivalSuggestionScoredItem) {
+  private compareRivalCandidates(
+    a: RivalSuggestionScoredItem,
+    b: RivalSuggestionScoredItem,
+  ) {
     if (a._score !== b._score) return b._score - a._score; // score DESC
     if (a._absDiff !== b._absDiff) return a._absDiff - b._absDiff; // absDiff ASC
     return a.userId.localeCompare(b.userId); // userId ASC
@@ -1354,7 +1556,10 @@ export class CompetitiveService {
       const marginRatio = (gamesFor - gamesAgainst) / totalGames; // [-1,1]
       margins.push(marginRatio);
 
-      const outcome = this.resolveOutcomeForUser(row as MatchOutcomeRow, userId);
+      const outcome = this.resolveOutcomeForUser(
+        row as MatchOutcomeRow,
+        userId,
+      );
       if (outcome === 'L') {
         lossMargins.push((gamesAgainst - gamesFor) / totalGames);
       }
@@ -1373,11 +1578,11 @@ export class CompetitiveService {
       lossMargins.length > 0
         ? clamp01Score(
             100 -
-              (Math.min(
+              Math.min(
                 1,
                 lossMargins.reduce((sum, m) => sum + m, 0) / lossMargins.length,
               ) *
-                100),
+                100,
           )
         : 50;
 
@@ -1385,10 +1590,7 @@ export class CompetitiveService {
   }
 
   private resolveTeamSideForUser(
-    row: Pick<
-      SkillRadarRow,
-      'teamA1Id' | 'teamA2Id' | 'teamB1Id' | 'teamB2Id'
-    >,
+    row: Pick<SkillRadarRow, 'teamA1Id' | 'teamA2Id' | 'teamB1Id' | 'teamB2Id'>,
     userId: string,
   ): 'A' | 'B' | null {
     if (row.teamA1Id === userId || row.teamA2Id === userId) return 'A';

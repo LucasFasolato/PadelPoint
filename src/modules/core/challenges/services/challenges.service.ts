@@ -34,6 +34,8 @@ export class ChallengesService {
     private readonly notificationsGateway: NotificationsGateway,
     @InjectRepository(Challenge)
     private readonly repo: Repository<Challenge>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
   // ------------------------
@@ -71,6 +73,12 @@ export class ChallengesService {
       : null;
     if (params.partnerUserId && !partner)
       throw new NotFoundException('Partner not found');
+
+    await this.assertUsersShareCityOrThrow(
+      this.userRepo,
+      [me.id, opp.id, partner?.id ?? null],
+      'challenge',
+    );
 
     // Optional anti-spam: avoid multiple active DIRECT challenges against same opponent for same reservation
     const reservationId = params.reservationId ?? null;
@@ -158,6 +166,12 @@ export class ChallengesService {
     if (params.partnerUserId && !partner)
       throw new NotFoundException('Partner not found');
 
+    await this.assertUsersShareCityOrThrow(
+      this.userRepo,
+      [me.id, partner?.id ?? null],
+      'challenge',
+    );
+
     // Validate creator category matches targetCategory (strict MVP)
     const myCat = await this.getUserCategoryOrThrow(params.meUserId);
     if (myCat !== params.targetCategory) {
@@ -230,7 +244,7 @@ export class ChallengesService {
     return rows.map((c) => this.toView(c));
   }
 
-  async listOpen(q: { category?: number; limit?: number }) {
+  async listOpen(q: { category?: number; limit?: number; cityId: string }) {
     const take = Math.max(1, Math.min(200, q.limit ?? 50));
 
     const qb = this.repo
@@ -240,6 +254,7 @@ export class ChallengesService {
       .leftJoinAndSelect('c.teamB1', 'b1')
       .leftJoinAndSelect('c.teamB2', 'b2')
       .where('c.type = :type', { type: ChallengeType.OPEN })
+      .andWhere('a1."cityId" = :cityId', { cityId: q.cityId })
       .andWhere('c.status IN (:...st)', {
         st: [ChallengeStatus.PENDING, ChallengeStatus.ACCEPTED],
       });
@@ -479,6 +494,12 @@ export class ChallengesService {
         }
       }
 
+      await this.assertUsersShareCityOrThrow(
+        userRepo,
+        [ch.teamA1Id, ch.teamA2Id, me.id, partner?.id ?? null],
+        'challenge',
+      );
+
       // Assign Team B
       ch.teamB1Id = me.id;
       ch.teamB2Id = partner ? partner.id : null;
@@ -585,6 +606,44 @@ export class ChallengesService {
       throw new BadRequestException('User already in this match');
   }
 
+  private async assertUsersShareCityOrThrow(
+    repo: Repository<User>,
+    userIds: Array<string | null | undefined>,
+    context: 'challenge' | 'match',
+  ) {
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueIds.length <= 1) return;
+
+    const users = await repo.find({
+      where: { id: In(uniqueIds) },
+      select: ['id', 'cityId'],
+    });
+
+    if (users.length !== uniqueIds.length) {
+      throw new NotFoundException('User not found');
+    }
+
+    const missingCityUser = users.find(
+      (u) => typeof u.cityId !== 'string' || u.cityId.length === 0,
+    );
+    if (missingCityUser) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_SCOPE_MISMATCH',
+        message: `All ${context} participants must have a city configured`,
+      });
+    }
+
+    const cityIds = new Set(users.map((u) => u.cityId));
+    if (cityIds.size > 1) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_SCOPE_MISMATCH',
+        message: `All ${context} participants must belong to the same city`,
+      });
+    }
+  }
+
   private async getUserCategoryOrThrow(userId: string) {
     // we rely on your Competitive module: /competitive/profile/me already derives category from ELO
     const profile = await this.competitive.getOrCreateProfile(userId);
@@ -631,8 +690,10 @@ export class ChallengesService {
     const challenger = this.inboxUserView(c.teamA1);
     const directOpponent = c.invitedOpponent ?? c.teamB1 ?? null;
     const fallbackOpponent =
-      c.teamA1Id === viewerUserId ? c.teamB1 ?? c.invitedOpponent : c.teamA1;
-    const opponent = this.inboxUserView(directOpponent ?? fallbackOpponent ?? null);
+      c.teamA1Id === viewerUserId ? (c.teamB1 ?? c.invitedOpponent) : c.teamA1;
+    const opponent = this.inboxUserView(
+      directOpponent ?? fallbackOpponent ?? null,
+    );
     const extra = c as Challenge & {
       leagueId?: string | null;
       suggestedAt?: Date | string | null;
@@ -648,7 +709,9 @@ export class ChallengesService {
       ...(extra.suggestedAt
         ? { suggestedAt: this.toIsoOrNull(extra.suggestedAt) }
         : {}),
-      ...(extra.expiresAt ? { expiresAt: this.toIsoOrNull(extra.expiresAt) } : {}),
+      ...(extra.expiresAt
+        ? { expiresAt: this.toIsoOrNull(extra.expiresAt) }
+        : {}),
     };
   }
 
@@ -689,7 +752,11 @@ export class ChallengesService {
 
     for (const userId of new Set(userIds)) {
       try {
-        this.notificationsGateway.emitToUser(userId, 'challenge:updated', payload);
+        this.notificationsGateway.emitToUser(
+          userId,
+          'challenge:updated',
+          payload,
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'unknown';
         this.logger.error(

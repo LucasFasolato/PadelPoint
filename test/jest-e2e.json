@@ -7,6 +7,12 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "moduleNameMapper": {
-    "^@/(.*)$": "<rootDir>/@/$1"
+    "^@/(.*)$": "<rootDir>/../src/$1",
+    "^@core/(.*)$": "<rootDir>/../src/modules/core/$1",
+    "^@legacy/(.*)$": "<rootDir>/../src/modules/legacy/$1",
+    "^@modules/(.*)$": "<rootDir>/../src/modules/$1",
+    "^@common/(.*)$": "<rootDir>/../src/common/$1",
+    "^@config/(.*)$": "<rootDir>/../src/config/$1",
+    "^@db/(.*)$": "<rootDir>/../src/database/$1"
   }
 }

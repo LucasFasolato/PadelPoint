@@ -6,9 +6,12 @@ import {
   UpdateDateColumn,
   Index,
   OneToOne,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { UserRole } from '../enums/user-role.enum';
 import { CompetitiveProfile } from '@core/competitive/entities/competitive-profile.entity';
+import { City } from '../../geo/entities/city.entity';
 
 @Entity('users')
 export class User {
@@ -33,6 +36,14 @@ export class User {
 
   @Column({ type: 'boolean', default: true })
   active!: boolean;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  cityId!: string | null;
+
+  @ManyToOne(() => City, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'cityId' })
+  city!: City | null;
 
   @CreateDateColumn()
   createdAt!: Date;

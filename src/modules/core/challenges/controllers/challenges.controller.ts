@@ -13,14 +13,20 @@ import type { Request } from 'express';
 
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengesService } from '../services/challenges.service';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 
 import { CreateDirectChallengeDto } from '../dto/create-direct-challenge.dto';
 import { CreateOpenChallengeDto } from '../dto/create-open-challenge.dto';
 import { ListOpenQueryDto } from '../dto/list-open-query.dto';
 
-type AuthUser = { userId: string; email: string; role: string };
+type AuthUser = {
+  userId: string;
+  email: string;
+  role: string;
+  cityId?: string | null;
+};
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CityRequiredGuard)
 @Controller('challenges')
 export class ChallengesController {
   constructor(private readonly service: ChallengesService) {}
@@ -50,11 +56,13 @@ export class ChallengesController {
   }
 
   @Get('open')
-  listOpen(@Query() q: ListOpenQueryDto) {
+  listOpen(@Req() req: Request, @Query() q: ListOpenQueryDto) {
+    const me = req.user as AuthUser;
     const limit = q.limit ? Number(q.limit) : 50;
     return this.service.listOpen({
       category: q.category,
       limit: Number.isFinite(limit) ? limit : 50,
+      cityId: me.cityId,
     });
   }
 

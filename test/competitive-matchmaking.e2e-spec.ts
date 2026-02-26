@@ -10,6 +10,7 @@ const FAKE_USER = {
   userId: '00000000-0000-0000-0000-000000000001',
   email: 'test@test.com',
   role: 'player',
+  cityId: '30000000-0000-4000-8000-000000000001',
 };
 
 const EMPTY_PAGE = { items: [], nextCursor: null };
@@ -41,7 +42,10 @@ describe('Competitive Matchmaking (e2e)', () => {
       .useValue({
         canActivate: (context: any) => {
           const req = context.switchToHttp().getRequest();
-          req.user = FAKE_USER;
+          req.user =
+            req.headers['x-test-no-city'] === '1'
+              ? { ...FAKE_USER, cityId: null }
+              : FAKE_USER;
           return true;
         },
       })
@@ -67,7 +71,7 @@ describe('Competitive Matchmaking (e2e)', () => {
 
   describe('GET /competitive/matchmaking/rivals', () => {
     it('returns { items, nextCursor } shape', async () => {
-      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue(EMPTY_PAGE);
+      competitiveService.findRivalSuggestions.mockResolvedValue(EMPTY_PAGE);
 
       const res = await request(app.getHttpServer())
         .get('/competitive/matchmaking/rivals')
@@ -87,16 +91,38 @@ describe('Competitive Matchmaking (e2e)', () => {
     });
 
     it('passes query params through to service', async () => {
-      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue(EMPTY_PAGE);
+      competitiveService.findRivalSuggestions.mockResolvedValue(EMPTY_PAGE);
 
       await request(app.getHttpServer())
-        .get('/competitive/matchmaking/rivals?limit=5&range=200&sameCategory=false&city=Madrid')
+        .get(
+          '/competitive/matchmaking/rivals?limit=5&range=200&sameCategory=false&city=Madrid',
+        )
         .expect(200);
 
       expect(competitiveService.findRivalSuggestions).toHaveBeenCalledWith(
         FAKE_USER.userId,
-        expect.objectContaining({ limit: 5, range: 200, sameCategory: false, city: 'Madrid' }),
+        expect.objectContaining({
+          limit: 5,
+          range: 200,
+          sameCategory: false,
+          scopeCityId: FAKE_USER.cityId,
+        }),
       );
+      expect(
+        competitiveService.findRivalSuggestions.mock.calls[0][1].city,
+      ).toBeUndefined();
+    });
+
+    it('returns 409 CITY_REQUIRED when authenticated user has no cityId', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/rivals')
+        .set('x-test-no-city', '1')
+        .expect(409);
+
+      expect(res.body).toEqual({
+        code: 'CITY_REQUIRED',
+        message: 'Set your city to use competitive features',
+      });
     });
 
     it('does not include candidate when service excludes them due to pending/recent challenge hygiene', async () => {
@@ -104,7 +130,7 @@ describe('Competitive Matchmaking (e2e)', () => {
       const allowedCandidateId = '00000000-0000-0000-0000-000000000112';
 
       // Simulates service behavior after a challenge with excludedCandidateId exists.
-      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue({
+      competitiveService.findRivalSuggestions.mockResolvedValue({
         items: [
           {
             userId: allowedCandidateId,
@@ -126,8 +152,12 @@ describe('Competitive Matchmaking (e2e)', () => {
         .get('/competitive/matchmaking/rivals')
         .expect(200);
 
-      expect(res.body.items.map((i: any) => i.userId)).toEqual([allowedCandidateId]);
-      expect(res.body.items.some((i: any) => i.userId === excludedCandidateId)).toBe(false);
+      expect(res.body.items.map((i: any) => i.userId)).toEqual([
+        allowedCandidateId,
+      ]);
+      expect(
+        res.body.items.some((i: any) => i.userId === excludedCandidateId),
+      ).toBe(false);
     });
   });
 
@@ -135,7 +165,7 @@ describe('Competitive Matchmaking (e2e)', () => {
 
   describe('GET /competitive/matchmaking/partners', () => {
     it('returns { items, nextCursor } shape', async () => {
-      (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue(EMPTY_PAGE);
+      competitiveService.findPartnerSuggestions.mockResolvedValue(EMPTY_PAGE);
 
       const res = await request(app.getHttpServer())
         .get('/competitive/matchmaking/partners')
@@ -155,16 +185,26 @@ describe('Competitive Matchmaking (e2e)', () => {
     });
 
     it('passes query params through to service', async () => {
-      (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue(EMPTY_PAGE);
+      competitiveService.findPartnerSuggestions.mockResolvedValue(EMPTY_PAGE);
 
       await request(app.getHttpServer())
-        .get('/competitive/matchmaking/partners?limit=10&range=150&sameCategory=true&province=Barcelona')
+        .get(
+          '/competitive/matchmaking/partners?limit=10&range=150&sameCategory=true&province=Barcelona',
+        )
         .expect(200);
 
       expect(competitiveService.findPartnerSuggestions).toHaveBeenCalledWith(
         FAKE_USER.userId,
-        expect.objectContaining({ limit: 10, range: 150, sameCategory: true, province: 'Barcelona' }),
+        expect.objectContaining({
+          limit: 10,
+          range: 150,
+          sameCategory: true,
+          scopeCityId: FAKE_USER.cityId,
+        }),
       );
+      expect(
+        competitiveService.findPartnerSuggestions.mock.calls[0][1].province,
+      ).toBeUndefined();
     });
 
     it('returns item shape with expected fields including Estilo compatible', async () => {
@@ -185,7 +225,7 @@ describe('Competitive Matchmaking (e2e)', () => {
           'Estilo compatible',
         ],
       };
-      (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue({
+      competitiveService.findPartnerSuggestions.mockResolvedValue({
         items: [partnerItem],
         nextCursor: null,
       });
@@ -214,7 +254,12 @@ describe('Competitive Matchmaking (e2e)', () => {
         momentum30d: 40,
         tags: ['aggressive'],
         location: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        reasons: ['ELO similar', 'Misma categoría', 'Activo recientemente', 'Estilo compatible'],
+        reasons: [
+          'ELO similar',
+          'Misma categoría',
+          'Activo recientemente',
+          'Estilo compatible',
+        ],
       };
       const lowerScore = {
         userId: '00000000-0000-0000-0000-000000000092',
@@ -229,7 +274,7 @@ describe('Competitive Matchmaking (e2e)', () => {
         reasons: ['ELO similar'],
       };
       // service already returns them pre-sorted by score DESC
-      (competitiveService.findPartnerSuggestions as jest.Mock).mockResolvedValue({
+      competitiveService.findPartnerSuggestions.mockResolvedValue({
         items: [higherScore, lowerScore],
         nextCursor: null,
       });
@@ -256,9 +301,14 @@ describe('Competitive Matchmaking (e2e)', () => {
         momentum30d: 10,
         tags: ['aggressive', 'baseline'],
         location: null,
-        reasons: ['Similar ELO', 'Same category', 'Active recently', 'Compatible style'],
+        reasons: [
+          'Similar ELO',
+          'Same category',
+          'Active recently',
+          'Compatible style',
+        ],
       };
-      (competitiveService.findRivalSuggestions as jest.Mock).mockResolvedValue({
+      competitiveService.findRivalSuggestions.mockResolvedValue({
         items: [rivalItem],
         nextCursor: null,
       });

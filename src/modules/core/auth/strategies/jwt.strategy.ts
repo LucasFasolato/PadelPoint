@@ -18,7 +18,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
-        (req: Request) => (req?.cookies as Record<string, string>)?.['pp_at'] ?? null,
+        (req: Request) =>
+          (req?.cookies as Record<string, string>)?.['pp_at'] ?? null,
       ]),
       secretOrKey: secret,
       ignoreExpiration: false,
@@ -28,6 +29,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload) {
     const user = await this.users.findById(payload.sub);
     if (!user || !user.active) throw new UnauthorizedException();
-    return { userId: user.id, email: user.email, role: user.role };
+    return {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      cityId: user.cityId ?? null,
+    };
   }
 }

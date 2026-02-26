@@ -12,10 +12,16 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengeInvitesService } from '../services/challenge-invites.service';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 
-type AuthUser = { userId: string; email: string; role: string };
+type AuthUser = {
+  userId: string;
+  email: string;
+  role: string;
+  cityId?: string | null;
+};
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CityRequiredGuard)
 @Controller('challenge-invites')
 export class ChallengeInvitesController {
   constructor(private readonly service: ChallengeInvitesService) {}

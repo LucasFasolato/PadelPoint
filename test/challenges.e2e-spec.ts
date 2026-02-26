@@ -12,12 +12,14 @@ const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',
   email: 'creator@test.com',
   role: 'player',
+  cityId: '30000000-0000-4000-8000-000000000001',
 };
 
 const FAKE_OPPONENT = {
   userId: 'b2222222-2222-4222-b222-222222222222',
   email: 'opponent@test.com',
   role: 'player',
+  cityId: '30000000-0000-4000-8000-000000000001',
 };
 
 function fakeGuard() {
@@ -25,7 +27,9 @@ function fakeGuard() {
     canActivate: (context: any) => {
       const req = context.switchToHttp().getRequest();
       const header = req.headers['x-test-user'];
-      if (header === 'opponent') {
+      if (header === 'no-city') {
+        req.user = { ...FAKE_CREATOR, cityId: null };
+      } else if (header === 'opponent') {
         req.user = FAKE_OPPONENT;
       } else {
         req.user = FAKE_CREATOR;
@@ -250,6 +254,18 @@ describe('Challenges (e2e)', () => {
         .set('x-test-user', 'opponent')
         .expect(200);
       expect(inboxAfter.body).toEqual([]);
+    });
+
+    it('returns 409 CITY_REQUIRED when cityId is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/challenges/inbox')
+        .set('x-test-user', 'no-city')
+        .expect(409);
+
+      expect(res.body).toEqual({
+        code: 'CITY_REQUIRED',
+        message: 'Set your city to use competitive features',
+      });
     });
   });
 });

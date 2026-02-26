@@ -13,6 +13,7 @@ import {
 import type { Request } from 'express';
 import { ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { MatchesService } from '../services/matches.service';
 import { ReportMatchDto, RejectMatchDto } from '../dto/report-match.dto';
 import { DisputeMatchDto } from '../dto/dispute-match.dto';
@@ -24,7 +25,7 @@ import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query
 type AuthUser = { userId: string; email: string; role: string };
 
 @Controller('matches')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CityRequiredGuard)
 export class MatchesController {
   constructor(private readonly service: MatchesService) {}
 

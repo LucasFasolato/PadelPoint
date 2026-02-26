@@ -15,6 +15,7 @@ import { Court } from '@legacy/courts/court.entity';
 import { CompetitiveModule } from '../competitive/competitive.module';
 import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '@/modules/core/notifications/notifications.module';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { NotificationsModule } from '@/modules/core/notifications/notifications.
     LeaguesModule,
     NotificationsModule,
   ],
-  providers: [MatchesService],
+  providers: [MatchesService, CityRequiredGuard],
   controllers: [MatchesController, LeagueMatchesController],
 })
 export class MatchesModule {}

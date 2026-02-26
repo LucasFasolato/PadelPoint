@@ -51,6 +51,41 @@ export class ChallengeInvitesService {
     }
   }
 
+  private async assertUsersShareCityOrThrow(
+    userIds: Array<string | null | undefined>,
+  ): Promise<void> {
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueIds.length <= 1) return;
+
+    const users = await Promise.all(
+      uniqueIds.map((id) => this.users.findById(id)),
+    );
+    if (users.some((user) => !user)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const cityIds = new Set<string>();
+    for (const user of users) {
+      const cityId = user.cityId;
+      if (typeof cityId !== 'string' || cityId.trim().length === 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'CITY_SCOPE_MISMATCH',
+          message: 'All challenge participants must have a city configured',
+        });
+      }
+      cityIds.add(cityId);
+    }
+
+    if (cityIds.size > 1) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_SCOPE_MISMATCH',
+        message: 'All challenge participants must belong to the same city',
+      });
+    }
+  }
+
   async inviteTeammate(
     challengeId: string,
     inviterId: string,
@@ -106,6 +141,13 @@ export class ChallengeInvitesService {
       if (!invitee) throw new NotFoundException('Invitee not found');
 
       this.assertNotAlreadyInChallenge(ch, inviteeId);
+      await this.assertUsersShareCityOrThrow([
+        ch.teamA1Id,
+        ch.teamA2Id,
+        ch.teamB1Id,
+        ch.teamB2Id,
+        inviteeId,
+      ]);
 
       // 🔁 Evitar múltiples invites abiertos para el mismo slot:
       // cancelamos invites pendientes para (challengeId, side)
@@ -186,6 +228,13 @@ export class ChallengeInvitesService {
       }
 
       this.assertNotAlreadyInChallenge(ch, meUserId);
+      await this.assertUsersShareCityOrThrow([
+        ch.teamA1Id,
+        ch.teamA2Id,
+        ch.teamB1Id,
+        ch.teamB2Id,
+        meUserId,
+      ]);
 
       // asigna slot por side (explícito)
       if (invite.side === ChallengeSide.A) {

@@ -16,6 +16,7 @@ const FAKE_USER = {
   userId: '00000000-0000-0000-0000-000000000001',
   email: 'test@test.com',
   role: 'player',
+  cityId: '30000000-0000-4000-8000-000000000001',
 };
 
 describe('Competitive Onboarding (e2e)', () => {
@@ -121,7 +122,7 @@ describe('Competitive Onboarding (e2e)', () => {
 
   describe('GET /competitive/profile/me/history', () => {
     it('should pass default limit=20 and cursor to service', async () => {
-      competitiveService.eloHistory!.mockResolvedValue({
+      competitiveService.eloHistory.mockResolvedValue({
         items: [],
         nextCursor: null,
       });
@@ -148,7 +149,7 @@ describe('Competitive Onboarding (e2e)', () => {
 
   describe('GET /competitive/profile/me/radar', () => {
     it('should return a valid radar shape', async () => {
-      competitiveService.getSkillRadar!.mockResolvedValue({
+      competitiveService.getSkillRadar.mockResolvedValue({
         activity: 50,
         momentum: 50,
         consistency: 50,
@@ -187,7 +188,7 @@ describe('Competitive Onboarding (e2e)', () => {
 
   describe('GET /competitive/matchmaking/rivals', () => {
     it('should return valid rival suggestions page', async () => {
-      competitiveService.findRivalSuggestions!.mockResolvedValue({
+      competitiveService.findRivalSuggestions.mockResolvedValue({
         items: [
           {
             userId: '22222222-2222-4222-8222-222222222222',
@@ -206,7 +207,9 @@ describe('Competitive Onboarding (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .get('/competitive/matchmaking/rivals?limit=20&range=100&sameCategory=true')
+        .get(
+          '/competitive/matchmaking/rivals?limit=20&range=100&sameCategory=true',
+        )
         .expect(200);
 
       expect(res.body.items[0]).toEqual(
@@ -359,7 +362,7 @@ describe('Competitive Onboarding (e2e)', () => {
 
   describe('GET /competitive/ranking', () => {
     it('should pass pagination and category query params to service', async () => {
-      competitiveService.ranking!.mockResolvedValue({
+      competitiveService.ranking.mockResolvedValue({
         items: [
           {
             rank: 1,
@@ -385,6 +388,7 @@ describe('Competitive Onboarding (e2e)', () => {
         limit: 25,
         category: 6,
         cursor: 'opaque',
+        cityId: FAKE_USER.cityId,
       });
     });
 

@@ -131,12 +131,9 @@ export class MatchesService {
 
   private getParticipantIds(ch: Challenge | null | undefined): string[] {
     if (!ch) return [];
-    return [
-      ch.teamA1Id,
-      ch.teamA2Id,
-      ch.teamB1Id,
-      ch.teamB2Id,
-    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+    return [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
   }
 
   private buildMatchActionFlags(
@@ -314,7 +311,10 @@ export class MatchesService {
     };
   }
 
-  private parseMatchDateOrThrow(value: string, field: 'playedAt' | 'scheduledAt') {
+  private parseMatchDateOrThrow(
+    value: string,
+    field: 'playedAt' | 'scheduledAt',
+  ) {
     const parsed = DateTime.fromISO(value, { zone: TZ });
     if (!parsed.isValid) {
       throw new BadRequestException({
@@ -392,6 +392,45 @@ export class MatchesService {
         statusCode: 400,
         code: 'LEAGUE_MEMBERS_MISSING',
         message: 'All provided players must be members of the league',
+      });
+    }
+  }
+
+  private async assertUsersShareCityOrThrow(
+    repo: Repository<User>,
+    userIds: Array<string | null | undefined>,
+    context: 'challenge' | 'match' = 'match',
+  ): Promise<void> {
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueIds.length <= 1) return;
+
+    const users = await repo.find({
+      where: { id: In(uniqueIds) },
+      select: ['id', 'cityId'],
+    });
+
+    if (users.length !== uniqueIds.length) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (
+      users.some(
+        (u) => typeof u.cityId !== 'string' || u.cityId.trim().length === 0,
+      )
+    ) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_SCOPE_MISMATCH',
+        message: `All ${context} participants must have a city configured`,
+      });
+    }
+
+    const cityIds = new Set(users.map((u) => u.cityId));
+    if (cityIds.size > 1) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_SCOPE_MISMATCH',
+        message: `All ${context} participants must belong to the same city`,
       });
     }
   }
@@ -502,13 +541,23 @@ export class MatchesService {
         throw new UnauthorizedException('Only match participants can report');
       }
 
+      await this.assertUsersShareCityOrThrow(
+        manager.getRepository(User),
+        participants.all,
+        'match',
+      );
+
       // Validate league linkage if provided
       const challengeLeagueId =
         typeof (challenge as { leagueId?: unknown }).leagueId === 'string' &&
         (challenge as { leagueId?: string }).leagueId
-          ? ((challenge as { leagueId?: string }).leagueId as string)
+          ? (challenge as { leagueId?: string }).leagueId
           : null;
-      if (dto.leagueId && challengeLeagueId && dto.leagueId !== challengeLeagueId) {
+      if (
+        dto.leagueId &&
+        challengeLeagueId &&
+        dto.leagueId !== challengeLeagueId
+      ) {
         throw new BadRequestException({
           statusCode: 400,
           code: 'LEAGUE_MATCH_CHALLENGE_MISMATCH',
@@ -593,7 +642,9 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
-        source: challenge.reservationId ? MatchSource.RESERVATION : MatchSource.MANUAL,
+        source: challenge.reservationId
+          ? MatchSource.RESERVATION
+          : MatchSource.MANUAL,
         status: MatchResultStatus.PENDING_CONFIRM,
 
         reportedByUserId: userId,
@@ -677,6 +728,11 @@ export class MatchesService {
         dto.teamB1Id,
         dto.teamB2Id,
       ];
+      await this.assertUsersShareCityOrThrow(
+        manager.getRepository(User),
+        playerIds,
+        'match',
+      );
       const memberCount = await memberRepo
         .createQueryBuilder('m')
         .where('m."leagueId" = :leagueId', { leagueId })
@@ -861,6 +917,12 @@ export class MatchesService {
         });
       }
 
+      await this.assertUsersShareCityOrThrow(
+        manager.getRepository(User),
+        playerIds,
+        'match',
+      );
+
       // 4. All 4 participants must be league members
       const memberCount = await memberRepo
         .createQueryBuilder('m')
@@ -971,9 +1033,14 @@ export class MatchesService {
 
       const playerIds = [dto.teamA1Id, dto.teamB1Id];
       if (hasA2 && hasB2) {
-        playerIds.push(teamA2Id as string, teamB2Id as string);
+        playerIds.push(teamA2Id, teamB2Id);
       }
       await this.assertLeaguePlayers(manager, leagueId, playerIds);
+      await this.assertUsersShareCityOrThrow(
+        manager.getRepository(User),
+        playerIds,
+        'match',
+      );
 
       const challenge = manager.getRepository(Challenge).create({
         type: ChallengeType.DIRECT,
@@ -1031,7 +1098,9 @@ export class MatchesService {
           eloApplied: false,
         });
 
-        const saved = await manager.getRepository(MatchResult).save(playedMatch);
+        const saved = await manager
+          .getRepository(MatchResult)
+          .save(playedMatch);
         if (hasA2 && hasB2) {
           await this.eloService.applyForMatchTx(manager, saved.id);
         }
@@ -1072,7 +1141,9 @@ export class MatchesService {
         eloApplied: false,
       });
 
-      const saved = await manager.getRepository(MatchResult).save(scheduledMatch);
+      const saved = await manager
+        .getRepository(MatchResult)
+        .save(scheduledMatch);
       return this.toLeagueMatchView({
         ...saved,
         challenge,
@@ -1241,7 +1312,9 @@ export class MatchesService {
     const qb = this.matchRepo
       .createQueryBuilder('m')
       .where('m."challengeId" IN (:...challengeIds)', { challengeIds })
-      .andWhere('m.status = :status', { status: MatchResultStatus.PENDING_CONFIRM })
+      .andWhere('m.status = :status', {
+        status: MatchResultStatus.PENDING_CONFIRM,
+      })
       .andWhere('m."reportedByUserId" != :userId', { userId })
       .orderBy('m."playedAt"', 'DESC')
       .addOrderBy('m.id', 'DESC')
@@ -1295,7 +1368,9 @@ export class MatchesService {
       .createQueryBuilder('m')
       .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
       .where('m."leagueId" = :leagueId', { leagueId })
-      .andWhere('m.status = :status', { status: MatchResultStatus.PENDING_CONFIRM })
+      .andWhere('m.status = :status', {
+        status: MatchResultStatus.PENDING_CONFIRM,
+      })
       .andWhere('m."reportedByUserId" != :userId', { userId })
       .andWhere(
         '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
@@ -1320,11 +1395,13 @@ export class MatchesService {
       ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
       : null;
 
-    const challengeIds = [...new Set(items.map((m) => m.challengeId).filter(Boolean))];
+    const challengeIds = [
+      ...new Set(items.map((m) => m.challengeId).filter(Boolean)),
+    ];
     const challenges =
       challengeIds.length > 0
         ? await this.challengeRepo.find({
-            where: { id: In(challengeIds as string[]) } as any,
+            where: { id: In(challengeIds) } as any,
           })
         : [];
     const challengeMap = new Map(challenges.map((ch) => [ch.id, ch]));
@@ -1371,7 +1448,8 @@ export class MatchesService {
         throw new BadRequestException({
           statusCode: 400,
           code: 'MATCH_RESULT_REQUIRED',
-          message: 'Scheduled matches must receive a result before confirmation',
+          message:
+            'Scheduled matches must receive a result before confirmation',
         });
       }
 
@@ -1967,7 +2045,10 @@ export class MatchesService {
 
     const userMap = new Map<string, string | null>();
     for (const u of users) {
-      userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+      userMap.set(
+        u.id,
+        u.displayName ?? (u.email ? u.email.split('@')[0] : null),
+      );
     }
 
     const resolvePlayer = (id: string | null | undefined): PlayerRef => ({

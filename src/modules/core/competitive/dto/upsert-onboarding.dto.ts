@@ -1,6 +1,23 @@
-import { IsEnum, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { CompetitiveGoal } from '../enums/competitive-goal.enum';
 import { PlayingFrequency } from '../enums/playing-frequency.enum';
+
+function trimOptional(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 export class UpsertOnboardingDto {
   @IsOptional()
@@ -20,4 +37,34 @@ export class UpsertOnboardingDto {
   @IsOptional()
   @IsObject()
   preferences?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsUUID()
+  countryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  provinceId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  cityId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trimOptional(value))
+  @IsString()
+  @MaxLength(120)
+  country?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trimOptional(value))
+  @IsString()
+  @MaxLength(120)
+  province?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trimOptional(value))
+  @IsString()
+  @MaxLength(120)
+  city?: string;
 }

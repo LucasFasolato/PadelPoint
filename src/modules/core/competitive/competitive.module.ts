@@ -12,6 +12,11 @@ import { Challenge } from '../challenges/entities/challenge.entity';
 import { UsersModule } from '../users/users.module';
 import { PlayerProfile } from '../players/entities/player-profile.entity';
 import { PlayerFavorite } from '../players/entities/player-favorite.entity';
+import { User } from '../users/entities/user.entity';
+import { City } from '../geo/entities/city.entity';
+import { Province } from '../geo/entities/province.entity';
+import { Country } from '../geo/entities/country.entity';
+import { CityRequiredGuard } from '@common/guards/city-required.guard';
 
 @Module({
   imports: [
@@ -23,10 +28,14 @@ import { PlayerFavorite } from '../players/entities/player-favorite.entity';
       Challenge,
       PlayerProfile,
       PlayerFavorite,
+      User,
+      Country,
+      Province,
+      City,
     ]),
   ],
   controllers: [CompetitiveController],
-  providers: [CompetitiveService, EloService],
+  providers: [CompetitiveService, EloService, CityRequiredGuard],
   exports: [CompetitiveService, EloService],
 })
 export class CompetitiveModule {}
