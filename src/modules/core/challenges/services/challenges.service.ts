@@ -17,6 +17,7 @@ import { Challenge } from '../entities/challenge.entity';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import { ChallengeType } from '../enums/challenge-type.enum';
 import { User } from '../../users/entities/user.entity';
+import { MatchType } from '../../matches/enums/match-type.enum';
 import {
   ChallengeInvite,
   ChallengeInviteStatus,
@@ -48,6 +49,7 @@ export class ChallengesService {
     partnerUserId?: string | null;
     reservationId?: string | null;
     message?: string | null;
+    matchType?: MatchType;
   }) {
     if (params.meUserId === params.opponentUserId) {
       throw new BadRequestException('You cannot challenge yourself');
@@ -120,6 +122,7 @@ export class ChallengesService {
       reservationId,
       targetCategory: null,
       message: params.message?.trim() || null,
+      matchType: params.matchType ?? MatchType.COMPETITIVE,
     });
 
     const saved = await this.repo.save(ent);
@@ -152,6 +155,7 @@ export class ChallengesService {
     targetCategory: number;
     reservationId?: string | null;
     message?: string | null;
+    matchType?: MatchType;
   }) {
     if (params.partnerUserId && params.partnerUserId === params.meUserId) {
       throw new BadRequestException('Partner cannot be yourself');
@@ -212,6 +216,7 @@ export class ChallengesService {
       reservationId,
       targetCategory: params.targetCategory,
       message: params.message?.trim() || null,
+      matchType: params.matchType ?? MatchType.COMPETITIVE,
     });
 
     const saved = await this.repo.save(ent);
@@ -661,6 +666,8 @@ export class ChallengesService {
       id: c.id,
       type: c.type,
       status,
+      matchType: c.matchType ?? MatchType.COMPETITIVE,
+      impactRanking: (c.matchType ?? MatchType.COMPETITIVE) === MatchType.COMPETITIVE,
 
       targetCategory: c.targetCategory,
       reservationId: c.reservationId,

@@ -11,6 +11,7 @@ import {
 import { Type } from 'class-transformer';
 import { ReportSetDto } from './report-match.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MatchType } from '../enums/match-type.enum';
 
 export enum LeagueMatchType {
   PLAYED = 'PLAYED',
@@ -65,4 +66,9 @@ export class CreateLeagueMatchDto {
   @ValidateNested()
   @Type(() => LeagueMatchScoreDto)
   score?: LeagueMatchScoreDto;
+
+  @ApiPropertyOptional({ enum: MatchType, default: MatchType.COMPETITIVE })
+  @IsOptional()
+  @IsEnum(MatchType)
+  matchType?: MatchType;
 }

@@ -55,6 +55,7 @@ import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
 import { User } from '../../users/entities/user.entity';
 import { City } from '../../geo/entities/city.entity';
 import { CITY_REQUIRED_ERROR } from '@common/guards/city-required.guard';
+import { MatchType } from '../../matches/enums/match-type.enum';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -1330,6 +1331,9 @@ export class CompetitiveService {
       id: challenge.id,
       type: challenge.type,
       status: challenge.status,
+      matchType: challenge.matchType ?? MatchType.COMPETITIVE,
+      impactRanking:
+        (challenge.matchType ?? MatchType.COMPETITIVE) === MatchType.COMPETITIVE,
       reservationId: challenge.reservationId,
       targetCategory: challenge.targetCategory,
       createdAt: challenge.createdAt,
@@ -1345,6 +1349,12 @@ export class CompetitiveService {
         ? {
             id: match.id,
             status: match.status,
+            matchType: match.matchType ?? MatchType.COMPETITIVE,
+            impactRanking:
+              typeof match.impactRanking === 'boolean'
+                ? match.impactRanking
+                : (match.matchType ?? MatchType.COMPETITIVE) ===
+                  MatchType.COMPETITIVE,
             leagueId: match.leagueId ?? null,
             playedAt: match.playedAt ? match.playedAt.toISOString() : null,
           }

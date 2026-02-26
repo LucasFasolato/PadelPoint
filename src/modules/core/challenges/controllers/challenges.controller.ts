@@ -40,6 +40,7 @@ export class ChallengesController {
       partnerUserId: dto.partnerUserId ?? null,
       reservationId: dto.reservationId ?? null,
       message: dto.message ?? null,
+      matchType: dto.matchType,
     });
   }
 
@@ -52,6 +53,7 @@ export class ChallengesController {
       targetCategory: dto.targetCategory,
       reservationId: dto.reservationId ?? null,
       message: dto.message ?? null,
+      matchType: dto.matchType,
     });
   }
 

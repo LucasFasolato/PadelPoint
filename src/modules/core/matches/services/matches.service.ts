@@ -44,6 +44,7 @@ import {
 import { SubmitLeagueMatchResultDto } from '../dto/submit-league-match-result.dto';
 import { User } from '../../users/entities/user.entity';
 import { MatchSource } from '../enums/match-source.enum';
+import { MatchType } from '../enums/match-type.enum';
 import { LeagueRole } from '../../leagues/enums/league-role.enum';
 import { LeagueActivityService } from '../../leagues/services/league-activity.service';
 import { LeagueActivityType } from '../../leagues/enums/league-activity-type.enum';
@@ -58,6 +59,8 @@ type PendingConfirmationView = {
   matchId: string;
   challengeId: string | null;
   leagueId: string | null;
+  matchType: MatchType;
+  impactRanking: boolean;
   status: MatchResultStatus;
   playedAt: string | null;
   score: { sets: Array<{ a: number; b: number }> };
@@ -396,6 +399,38 @@ export class MatchesService {
     }
   }
 
+  private normalizeMatchType(value?: MatchType | null): MatchType {
+    return value ?? MatchType.COMPETITIVE;
+  }
+
+  private impactRankingForMatchType(matchType?: MatchType | null): boolean {
+    return this.normalizeMatchType(matchType) === MatchType.COMPETITIVE;
+  }
+
+  private shouldImpactRanking(
+    match: Pick<MatchResult, 'matchType' | 'impactRanking'>,
+  ): boolean {
+    if (typeof match.impactRanking === 'boolean') return match.impactRanking;
+    return this.impactRankingForMatchType(match.matchType);
+  }
+
+  private async applyEloIfCompetitive(
+    manager: EntityManager,
+    match: Pick<MatchResult, 'id' | 'matchType' | 'impactRanking'>,
+  ): Promise<void> {
+    if (!this.shouldImpactRanking(match)) return;
+    await this.eloService.applyForMatchTx(manager, match.id);
+  }
+
+  private async recomputeStandingsIfCompetitive(
+    manager: EntityManager,
+    match: Pick<MatchResult, 'id' | 'leagueId' | 'matchType' | 'impactRanking'>,
+  ): Promise<void> {
+    if (!match.leagueId) return;
+    if (!this.shouldImpactRanking(match)) return;
+    await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+  }
+
   private async assertUsersShareCityOrThrow(
     repo: Repository<User>,
     userIds: Array<string | null | undefined>,
@@ -491,6 +526,8 @@ export class MatchesService {
       id: match.id,
       leagueId: match.leagueId,
       challengeId: match.challengeId,
+      matchType: this.normalizeMatchType(match.matchType),
+      impactRanking: this.shouldImpactRanking(match),
       status: match.status,
       scheduledAt: match.scheduledAt ? match.scheduledAt.toISOString() : null,
       playedAt: match.playedAt ? match.playedAt.toISOString() : null,
@@ -632,6 +669,8 @@ export class MatchesService {
         challengeId: dto.challengeId,
         challenge,
         leagueId,
+        matchType: this.normalizeMatchType(challenge.matchType),
+        impactRanking: this.impactRankingForMatchType(challenge.matchType),
         playedAt: playedAt.toJSDate(),
 
         teamASet1: s1.a,
@@ -672,6 +711,7 @@ export class MatchesService {
       teamB2Id: string;
       sets: Array<{ a: number; b: number }>;
       playedAt?: string;
+      matchType?: MatchType;
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
@@ -679,6 +719,8 @@ export class MatchesService {
       const reservationRepo = manager.getRepository(Reservation);
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
+
+      const matchType = this.normalizeMatchType(dto.matchType);
 
       // 1. Validate league exists and is ACTIVE
       await this.assertLeagueReadyForMatchUsage(manager, leagueId);
@@ -773,6 +815,7 @@ export class MatchesService {
       const challenge = chRepo.create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
+        matchType,
         teamA1Id: dto.teamA1Id,
         teamA2Id: dto.teamA2Id,
         teamB1Id: dto.teamB1Id,
@@ -804,6 +847,8 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
+        matchType,
+        impactRanking: this.impactRankingForMatchType(matchType),
         source: MatchSource.RESERVATION,
         status: MatchResultStatus.PENDING_CONFIRM,
 
@@ -880,12 +925,15 @@ export class MatchesService {
       teamB2Id: string;
       sets: Array<{ a: number; b: number }>;
       playedAt?: string;
+      matchType?: MatchType;
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
       const memberRepo = manager.getRepository(LeagueMember);
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
+
+      const matchType = this.normalizeMatchType(dto.matchType);
 
       // 1. Validate league
       await this.assertLeagueReadyForMatchUsage(manager, leagueId);
@@ -945,6 +993,7 @@ export class MatchesService {
       const challenge = chRepo.create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
+        matchType,
         teamA1Id: dto.teamA1Id,
         teamA2Id: dto.teamA2Id,
         teamB1Id: dto.teamB1Id,
@@ -976,6 +1025,8 @@ export class MatchesService {
         teamBSet3: s3 ? s3.b : null,
 
         winnerTeam,
+        matchType,
+        impactRanking: this.impactRankingForMatchType(matchType),
         source: MatchSource.MANUAL,
         status: MatchResultStatus.PENDING_CONFIRM,
 
@@ -1045,6 +1096,7 @@ export class MatchesService {
       const challenge = manager.getRepository(Challenge).create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
+        matchType: this.normalizeMatchType(dto.matchType),
         teamA1Id: dto.teamA1Id,
         teamA2Id: hasA2 ? teamA2Id : null,
         teamB1Id: dto.teamB1Id,
@@ -1077,6 +1129,7 @@ export class MatchesService {
         const { winnerTeam } = this.validateLeagueSets(dto.score.sets);
         const [s1, s2, s3] = dto.score.sets;
 
+        const matchType = this.normalizeMatchType(dto.matchType);
         const playedMatch = manager.getRepository(MatchResult).create({
           challengeId: challenge.id,
           challenge,
@@ -1090,6 +1143,8 @@ export class MatchesService {
           teamASet3: s3?.a ?? null,
           teamBSet3: s3?.b ?? null,
           winnerTeam,
+          matchType,
+          impactRanking: this.impactRankingForMatchType(matchType),
           status: MatchResultStatus.CONFIRMED,
           reportedByUserId: userId,
           confirmedByUserId: userId,
@@ -1102,9 +1157,9 @@ export class MatchesService {
           .getRepository(MatchResult)
           .save(playedMatch);
         if (hasA2 && hasB2) {
-          await this.eloService.applyForMatchTx(manager, saved.id);
+          await this.applyEloIfCompetitive(manager, saved);
         }
-        await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
+        await this.recomputeStandingsIfCompetitive(manager, saved);
 
         return this.toLeagueMatchView({
           ...saved,
@@ -1124,6 +1179,8 @@ export class MatchesService {
         challengeId: challenge.id,
         challenge,
         leagueId,
+        matchType: this.normalizeMatchType(dto.matchType),
+        impactRanking: this.impactRankingForMatchType(dto.matchType),
         scheduledAt,
         playedAt: null,
         teamASet1: null,
@@ -1228,9 +1285,9 @@ export class MatchesService {
 
       const saved = await matchRepo.save(match);
       if (hasA2 && hasB2) {
-        await this.eloService.applyForMatchTx(manager, saved.id);
+        await this.applyEloIfCompetitive(manager, saved);
       }
-      await this.leagueStandingsService.recomputeForMatch(manager, saved.id);
+      await this.recomputeStandingsIfCompetitive(manager, saved);
 
       return this.toLeagueMatchView(saved);
     });
@@ -1438,7 +1495,7 @@ export class MatchesService {
         match.status === MatchResultStatus.CONFIRMED ||
         match.status === MatchResultStatus.RESOLVED
       ) {
-        await this.eloService.applyForMatchTx(manager, match.id);
+        await this.applyEloIfCompetitive(manager, match);
         return repo.findOne({ where: { id: match.id } });
       }
 
@@ -1473,8 +1530,8 @@ export class MatchesService {
 
       await repo.save(match);
 
-      await this.eloService.applyForMatchTx(manager, match.id);
-      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+      await this.applyEloIfCompetitive(manager, match);
+      await this.recomputeStandingsIfCompetitive(manager, match);
 
       // Notify other participants (fire-and-forget)
       this.notifyMatchConfirmed(match, participants.all, userId).catch((err) =>
@@ -1562,8 +1619,8 @@ export class MatchesService {
       match.rejectionReason = null;
       await matchRepo.save(match);
 
-      await this.eloService.applyForMatchTx(manager, match.id);
-      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+      await this.applyEloIfCompetitive(manager, match);
+      await this.recomputeStandingsIfCompetitive(manager, match);
 
       await auditRepo.save(
         auditRepo.create({
@@ -1848,12 +1905,12 @@ export class MatchesService {
         match.status = MatchResultStatus.CONFIRMED;
         await matchRepo.save(match);
         // Re-confirm standings so the match is counted again
-        await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+        await this.recomputeStandingsIfCompetitive(manager, match);
       } else if (dto.resolution === DisputeResolution.VOID_MATCH) {
         match.status = MatchResultStatus.RESOLVED;
         await matchRepo.save(match);
         // Recompute standings so the voided match is excluded (status != CONFIRMED)
-        await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+        await this.recomputeStandingsIfCompetitive(manager, match);
       }
 
       // Audit log
@@ -1980,8 +2037,8 @@ export class MatchesService {
       await matchRepo.save(match);
 
       // Apply ELO + recompute standings
-      await this.eloService.applyForMatchTx(manager, match.id);
-      await this.leagueStandingsService.recomputeForMatch(manager, match.id);
+      await this.applyEloIfCompetitive(manager, match);
+      await this.recomputeStandingsIfCompetitive(manager, match);
 
       // Audit log
       const audit = auditRepo.create({
@@ -2070,6 +2127,8 @@ export class MatchesService {
         matchId: m.id,
         challengeId: m.challengeId ?? null,
         leagueId: m.leagueId ?? null,
+        matchType: this.normalizeMatchType(m.matchType),
+        impactRanking: this.shouldImpactRanking(m),
         status: m.status,
         playedAt: m.playedAt ? m.playedAt.toISOString() : null,
         score: { sets },
@@ -2218,6 +2277,8 @@ export class MatchesService {
     if (!m) throw new NotFoundException('Match result not found');
     return {
       ...m,
+      matchType: this.normalizeMatchType(m.matchType),
+      impactRanking: this.shouldImpactRanking(m),
       ...this.buildMatchActionFlags(m, m.challenge ?? null, userId),
     };
   }
@@ -2228,7 +2289,11 @@ export class MatchesService {
       relations: ['challenge'],
     });
     if (!m) throw new NotFoundException('Match result not found');
-    return m;
+    return {
+      ...m,
+      matchType: this.normalizeMatchType(m.matchType),
+      impactRanking: this.shouldImpactRanking(m),
+    };
   }
 
   // ------------------------

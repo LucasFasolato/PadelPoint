@@ -24,6 +24,7 @@ import { DisputeReasonCode } from '../enums/dispute-reason.enum';
 import { DisputeStatus } from '../enums/dispute-status.enum';
 import { DisputeResolution } from '../dto/resolve-dispute.dto';
 import { MatchAuditAction } from '../enums/match-audit-action.enum';
+import { MatchType } from '../enums/match-type.enum';
 import {
   Reservation,
   ReservationStatus,
@@ -47,6 +48,7 @@ const ADMIN = 'd4444444-4444-4444-d444-444444444444';
 function fakeChallenge(): Challenge {
   return {
     id: 'challenge-1',
+    matchType: MatchType.COMPETITIVE,
     teamA1Id: USER_A1,
     teamA2Id: USER_A2,
     teamB1Id: USER_B1,
@@ -61,6 +63,8 @@ function fakeMatch(overrides: Partial<MatchResult> = {}): MatchResult {
     status: MatchResultStatus.CONFIRMED,
     reportedByUserId: USER_A1,
     confirmedByUserId: USER_B1,
+    matchType: MatchType.COMPETITIVE,
+    impactRanking: true,
     eloApplied: true,
     playedAt: new Date('2025-06-15T10:00:00Z'),
     updatedAt: new Date(), // recently confirmed
@@ -135,6 +139,7 @@ describe('MatchesService', () => {
           if (entity === League) return txLeagueRepo;
           if (entity === LeagueMember) return txMemberRepo;
           if (entity === Reservation) return txReservationRepo;
+          if (entity === User) return userRepo;
           return createMockRepo();
         }),
         save: jest.fn().mockImplementation(async (entity: any) => entity),
@@ -147,6 +152,12 @@ describe('MatchesService', () => {
       id: USER_B1,
       displayName: 'Player B1',
     });
+    userRepo.find.mockResolvedValue([
+      { id: USER_A1, cityId: 'city-1' },
+      { id: USER_A2, cityId: 'city-1' },
+      { id: USER_B1, cityId: 'city-1' },
+      { id: USER_B2, cityId: 'city-1' },
+    ] as User[]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -510,7 +521,10 @@ describe('MatchesService', () => {
     });
 
     it('should call recomputeForMatch on CONFIRM_AS_IS', async () => {
-      const match = fakeMatch({ status: MatchResultStatus.DISPUTED });
+      const match = fakeMatch({
+        status: MatchResultStatus.DISPUTED,
+        leagueId: 'league-1',
+      });
       const dispute = fakeDispute();
 
       txMatchRepo.createQueryBuilder.mockReturnValue({
@@ -542,7 +556,10 @@ describe('MatchesService', () => {
     });
 
     it('should call recomputeForMatch on VOID_MATCH to exclude voided match from standings', async () => {
-      const match = fakeMatch({ status: MatchResultStatus.DISPUTED });
+      const match = fakeMatch({
+        status: MatchResultStatus.DISPUTED,
+        leagueId: 'league-1',
+      });
       const dispute = fakeDispute();
 
       txMatchRepo.createQueryBuilder.mockReturnValue({
@@ -829,6 +846,7 @@ describe('MatchesService', () => {
             if (entity === League) return txLeagueRepo;
             if (entity === LeagueMember) return txMemberRepo;
             if (entity === Reservation) return txReservationRepo;
+            if (entity === User) return userRepo;
             return createMockRepo();
           }),
           save: jest.fn().mockImplementation(async (entity: any) => entity),
@@ -964,6 +982,8 @@ describe('MatchesService', () => {
       const pendingMatch = fakeMatch({
         status: MatchResultStatus.PENDING_CONFIRM,
         eloApplied: false,
+        matchType: MatchType.COMPETITIVE,
+        impactRanking: true,
         reportedByUserId: USER_A1,
         leagueId: LEAGUE_ID,
       });
@@ -988,6 +1008,41 @@ describe('MatchesService', () => {
         expect.any(Object),
         'match-1',
       );
+    });
+
+    it('should NOT apply ELO or recompute standings for FRIENDLY matches on confirmMatch', async () => {
+      const pendingFriendlyMatch = fakeMatch({
+        status: MatchResultStatus.PENDING_CONFIRM,
+        eloApplied: false,
+        matchType: MatchType.FRIENDLY,
+        impactRanking: false,
+        reportedByUserId: USER_A1,
+        leagueId: LEAGUE_ID,
+      });
+
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(pendingFriendlyMatch),
+      });
+      txChallengeRepo.findOne.mockResolvedValue({
+        ...fakeChallenge(),
+        matchType: MatchType.FRIENDLY,
+      });
+      txMatchRepo.save.mockResolvedValue({
+        ...pendingFriendlyMatch,
+        status: MatchResultStatus.CONFIRMED,
+        confirmedByUserId: USER_B1,
+      });
+      txMatchRepo.findOne.mockResolvedValue({
+        ...pendingFriendlyMatch,
+        status: MatchResultStatus.CONFIRMED,
+      });
+
+      await service.confirmMatch(USER_B1, 'match-1');
+
+      expect(eloService.applyForMatchTx).not.toHaveBeenCalled();
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
     // Test 4: notifications are created for each non-confirmer participant

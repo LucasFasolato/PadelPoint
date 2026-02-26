@@ -13,6 +13,7 @@ import { Challenge } from '../../challenges/entities/challenge.entity';
 import { League } from '../../leagues/entities/league.entity';
 import { User } from '../../users/entities/user.entity';
 import { MatchSource } from '../enums/match-source.enum';
+import { MatchType } from '../enums/match-type.enum';
 
 export enum MatchResultStatus {
   SCHEDULED = 'scheduled',
@@ -83,6 +84,16 @@ export class MatchResult {
     default: MatchResultStatus.PENDING_CONFIRM,
   })
   status!: MatchResultStatus;
+
+  @Column({
+    type: 'enum',
+    enum: MatchType,
+    default: MatchType.COMPETITIVE,
+  })
+  matchType!: MatchType;
+
+  @Column({ type: 'boolean', default: true })
+  impactRanking!: boolean;
 
   // Who reported
   @ManyToOne(() => User, { nullable: false })

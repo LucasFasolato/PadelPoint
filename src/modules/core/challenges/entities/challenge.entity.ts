@@ -11,6 +11,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import { ChallengeType } from '../enums/challenge-type.enum';
+import { MatchType } from '../../matches/enums/match-type.enum';
 
 @Entity('challenges')
 export class Challenge {
@@ -26,6 +27,13 @@ export class Challenge {
     default: ChallengeStatus.PENDING,
   })
   status!: ChallengeStatus;
+
+  @Column({
+    type: 'enum',
+    enum: MatchType,
+    default: MatchType.COMPETITIVE,
+  })
+  matchType!: MatchType;
 
   // -----------------
   // Team A

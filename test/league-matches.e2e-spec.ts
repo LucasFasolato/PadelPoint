@@ -17,12 +17,14 @@ const FAKE_MEMBER = {
   userId: 'a1111111-1111-4111-a111-111111111111',
   email: 'member@test.com',
   role: 'player',
+  cityId: 'city-test-1',
 };
 
 const FAKE_OUTSIDER = {
   userId: 'c3333333-3333-4333-c333-333333333333',
   email: 'outsider@test.com',
   role: 'player',
+  cityId: 'city-test-1',
 };
 
 function fakeGuard() {

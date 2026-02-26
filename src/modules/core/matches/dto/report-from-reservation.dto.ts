@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsISO8601,
   IsOptional,
   IsUUID,
@@ -10,6 +11,7 @@ import {
 import { Type } from 'class-transformer';
 import { ReportSetDto } from './report-match.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MatchType } from '../enums/match-type.enum';
 
 export class ReportFromReservationDto {
   @ApiProperty({ format: 'uuid' })
@@ -44,4 +46,9 @@ export class ReportFromReservationDto {
   @IsOptional()
   @IsISO8601()
   playedAt?: string;
+
+  @ApiPropertyOptional({ enum: MatchType, default: MatchType.COMPETITIVE })
+  @IsOptional()
+  @IsEnum(MatchType)
+  matchType?: MatchType;
 }

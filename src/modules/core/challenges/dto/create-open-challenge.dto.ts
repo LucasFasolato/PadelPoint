@@ -1,4 +1,5 @@
 import {
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -7,6 +8,7 @@ import {
   Min,
   MaxLength,
 } from 'class-validator';
+import { MatchType } from '../../matches/enums/match-type.enum';
 
 export class CreateOpenChallengeDto {
   @IsOptional()
@@ -26,4 +28,8 @@ export class CreateOpenChallengeDto {
   @IsString()
   @MaxLength(280)
   message?: string;
+
+  @IsOptional()
+  @IsEnum(MatchType)
+  matchType?: MatchType;
 }

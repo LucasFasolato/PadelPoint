@@ -7,6 +7,7 @@ import { ChallengesService } from '@/modules/core/challenges/services/challenges
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengeStatus } from '@/modules/core/challenges/enums/challenge-status.enum';
 import { ChallengeType } from '@/modules/core/challenges/enums/challenge-type.enum';
+import { MatchType } from '@/modules/core/matches/enums/match-type.enum';
 
 const FAKE_CREATOR = {
   userId: 'a1111111-1111-4111-a111-111111111111',
@@ -133,7 +134,10 @@ describe('Challenges (e2e)', () => {
 
       const res = await request(app.getHttpServer())
         .post('/challenges/direct')
-        .send({ opponentUserId: FAKE_OPPONENT.userId })
+        .send({
+          opponentUserId: FAKE_OPPONENT.userId,
+          matchType: MatchType.FRIENDLY,
+        })
         .expect(201);
 
       expect(res.body.id).toBe('ch-1');
@@ -142,6 +146,7 @@ describe('Challenges (e2e)', () => {
         expect.objectContaining({
           meUserId: FAKE_CREATOR.userId,
           opponentUserId: FAKE_OPPONENT.userId,
+          matchType: MatchType.FRIENDLY,
         }),
       );
     });
@@ -151,6 +156,33 @@ describe('Challenges (e2e)', () => {
         .post('/challenges/direct')
         .send({})
         .expect(400);
+    });
+  });
+
+  describe('POST /challenges/open', () => {
+    it('should accept matchType and pass it to service', async () => {
+      challengesService.createOpen.mockResolvedValue({
+        ...challengeView,
+        type: ChallengeType.OPEN,
+        matchType: MatchType.FRIENDLY,
+        impactRanking: false,
+      });
+
+      await request(app.getHttpServer())
+        .post('/challenges/open')
+        .send({
+          targetCategory: 4,
+          matchType: MatchType.FRIENDLY,
+        })
+        .expect(201);
+
+      expect(challengesService.createOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          meUserId: FAKE_CREATOR.userId,
+          targetCategory: 4,
+          matchType: MatchType.FRIENDLY,
+        }),
+      );
     });
   });
 
