@@ -6,9 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { OAuthService } from '../services/oauth.service';
 import { UsersService } from '../../users/services/users.service';
 import type { OAuthProfile } from '../services/oauth.service';
-
-const AT_MAX_AGE = 15 * 60 * 1000;            // 15 minutes
-const RT_MAX_AGE = 30 * 24 * 60 * 60 * 1000;  // 30 days
+import { AT_MAX_AGE, cookieBaseOptions, RT_MAX_AGE } from '../utils/cookies';
 
 @Controller('auth')
 export class AuthAppleController {
@@ -49,8 +47,7 @@ export class AuthAppleController {
 
       const tokens = await this.auth.issueTokens(user.id, user.email, user.role);
 
-      const secure = process.env.NODE_ENV === 'production';
-      const cookieOpts = { httpOnly: true, sameSite: 'lax' as const, secure, path: '/' };
+      const cookieOpts = cookieBaseOptions();
       res.cookie('pp_at', tokens.accessToken, { ...cookieOpts, maxAge: AT_MAX_AGE });
       res.cookie('pp_rt', tokens.refreshToken, { ...cookieOpts, maxAge: RT_MAX_AGE });
 

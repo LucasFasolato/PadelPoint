@@ -16,22 +16,20 @@ import { LoginDto } from '../dto/login.dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RefreshTokenService } from '../services/refresh-token.service';
 import { UsersService } from '../../users/services/users.service';
+import { AT_MAX_AGE, cookieBaseOptions, RT_MAX_AGE } from '../utils/cookies';
 
 type AuthUser = { userId: string; email: string; role: string };
 
-const AT_MAX_AGE = 15 * 60 * 1000;           // 15 minutes in ms
-const RT_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
-
 function setCookies(res: Response, accessToken: string, refreshToken: string): void {
-  const secure = process.env.NODE_ENV === 'production';
-  const base = { httpOnly: true, sameSite: 'lax' as const, secure, path: '/' };
+  const base = cookieBaseOptions();
   res.cookie('pp_at', accessToken, { ...base, maxAge: AT_MAX_AGE });
   res.cookie('pp_rt', refreshToken, { ...base, maxAge: RT_MAX_AGE });
 }
 
 function clearCookies(res: Response): void {
-  res.clearCookie('pp_at', { path: '/' });
-  res.clearCookie('pp_rt', { path: '/' });
+  const base = cookieBaseOptions();
+  res.clearCookie('pp_at', base);
+  res.clearCookie('pp_rt', base);
 }
 
 @Controller('auth')
