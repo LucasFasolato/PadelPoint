@@ -71,6 +71,29 @@ describe('Me Activity (e2e)', () => {
       .get('/me/activity?limit=20')
       .expect(200);
 
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "items",
+  "nextCursor",
+]
+`);
+    expect(Object.keys(res.body.items[0]).sort()).toMatchInlineSnapshot(`
+[
+  "body",
+  "createdAt",
+  "id",
+  "isGlobal",
+  "metadata",
+  "title",
+  "type",
+]
+`);
+    expect(Object.keys(res.body.items[0].metadata).sort()).toMatchInlineSnapshot(`
+[
+  "deltaPositions",
+  "newPosition",
+]
+`);
     expect(res.body.items[0]).toEqual(
       expect.objectContaining({
         type: 'RANKING_MOVEMENT',
@@ -84,4 +107,3 @@ describe('Me Activity (e2e)', () => {
     );
   });
 });
-

@@ -109,6 +109,45 @@ describe('Rankings (e2e)', () => {
 
     expect(res.body.meta.scope).toBe('PROVINCE');
     expect(res.body.items[0].position).toBe(1);
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "items",
+  "meta",
+  "my",
+]
+`);
+    expect(Object.keys(res.body.meta).sort()).toMatchInlineSnapshot(`
+[
+  "asOfDate",
+  "category",
+  "cityId",
+  "computedAt",
+  "limit",
+  "mode",
+  "page",
+  "provinceCode",
+  "scope",
+  "timeframe",
+  "total",
+  "totalPages",
+]
+`);
+    expect(Object.keys(res.body.items[0]).sort()).toMatchInlineSnapshot(`
+[
+  "deltaPositions",
+  "displayName",
+  "position",
+  "rating",
+  "userId",
+]
+`);
+    expect(Object.keys(res.body.my).sort()).toMatchInlineSnapshot(`
+[
+  "deltaPositions",
+  "position",
+  "rating",
+]
+`);
     expect(rankingsService.getLeaderboard).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: FAKE_USER.userId,
@@ -118,6 +157,48 @@ describe('Rankings (e2e)', () => {
         page: 1,
       }),
     );
+  });
+
+  it('GET /rankings/scopes returns scope contract keys', async () => {
+    rankingsService.getAvailableScopes!.mockResolvedValue({
+      items: [
+        { scope: 'COUNTRY' },
+        { scope: 'PROVINCE', provinceCode: 'AR-S' },
+        {
+          scope: 'CITY',
+          cityId: '30000000-0000-4000-8000-000000000001',
+          cityName: 'Rosario',
+        },
+      ],
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/rankings/scopes')
+      .expect(200);
+
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "items",
+]
+`);
+    expect(Object.keys(res.body.items[0]).sort()).toMatchInlineSnapshot(`
+[
+  "scope",
+]
+`);
+    expect(Object.keys(res.body.items[1]).sort()).toMatchInlineSnapshot(`
+[
+  "provinceCode",
+  "scope",
+]
+`);
+    expect(Object.keys(res.body.items[2]).sort()).toMatchInlineSnapshot(`
+[
+  "cityId",
+  "cityName",
+  "scope",
+]
+`);
   });
 
   it('POST /rankings/snapshots/run is admin-only', async () => {
