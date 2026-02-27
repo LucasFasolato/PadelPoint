@@ -1,9 +1,12 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MatchResultsV11768305239849 implements MigrationInterface {
-  name = 'MatchResultsV11768305239849';
+export class MatchResultsV11768312000000 implements MigrationInterface {
+  name = 'MatchResultsV11768312000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const matchResultsExists = await queryRunner.hasTable('match_results');
+    if (matchResultsExists) return;
+
     await queryRunner.query(
       `CREATE TYPE "public"."match_results_winnerteam_enum" AS ENUM('A', 'B')`,
     );
@@ -28,6 +31,9 @@ export class MatchResultsV11768305239849 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    const matchResultsExists = await queryRunner.hasTable('match_results');
+    if (!matchResultsExists) return;
+
     await queryRunner.query(
       `ALTER TABLE "match_results" DROP CONSTRAINT "FK_cd75a6f8d950ba4710960848f1c"`,
     );
