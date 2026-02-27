@@ -112,6 +112,35 @@ describe('Players Profile (e2e)', () => {
     );
   });
 
+  it('PATCH /players/me/profile accepts cityName + provinceCode aliases', async () => {
+    playersService.updateMyProfile!.mockResolvedValue({
+      userId: FAKE_PLAYER.userId,
+      bio: null,
+      playStyleTags: [],
+      strengths: [],
+      lookingFor: { partner: false, rival: false },
+      location: { city: 'Rosario', province: 'S', country: null },
+      updatedAt: '2026-02-24T11:00:00.000Z',
+    });
+
+    await request(app.getHttpServer())
+      .patch('/players/me/profile')
+      .send({
+        location: { cityName: '  Rosario  ', provinceCode: '  S  ' },
+      })
+      .expect(200);
+
+    expect(playersService.updateMyProfile).toHaveBeenCalledWith(
+      FAKE_PLAYER.userId,
+      expect.objectContaining({
+        location: expect.objectContaining({
+          cityName: 'Rosario',
+          provinceCode: 'S',
+        }),
+      }),
+    );
+  });
+
   it('PATCH /players/me/profile rejects too many style tags', async () => {
     await request(app.getHttpServer())
       .patch('/players/me/profile')

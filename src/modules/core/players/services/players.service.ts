@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { DEFAULT_ELO, categoryFromElo } from '../../competitive/utils/competitive.constants';
+import { Country } from '../../geo/entities/country.entity';
+import { Province } from '../../geo/entities/province.entity';
+import { City } from '../../geo/entities/city.entity';
 import {
   PlayerLocation,
   PlayerLookingFor,
@@ -35,6 +38,26 @@ function uniqueValues<T extends string>(values: T[]): T[] {
   return out;
 }
 
+function normalizeGeoText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeGeoKey(value: string): string {
+  return normalizeGeoText(value).toLocaleLowerCase('es-AR');
+}
+
+function toDisplayGeoName(value: string): string {
+  const normalized = normalizeGeoText(value);
+  if (!normalized) return normalized;
+  return normalized
+    .split(' ')
+    .map((token) => {
+      const lower = token.toLocaleLowerCase('es-AR');
+      return lower.charAt(0).toLocaleUpperCase('es-AR') + lower.slice(1);
+    })
+    .join(' ');
+}
+
 @Injectable()
 export class PlayersService {
   constructor(
@@ -44,6 +67,12 @@ export class PlayersService {
     private readonly profileRepo: Repository<PlayerProfile>,
     @InjectRepository(PlayerFavorite)
     private readonly favoriteRepo: Repository<PlayerFavorite>,
+    @InjectRepository(Country)
+    private readonly countryRepo: Repository<Country>,
+    @InjectRepository(Province)
+    private readonly provinceRepo: Repository<Province>,
+    @InjectRepository(City)
+    private readonly cityRepo: Repository<City>,
   ) {}
 
   async getMyProfile(userId: string) {
@@ -52,6 +81,7 @@ export class PlayersService {
   }
 
   async updateMyProfile(userId: string, dto: UpdatePlayerProfileDto) {
+    const user = await this.ensureUserExists(userId);
     const profile = await this.getOrCreateProfileEntity(userId);
 
     if (dto.bio !== undefined) {
@@ -94,6 +124,12 @@ export class PlayersService {
         if (Object.prototype.hasOwnProperty.call(dto.location, 'city')) {
           next.city = dto.location.city ?? null;
         }
+        if (Object.prototype.hasOwnProperty.call(dto.location, 'cityName')) {
+          next.city = dto.location.cityName ?? null;
+        }
+        if (Object.prototype.hasOwnProperty.call(dto.location, 'provinceCode')) {
+          next.province = dto.location.provinceCode ?? null;
+        }
         if (Object.prototype.hasOwnProperty.call(dto.location, 'province')) {
           next.province = dto.location.province ?? null;
         }
@@ -106,6 +142,12 @@ export class PlayersService {
         );
         profile.location = hasAnyValue ? next : null;
       }
+    }
+
+    const syncedCityId = await this.syncUserCityIdFromLocation(user, profile.location);
+    if (syncedCityId && user.cityId !== syncedCityId) {
+      user.cityId = syncedCityId;
+      await this.userRepo.save(user);
     }
 
     const saved = await this.profileRepo.save(profile);
@@ -279,6 +321,113 @@ export class PlayersService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  private async syncUserCityIdFromLocation(
+    user: User,
+    location: PlayerLocation | null | undefined,
+  ): Promise<string | null> {
+    const cityName = location?.city;
+    const provinceInput = location?.province;
+    if (
+      typeof cityName !== 'string' ||
+      cityName.trim().length === 0 ||
+      typeof provinceInput !== 'string' ||
+      provinceInput.trim().length === 0
+    ) {
+      return user.cityId ?? null;
+    }
+
+    const countryInput = location?.country;
+    const country = await this.resolveCountryOrCreate(countryInput);
+    const province = await this.resolveProvinceOrThrow(country.id, provinceInput);
+    const city = await this.upsertCity(province.id, cityName);
+    return city.id;
+  }
+
+  private async resolveCountryOrCreate(countryInput?: string | null) {
+    const raw = typeof countryInput === 'string' ? normalizeGeoText(countryInput) : '';
+    const key =
+      !raw || ['ar', 'arg', 'argentina'].includes(raw.toLocaleLowerCase('es-AR'))
+        ? 'argentina'
+        : normalizeGeoKey(raw);
+
+    let country = await this.countryRepo
+      .createQueryBuilder('country')
+      .where('LOWER(TRIM(country.name)) = :name', { name: key })
+      .getOne();
+
+    if (country) return country;
+
+    const countryName = key === 'argentina' ? 'Argentina' : toDisplayGeoName(raw);
+    country = this.countryRepo.create({ name: countryName });
+    return this.countryRepo.save(country);
+  }
+
+  private async resolveProvinceOrThrow(countryId: string, provinceInput: string) {
+    const normalized = normalizeGeoText(provinceInput);
+    const provinceNameKey = normalizeGeoKey(normalized);
+    const provinceCode =
+      normalized.length <= 5
+        ? normalized.toLocaleUpperCase('es-AR').replace(/\./g, '')
+        : null;
+
+    const qb = this.provinceRepo
+      .createQueryBuilder('province')
+      .where('province."countryId" = :countryId', { countryId })
+      .andWhere('LOWER(TRIM(province.name)) = :provinceName', {
+        provinceName: provinceNameKey,
+      });
+
+    if (provinceCode) {
+      qb.orWhere(
+        'province."countryId" = :countryId AND UPPER(TRIM(province.code)) = :provinceCode',
+        { countryId, provinceCode },
+      );
+    }
+
+    const province = await qb.getOne();
+    if (!province) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'PROVINCE_NOT_FOUND',
+        message: 'Province not found for selected country',
+      });
+    }
+
+    return province;
+  }
+
+  private async upsertCity(provinceId: string, cityName: string) {
+    const normalizedName = normalizeGeoKey(cityName);
+    let city = await this.cityRepo.findOne({
+      where: { provinceId, normalizedName },
+    });
+    if (city) return city;
+
+    city = this.cityRepo.create({
+      provinceId,
+      name: toDisplayGeoName(cityName),
+      normalizedName,
+    });
+
+    try {
+      return await this.cityRepo.save(city);
+    } catch (error: any) {
+      if (error?.code !== '23505') throw error;
+    }
+
+    const reloaded = await this.cityRepo.findOne({
+      where: { provinceId, normalizedName },
+    });
+    if (!reloaded) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CITY_UPSERT_FAILED',
+        message: 'Could not create city for selected province',
+      });
+    }
+    return reloaded;
   }
 
   private normalizeLookingFor(value: PlayerLookingFor | null | undefined) {

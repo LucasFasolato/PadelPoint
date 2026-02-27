@@ -46,7 +46,10 @@ describe('Competitive Onboarding (e2e)', () => {
       .useValue({
         canActivate: (context: any) => {
           const req = context.switchToHttp().getRequest();
-          req.user = FAKE_USER;
+          req.user =
+            req.headers['x-city-missing'] === '1'
+              ? { ...FAKE_USER, cityId: null }
+              : FAKE_USER;
           return true;
         },
       })
@@ -115,6 +118,34 @@ describe('Competitive Onboarding (e2e)', () => {
         .expect(200);
 
       expect(res.body.onboardingComplete).toBe(true);
+    });
+  });
+
+  describe('GET /competitive/me', () => {
+    it('returns profile when cityId is present', async () => {
+      competitiveService.getOrCreateProfile.mockResolvedValue({
+        userId: FAKE_USER.userId,
+        elo: 1200,
+        category: 6,
+      });
+
+      await request(app.getHttpServer()).get('/competitive/me').expect(200);
+      expect(competitiveService.getOrCreateProfile).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+      );
+    });
+
+    it('returns 409 CITY_REQUIRED when cityId is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/competitive/me')
+        .set('x-city-missing', '1')
+        .expect(409);
+
+      expect(res.body).toEqual({
+        code: 'CITY_REQUIRED',
+        message: 'Set your city to use competitive features',
+      });
+      expect(competitiveService.getOrCreateProfile).not.toHaveBeenCalled();
     });
   });
 

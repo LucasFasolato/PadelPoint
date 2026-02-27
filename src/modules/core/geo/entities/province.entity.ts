@@ -21,6 +21,10 @@ export class Province {
   name!: string;
 
   @Index()
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  code!: string | null;
+
+  @Index()
   @Column({ type: 'uuid' })
   countryId!: string;
 

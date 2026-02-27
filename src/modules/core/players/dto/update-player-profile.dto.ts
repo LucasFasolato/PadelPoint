@@ -55,12 +55,32 @@ export class UpdatePlayerLookingForDto {
 }
 
 export class UpdatePlayerLocationDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength,
+  })
+  @IsOptional()
+  @Transform(({ value }) => trimOrNull(value))
+  @IsString()
+  @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
+  cityName?: string | null;
+
   @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength })
   @IsOptional()
   @Transform(({ value }) => trimOrNull(value))
   @IsString()
   @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
   city?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength,
+  })
+  @IsOptional()
+  @Transform(({ value }) => trimOrNull(value))
+  @IsString()
+  @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
+  provinceCode?: string | null;
 
   @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength })
   @IsOptional()

@@ -6,12 +6,18 @@ import { PlayerProfile } from '../entities/player-profile.entity';
 import { PlayersService } from './players.service';
 import { PlayerFavorite } from '../entities/player-favorite.entity';
 import { decodePlayerFavoritesCursor } from '../utils/player-favorites-cursor.util';
+import { Country } from '../../geo/entities/country.entity';
+import { Province } from '../../geo/entities/province.entity';
+import { City } from '../../geo/entities/city.entity';
 
 describe('PlayersService', () => {
   let service: PlayersService;
   const userRepo = createMockRepo<User>();
   const profileRepo = createMockRepo<PlayerProfile>();
   const favoriteRepo = createMockRepo<PlayerFavorite>();
+  const countryRepo = createMockRepo<Country>();
+  const provinceRepo = createMockRepo<Province>();
+  const cityRepo = createMockRepo<City>();
 
   beforeEach(async () => {
     userRepo.findOne.mockReset();
@@ -23,6 +29,18 @@ describe('PlayersService', () => {
     favoriteRepo.save.mockReset();
     favoriteRepo.delete.mockReset();
     favoriteRepo.manager.query.mockReset();
+    countryRepo.findOne.mockReset();
+    countryRepo.create.mockReset();
+    countryRepo.save.mockReset();
+    countryRepo.createQueryBuilder.mockReset();
+    provinceRepo.findOne.mockReset();
+    provinceRepo.create.mockReset();
+    provinceRepo.save.mockReset();
+    provinceRepo.createQueryBuilder.mockReset();
+    cityRepo.findOne.mockReset();
+    cityRepo.create.mockReset();
+    cityRepo.save.mockReset();
+    cityRepo.createQueryBuilder.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -35,6 +53,18 @@ describe('PlayersService', () => {
         {
           provide: getRepositoryToken(PlayerFavorite),
           useValue: favoriteRepo,
+        },
+        {
+          provide: getRepositoryToken(Country),
+          useValue: countryRepo,
+        },
+        {
+          provide: getRepositoryToken(Province),
+          useValue: provinceRepo,
+        },
+        {
+          provide: getRepositoryToken(City),
+          useValue: cityRepo,
         },
       ],
     }).compile();
@@ -89,6 +119,29 @@ describe('PlayersService', () => {
       ...input,
       updatedAt: new Date('2026-02-24T13:00:00.000Z'),
     }));
+    countryRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        id: 'country-ar',
+        name: 'Argentina',
+      } as Country),
+    });
+    provinceRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        id: 'province-cba',
+        name: 'Cordoba',
+        countryId: 'country-ar',
+      } as Province),
+    });
+    cityRepo.findOne.mockResolvedValue({
+      id: 'city-cba',
+      provinceId: 'province-cba',
+      name: 'Cordoba',
+      normalizedName: 'cordoba',
+    } as City);
 
     const result = await service.updateMyProfile('u1', {
       bio: 'Prefiero partidos largos',
@@ -107,12 +160,82 @@ describe('PlayersService', () => {
         location: { city: 'Cordoba', province: 'Cordoba', country: 'AR' },
       }),
     );
+    expect(userRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u1', cityId: 'city-cba' }),
+    );
     expect(result.lookingFor).toEqual({ partner: true, rival: true });
     expect(result.location).toEqual({
       city: 'Cordoba',
       province: 'Cordoba',
       country: 'AR',
     });
+  });
+
+  it('upserts city from location and sets users.cityId when city does not exist', async () => {
+    userRepo.findOne.mockResolvedValue({ id: 'u1', cityId: null } as User);
+    profileRepo.findOne.mockResolvedValue({
+      userId: 'u1',
+      bio: null,
+      playStyleTags: [],
+      strengths: [],
+      lookingFor: { partner: false, rival: false },
+      location: null,
+      updatedAt: new Date('2026-02-24T12:00:00.000Z'),
+    } as PlayerProfile);
+    profileRepo.save.mockImplementation(async (input) => ({
+      ...input,
+      updatedAt: new Date('2026-02-24T13:00:00.000Z'),
+    }));
+    countryRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        id: 'country-ar',
+        name: 'Argentina',
+      } as Country),
+    });
+    provinceRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        id: 'province-sf',
+        name: 'Santa Fe',
+        code: 'S',
+        countryId: 'country-ar',
+      } as Province),
+    });
+    cityRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: 'city-rosario',
+      provinceId: 'province-sf',
+      name: 'Rosario',
+      normalizedName: 'rosario',
+    } as City);
+    cityRepo.create.mockImplementation((input) => input);
+    cityRepo.save.mockResolvedValue({
+      id: 'city-rosario',
+      provinceId: 'province-sf',
+      name: 'Rosario',
+      normalizedName: 'rosario',
+    } as City);
+
+    await service.updateMyProfile('u1', {
+      location: {
+        provinceCode: 'S',
+        cityName: '  rosario  ',
+      },
+    });
+
+    expect(cityRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provinceId: 'province-sf',
+        name: 'Rosario',
+        normalizedName: 'rosario',
+      }),
+    );
+    expect(cityRepo.save).toHaveBeenCalledTimes(1);
+    expect(userRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u1', cityId: 'city-rosario' }),
+    );
   });
 
   it('rejects favoriting self with code PLAYER_FAVORITE_SELF', async () => {
