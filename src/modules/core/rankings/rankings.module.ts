@@ -5,8 +5,10 @@ import { User } from '../users/entities/user.entity';
 import { City } from '../geo/entities/city.entity';
 import { Province } from '../geo/entities/province.entity';
 import { GlobalRankingSnapshot } from './entities/global-ranking-snapshot.entity';
+import { RankingSnapshotRun } from './entities/ranking-snapshot-run.entity';
 import { RankingsController } from './controllers/rankings.controller';
 import { RankingsService } from './services/rankings.service';
+import { RankingsSnapshotSchedulerService } from './services/rankings-snapshot-scheduler.service';
 import { UserNotification } from '../notifications/entities/user-notification.entity';
 
 @Module({
@@ -18,10 +20,11 @@ import { UserNotification } from '../notifications/entities/user-notification.en
       City,
       Province,
       UserNotification,
+      RankingSnapshotRun,
     ]),
   ],
   controllers: [RankingsController],
-  providers: [RankingsService],
-  exports: [RankingsService],
+  providers: [RankingsService, RankingsSnapshotSchedulerService],
+  exports: [RankingsService, RankingsSnapshotSchedulerService],
 })
 export class RankingsModule {}

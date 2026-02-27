@@ -5,6 +5,7 @@ import { App } from 'supertest/types';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { RankingsController } from '@/modules/core/rankings/controllers/rankings.controller';
 import { RankingsService } from '@/modules/core/rankings/services/rankings.service';
+import { RankingsSnapshotSchedulerService } from '@/modules/core/rankings/services/rankings-snapshot-scheduler.service';
 
 const FAKE_USER = {
   userId: '11111111-1111-4111-8111-111111111111',
@@ -16,6 +17,9 @@ const FAKE_USER = {
 describe('Rankings (e2e)', () => {
   let app: INestApplication<App>;
   let rankingsService: Partial<Record<keyof RankingsService, jest.Mock>>;
+  let schedulerService: Partial<
+    Record<keyof RankingsSnapshotSchedulerService, jest.Mock>
+  >;
 
   beforeEach(async () => {
     rankingsService = {
@@ -23,16 +27,29 @@ describe('Rankings (e2e)', () => {
       getAvailableScopes: jest.fn(),
       createGlobalRankingSnapshot: jest.fn(),
     };
+    schedulerService = {
+      runManual: jest.fn(),
+      runScheduledSnapshots: jest.fn(),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [RankingsController],
-      providers: [{ provide: RankingsService, useValue: rankingsService }],
+      providers: [
+        { provide: RankingsService, useValue: rankingsService },
+        {
+          provide: RankingsSnapshotSchedulerService,
+          useValue: schedulerService,
+        },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({
         canActivate: (context: any) => {
           const req = context.switchToHttp().getRequest();
-          req.user = FAKE_USER;
+          req.user =
+            req.headers['x-admin'] === '1'
+              ? { ...FAKE_USER, role: 'admin' }
+              : FAKE_USER;
           return true;
         },
       })
@@ -102,5 +119,49 @@ describe('Rankings (e2e)', () => {
       }),
     );
   });
-});
 
+  it('POST /rankings/snapshots/run is admin-only', async () => {
+    await request(app.getHttpServer())
+      .post('/rankings/snapshots/run?scope=COUNTRY&category=7ma')
+      .expect(403);
+  });
+
+  it('POST /rankings/snapshots/run triggers manual run for admin', async () => {
+    schedulerService.runManual!.mockResolvedValue({
+      runId: 'run-1',
+      trigger: 'MANUAL',
+      candidates: 1,
+      insertedSnapshots: 1,
+      computedRows: 32,
+      movementEvents: 11,
+      durationMs: 1200,
+      asOfDate: '2026-02-27',
+      scope: 'COUNTRY',
+      category: '7ma',
+      timeframe: 'CURRENT_SEASON',
+      mode: 'COMPETITIVE',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(
+        '/rankings/snapshots/run?scope=COUNTRY&category=7ma&timeframe=CURRENT_SEASON&mode=COMPETITIVE',
+      )
+      .set('x-admin', '1')
+      .expect(201);
+
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        runId: 'run-1',
+        insertedSnapshots: 1,
+      }),
+    );
+    expect(schedulerService.runManual).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: 'COUNTRY',
+        category: '7ma',
+        timeframe: 'CURRENT_SEASON',
+        mode: 'COMPETITIVE',
+      }),
+    );
+  });
+});

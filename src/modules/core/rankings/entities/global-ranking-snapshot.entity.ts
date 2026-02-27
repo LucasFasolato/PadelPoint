@@ -38,6 +38,9 @@ export type GlobalRankingSnapshotRow = {
 
 @Entity('global_ranking_snapshots')
 @Index(['dimensionKey', 'categoryKey', 'timeframe', 'modeKey', 'asOfDate'])
+@Index(['dimensionKey', 'categoryKey', 'timeframe', 'modeKey', 'asOfDate'], {
+  unique: true,
+})
 @Index(['scope', 'provinceCode', 'cityId', 'asOfDate'])
 @Index(['computedAt'])
 @Index(['dimensionKey', 'categoryKey', 'timeframe', 'modeKey', 'version'], {
@@ -88,4 +91,3 @@ export class GlobalRankingSnapshot {
   @Column({ type: 'jsonb' })
   rows!: GlobalRankingSnapshotRow[];
 }
-

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { categoryFromElo } from '../../competitive/utils/competitive.constants';
@@ -75,6 +75,14 @@ export type CreateGlobalRankingSnapshotArgs = {
   asOfDate?: Date;
 };
 
+export type GlobalRankingSnapshotBuildResult = {
+  snapshot: GlobalRankingSnapshot;
+  inserted: boolean;
+  computedRows: number;
+  movementEvents: number;
+  durationMs: number;
+};
+
 type RawRankingMatch = {
   id: string;
   playedAt: Date;
@@ -121,6 +129,7 @@ type MutablePlayerStats = {
 
 @Injectable()
 export class RankingsService {
+  private readonly logger = new Logger(RankingsService.name);
   private readonly snapshotFreshMs = 60 * 1000;
   private readonly snapshotsToKeep = 120;
   private readonly snapshotInsertRetries = 3;
@@ -273,9 +282,36 @@ export class RankingsService {
     return { items };
   }
 
+  parseScope(scope?: string): RankingScope {
+    return this.normalizeScope(scope);
+  }
+
+  parseTimeframe(timeframe?: string): RankingTimeframe {
+    return this.normalizeTimeframe(timeframe);
+  }
+
+  parseMode(mode?: string): RankingMode {
+    return this.normalizeMode(mode);
+  }
+
+  parseCategory(category?: string | null): {
+    categoryKey: string;
+    categoryNumber: number | null;
+  } {
+    return normalizeCategoryFilter(category);
+  }
+
   async createGlobalRankingSnapshot(
     args: CreateGlobalRankingSnapshotArgs,
   ): Promise<GlobalRankingSnapshot> {
+    const result = await this.createGlobalRankingSnapshotDetailed(args);
+    return result.snapshot;
+  }
+
+  async createGlobalRankingSnapshotDetailed(
+    args: CreateGlobalRankingSnapshotArgs,
+  ): Promise<GlobalRankingSnapshotBuildResult> {
+    const startedAt = Date.now();
     const resolution = await this.resolveScope({
       scope: args.scope,
       provinceCode: args.provinceCode ?? undefined,
@@ -329,20 +365,59 @@ export class RankingsService {
       const nextVersion = Number(raw?.nextVersion ?? 1);
 
       try {
-        const saved = await this.snapshotRepo.save(
-          this.snapshotRepo.create({
+        const insertRows = await this.snapshotRepo.query(
+          `INSERT INTO "global_ranking_snapshots"
+             ("dimensionKey", "scope", "provinceCode", "cityId", "categoryKey", timeframe, "modeKey", "asOfDate", version, rows)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           ON CONFLICT ("dimensionKey", "categoryKey", timeframe, "modeKey", "asOfDate")
+           DO NOTHING
+           RETURNING id`,
+          [
+            resolution.dimensionKey,
+            resolution.scope,
+            resolution.provinceCode,
+            resolution.cityId,
+            args.categoryKey,
+            args.timeframe,
+            args.modeKey,
+            asOfDateKey,
+            nextVersion,
+            JSON.stringify(rowsWithMovement),
+          ],
+        );
+
+        if (!Array.isArray(insertRows) || insertRows.length === 0) {
+          const existing = await this.findSnapshotByBucket({
             dimensionKey: resolution.dimensionKey,
-            scope: resolution.scope,
-            provinceCode: resolution.provinceCode,
-            cityId: resolution.cityId,
             categoryKey: args.categoryKey,
             timeframe: args.timeframe,
             modeKey: args.modeKey,
             asOfDate: asOfDateKey,
-            version: nextVersion,
-            rows: rowsWithMovement,
-          }),
-        );
+          });
+          if (existing) {
+            this.logger.debug(
+              `snapshot idempotent hit: dimension=${resolution.dimensionKey} category=${args.categoryKey} timeframe=${args.timeframe} mode=${args.modeKey} asOfDate=${asOfDateKey}`,
+            );
+            return {
+              snapshot: existing,
+              inserted: false,
+              computedRows: rowsWithMovement.length,
+              movementEvents: 0,
+              durationMs: Date.now() - startedAt,
+            };
+          }
+          continue;
+        }
+
+        const snapshotId = String((insertRows[0] as { id?: string })?.id ?? '');
+        if (!snapshotId) {
+          continue;
+        }
+
+        const saved = await this.snapshotRepo.findOne({ where: { id: snapshotId } });
+        if (!saved) {
+          continue;
+        }
 
         await this.pruneSnapshots({
           dimensionKey: resolution.dimensionKey,
@@ -351,9 +426,23 @@ export class RankingsService {
           modeKey: args.modeKey,
         });
 
-        await this.emitRankingFeedEvents(saved, rowsWithMovement, resolution);
+        const movementEvents = await this.emitRankingMovementEvents(
+          saved,
+          rowsWithMovement,
+          resolution,
+        );
 
-        return saved;
+        this.logger.log(
+          `snapshot persisted: id=${saved.id} scope=${saved.scope} rows=${rowsWithMovement.length} movements=${movementEvents} durationMs=${Date.now() - startedAt}`,
+        );
+
+        return {
+          snapshot: saved,
+          inserted: true,
+          computedRows: rowsWithMovement.length,
+          movementEvents,
+          durationMs: Date.now() - startedAt,
+        };
       } catch (err) {
         if (this.isUniqueViolation(err)) {
           continue;
@@ -833,11 +922,29 @@ export class RankingsService {
     return (err as QueryFailedError & { code?: string }).code === '23505';
   }
 
-  private async emitRankingFeedEvents(
+  private async findSnapshotByBucket(args: {
+    dimensionKey: string;
+    categoryKey: string;
+    timeframe: RankingTimeframe;
+    modeKey: RankingMode;
+    asOfDate: string;
+  }): Promise<GlobalRankingSnapshot | null> {
+    return this.snapshotRepo.findOne({
+      where: {
+        dimensionKey: args.dimensionKey,
+        categoryKey: args.categoryKey,
+        timeframe: args.timeframe,
+        modeKey: args.modeKey,
+        asOfDate: args.asOfDate,
+      },
+    });
+  }
+
+  private async emitRankingMovementEvents(
     snapshot: GlobalRankingSnapshot,
     rows: GlobalRankingSnapshotRow[],
     resolution: ScopeResolution,
-  ): Promise<void> {
+  ): Promise<number> {
     const snapshotData: Record<string, unknown> = {
       snapshotId: snapshot.id,
       version: snapshot.version,
@@ -852,19 +959,10 @@ export class RankingsService {
       dimensionKey: snapshot.dimensionKey,
     };
 
-    await this.userNotificationRepo.insert({
-      userId: null,
-      type: UserNotificationType.RANKING_SNAPSHOT_PUBLISHED,
-      title: 'Ranking snapshot published',
-      body: `Ranking updated for ${snapshot.scope.toLowerCase()} scope`,
-      data: snapshotData,
-      readAt: null,
-    });
-
     const movements = rows.filter(
       (row) => typeof row.delta === 'number' && row.delta !== 0,
     );
-    if (movements.length === 0) return;
+    if (movements.length === 0) return 0;
 
     const inserts = movements.map((row) => {
       const delta = row.delta as number;
@@ -874,7 +972,7 @@ export class RankingsService {
 
       return {
         userId: row.userId,
-        type: UserNotificationType.RANKING_MOVEMENT,
+        type: UserNotificationType.RANKING_MOVEMENT as UserNotificationType,
         title: `You moved ${direction} ${absDelta} position${plural}`,
         body: `Now ranked #${row.position}`,
         data: {
@@ -894,5 +992,6 @@ export class RankingsService {
     for (let i = 0; i < inserts.length; i += chunkSize) {
       await this.userNotificationRepo.insert(inserts.slice(i, i + chunkSize));
     }
+    return movements.length;
   }
 }
