@@ -30,7 +30,7 @@ export class MatchDisputesV11770200000000 implements MigrationInterface {
 
     // 4. Create match_disputes table
     await queryRunner.query(
-      `CREATE TABLE "match_disputes" (
+      `CREATE TABLE IF NOT EXISTS "match_disputes" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "matchId" uuid NOT NULL,
         "raisedByUserId" uuid NOT NULL,
@@ -47,7 +47,7 @@ export class MatchDisputesV11770200000000 implements MigrationInterface {
 
     // Unique partial index: only one OPEN dispute per match
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "IDX_match_disputes_matchId_open" ON "match_disputes" ("matchId") WHERE "status" = 'open'`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_match_disputes_matchId_open" ON "match_disputes" ("matchId") WHERE "status" = 'open'`,
     );
 
     // 5. Create audit log enum
@@ -57,7 +57,7 @@ export class MatchDisputesV11770200000000 implements MigrationInterface {
 
     // 6. Create match_audit_logs table
     await queryRunner.query(
-      `CREATE TABLE "match_audit_logs" (
+      `CREATE TABLE IF NOT EXISTS "match_audit_logs" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "matchId" uuid NOT NULL,
         "actorUserId" uuid NOT NULL,
@@ -71,18 +71,18 @@ export class MatchDisputesV11770200000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_match_audit_logs_matchId" ON "match_audit_logs" ("matchId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_match_audit_logs_matchId" ON "match_audit_logs" ("matchId")`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "IDX_match_audit_logs_matchId"`);
-    await queryRunner.query(`DROP TABLE "match_audit_logs"`);
-    await queryRunner.query(`DROP TYPE "match_audit_logs_action_enum"`);
-    await queryRunner.query(`DROP INDEX "IDX_match_disputes_matchId_open"`);
-    await queryRunner.query(`DROP TABLE "match_disputes"`);
-    await queryRunner.query(`DROP TYPE "match_disputes_status_enum"`);
-    await queryRunner.query(`DROP TYPE "match_disputes_reasoncode_enum"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_audit_logs_matchId"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "match_audit_logs"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "match_audit_logs_action_enum"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_disputes_matchId_open"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "match_disputes"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "match_disputes_status_enum"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "match_disputes_reasoncode_enum"`);
     // Cannot remove enum values from match_results_status_enum / user_notifications_type_enum
   }
 }

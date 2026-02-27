@@ -5,7 +5,7 @@ export class RefreshTokensV11772500000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "refresh_tokens" (
+      CREATE TABLE IF NOT EXISTS "refresh_tokens" (
         "id"         uuid NOT NULL DEFAULT uuid_generate_v4(),
         "userId"     uuid NOT NULL,
         "tokenHash"  character varying(255) NOT NULL,
@@ -22,11 +22,11 @@ export class RefreshTokensV11772500000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_refresh_tokens_user_id" ON "refresh_tokens" ("userId")`,
+      `CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_user_id" ON "refresh_tokens" ("userId")`,
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_refresh_tokens_token_hash" ON "refresh_tokens" ("tokenHash")`,
+      `CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_token_hash" ON "refresh_tokens" ("tokenHash")`,
     );
   }
 
@@ -38,8 +38,8 @@ export class RefreshTokensV11772500000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS "idx_refresh_tokens_user_id"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "refresh_tokens" DROP CONSTRAINT "fk_refresh_tokens_user"`,
+      `ALTER TABLE "refresh_tokens" DROP CONSTRAINT IF EXISTS "fk_refresh_tokens_user"`,
     );
-    await queryRunner.query(`DROP TABLE "refresh_tokens"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "refresh_tokens"`);
   }
 }

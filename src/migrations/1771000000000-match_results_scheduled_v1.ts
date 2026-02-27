@@ -11,7 +11,7 @@ export class MatchResultsScheduledV11771000000000
     );
 
     await queryRunner.query(
-      `ALTER TABLE "match_results" ADD COLUMN "scheduledAt" TIMESTAMP WITH TIME ZONE`,
+      `ALTER TABLE "match_results" ADD COLUMN IF NOT EXISTS "scheduledAt" TIMESTAMP WITH TIME ZONE`,
     );
     await queryRunner.query(
       `ALTER TABLE "match_results" ALTER COLUMN "playedAt" DROP NOT NULL`,
@@ -71,6 +71,6 @@ export class MatchResultsScheduledV11771000000000
     await queryRunner.query(
       `ALTER TABLE "match_results" ALTER COLUMN "winnerTeam" SET NOT NULL`,
     );
-    await queryRunner.query(`ALTER TABLE "match_results" DROP COLUMN "scheduledAt"`);
+    await queryRunner.query(`ALTER TABLE "match_results" DROP COLUMN IF EXISTS "scheduledAt"`);
   }
 }

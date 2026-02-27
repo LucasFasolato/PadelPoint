@@ -11,7 +11,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
 
     // 2. Add mode column to leagues (default SCHEDULED to preserve existing behavior)
     await queryRunner.query(
-      `ALTER TABLE "leagues" ADD "mode" "leagues_mode_enum" NOT NULL DEFAULT 'scheduled'`,
+      `ALTER TABLE "leagues" ADD COLUMN IF NOT EXISTS "mode" "leagues_mode_enum" NOT NULL DEFAULT 'scheduled'`,
     );
 
     // 3. Make startDate and endDate nullable
@@ -23,7 +23,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
     );
 
     // 4. Add leagueId column to match_results
-    await queryRunner.query(`ALTER TABLE "match_results" ADD "leagueId" uuid`);
+    await queryRunner.query(`ALTER TABLE "match_results" ADD COLUMN IF NOT EXISTS "leagueId" uuid`);
 
     // 5. Add FK constraint for leagueId
     await queryRunner.query(
@@ -32,17 +32,17 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
 
     // 6. Index on leagueId for efficient league match queries
     await queryRunner.query(
-      `CREATE INDEX "IDX_match_results_leagueId" ON "match_results" ("leagueId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_match_results_leagueId" ON "match_results" ("leagueId")`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "IDX_match_results_leagueId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_results_leagueId"`);
     await queryRunner.query(
-      `ALTER TABLE "match_results" DROP CONSTRAINT "FK_match_results_leagueId"`,
+      `ALTER TABLE "match_results" DROP CONSTRAINT IF EXISTS "FK_match_results_leagueId"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "match_results" DROP COLUMN "leagueId"`,
+      `ALTER TABLE "match_results" DROP COLUMN IF EXISTS "leagueId"`,
     );
     await queryRunner.query(
       `ALTER TABLE "leagues" ALTER COLUMN "endDate" SET NOT NULL`,
@@ -50,7 +50,7 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
     await queryRunner.query(
       `ALTER TABLE "leagues" ALTER COLUMN "startDate" SET NOT NULL`,
     );
-    await queryRunner.query(`ALTER TABLE "leagues" DROP COLUMN "mode"`);
-    await queryRunner.query(`DROP TYPE "leagues_mode_enum"`);
+    await queryRunner.query(`ALTER TABLE "leagues" DROP COLUMN IF EXISTS "mode"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "leagues_mode_enum"`);
   }
 }

@@ -5,7 +5,7 @@ export class PlayerFavoritesV11772100000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "player_favorites" (
+      CREATE TABLE IF NOT EXISTS "player_favorites" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "userId" uuid NOT NULL,
         "favoriteUserId" uuid NOT NULL,
@@ -21,23 +21,23 @@ export class PlayerFavoritesV11772100000000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE UNIQUE INDEX "UQ_player_favorites_user_target"
+      CREATE UNIQUE INDEX IF NOT EXISTS "UQ_player_favorites_user_target"
       ON "player_favorites" ("userId", "favoriteUserId")
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "IDX_player_favorites_user_created_id_desc"
+      CREATE INDEX IF NOT EXISTS "IDX_player_favorites_user_created_id_desc"
       ON "player_favorites" ("userId", "createdAt" DESC, "id" DESC)
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `DROP INDEX "public"."IDX_player_favorites_user_created_id_desc"`,
+      `DROP INDEX IF EXISTS "public"."IDX_player_favorites_user_created_id_desc"`,
     );
     await queryRunner.query(
-      `DROP INDEX "public"."UQ_player_favorites_user_target"`,
+      `DROP INDEX IF EXISTS "public"."UQ_player_favorites_user_target"`,
     );
-    await queryRunner.query(`DROP TABLE "player_favorites"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "player_favorites"`);
   }
 }

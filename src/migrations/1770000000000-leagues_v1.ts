@@ -15,7 +15,7 @@ export class LeaguesV11770000000000 implements MigrationInterface {
 
     // Leagues table
     await queryRunner.query(
-      `CREATE TABLE "leagues" (
+      `CREATE TABLE IF NOT EXISTS "leagues" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" character varying(120) NOT NULL,
         "creatorId" uuid NOT NULL,
@@ -31,12 +31,12 @@ export class LeaguesV11770000000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_leagues_creatorId" ON "leagues" ("creatorId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_leagues_creatorId" ON "leagues" ("creatorId")`,
     );
 
     // League members table
     await queryRunner.query(
-      `CREATE TABLE "league_members" (
+      `CREATE TABLE IF NOT EXISTS "league_members" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "leagueId" uuid NOT NULL,
         "userId" uuid NOT NULL,
@@ -55,16 +55,16 @@ export class LeaguesV11770000000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "IDX_league_members_leagueId_userId" ON "league_members" ("leagueId", "userId")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_league_members_leagueId_userId" ON "league_members" ("leagueId", "userId")`,
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_members_leagueId" ON "league_members" ("leagueId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_members_leagueId" ON "league_members" ("leagueId")`,
     );
 
     // League invites table
     await queryRunner.query(
-      `CREATE TABLE "league_invites" (
+      `CREATE TABLE IF NOT EXISTS "league_invites" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "leagueId" uuid NOT NULL,
         "invitedUserId" uuid,
@@ -80,27 +80,27 @@ export class LeaguesV11770000000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "IDX_league_invites_token" ON "league_invites" ("token")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_league_invites_token" ON "league_invites" ("token")`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "IDX_league_invites_token"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_invites_token"`);
 
-    await queryRunner.query(`DROP TABLE "league_invites"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "league_invites"`);
 
-    await queryRunner.query(`DROP INDEX "IDX_league_members_leagueId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_members_leagueId"`);
 
-    await queryRunner.query(`DROP INDEX "IDX_league_members_leagueId_userId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_members_leagueId_userId"`);
 
-    await queryRunner.query(`DROP TABLE "league_members"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "league_members"`);
 
-    await queryRunner.query(`DROP INDEX "IDX_leagues_creatorId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_leagues_creatorId"`);
 
-    await queryRunner.query(`DROP TABLE "leagues"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "leagues"`);
 
-    await queryRunner.query(`DROP TYPE "league_invites_status_enum"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "league_invites_status_enum"`);
 
-    await queryRunner.query(`DROP TYPE "leagues_status_enum"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "leagues_status_enum"`);
   }
 }

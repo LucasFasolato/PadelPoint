@@ -9,7 +9,7 @@ export class LeagueChallengesV11770600000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE TABLE "league_challenges" (
+      `CREATE TABLE IF NOT EXISTS "league_challenges" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "leagueId" uuid NOT NULL,
         "createdById" uuid NOT NULL,
@@ -34,25 +34,25 @@ export class LeagueChallengesV11770600000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_leagueId" ON "league_challenges" ("leagueId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_leagueId" ON "league_challenges" ("leagueId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_createdById" ON "league_challenges" ("createdById")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_createdById" ON "league_challenges" ("createdById")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_opponentId" ON "league_challenges" ("opponentId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_opponentId" ON "league_challenges" ("opponentId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_status" ON "league_challenges" ("status")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_status" ON "league_challenges" ("status")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_expiresAt" ON "league_challenges" ("expiresAt")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_expiresAt" ON "league_challenges" ("expiresAt")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_challenges_matchId" ON "league_challenges" ("matchId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_challenges_matchId" ON "league_challenges" ("matchId")`,
     );
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "UQ_league_challenges_active_pair" ON "league_challenges" (
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_league_challenges_active_pair" ON "league_challenges" (
         "leagueId",
         LEAST("createdById", "opponentId"),
         GREATEST("createdById", "opponentId")
@@ -80,15 +80,15 @@ export class LeagueChallengesV11770600000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX "UQ_league_challenges_active_pair"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_matchId"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_expiresAt"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_status"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_opponentId"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_createdById"`);
-    await queryRunner.query(`DROP INDEX "IDX_league_challenges_leagueId"`);
-    await queryRunner.query(`DROP TABLE "league_challenges"`);
-    await queryRunner.query(`DROP TYPE "league_challenges_status_enum"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "UQ_league_challenges_active_pair"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_matchId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_expiresAt"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_status"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_opponentId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_createdById"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_leagueId"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "league_challenges"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "league_challenges_status_enum"`);
     // Enum values added to league_activity_type_enum are intentionally not removed.
   }
 }

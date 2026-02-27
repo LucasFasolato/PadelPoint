@@ -17,7 +17,7 @@ export class NotificationEventsAddResend1769010000000 implements MigrationInterf
       `ALTER TABLE "notification_events" ALTER COLUMN "type" TYPE "public"."notification_events_type_enum_old" USING "type"::text::"public"."notification_events_type_enum_old"`,
     );
     await queryRunner.query(
-      `DROP TYPE "public"."notification_events_type_enum"`,
+      `DROP TYPE IF EXISTS "public"."notification_events_type_enum"`,
     );
     await queryRunner.query(
       `ALTER TYPE "public"."notification_events_type_enum_old" RENAME TO "notification_events_type_enum"`,

@@ -11,6 +11,7 @@
     "migration:baseline": "node dist/scripts/baseline-migrations.js",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
+    "verify:migrations:clean": "node scripts/verify-migrations-clean-db.js",
     "prebuild": "npm run lint:quotes",
     "build": "nest build",
     "lint:quotes": "node scripts/check-unescaped-apostrophes.js",

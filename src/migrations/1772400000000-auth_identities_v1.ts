@@ -9,7 +9,7 @@ export class AuthIdentitiesV11772400000000 implements MigrationInterface {
     );
 
     await queryRunner.query(`
-      CREATE TABLE "auth_identities" (
+      CREATE TABLE IF NOT EXISTS "auth_identities" (
         "id"             uuid NOT NULL DEFAULT uuid_generate_v4(),
         "userId"         uuid NOT NULL,
         "provider"       "auth_identities_provider_enum" NOT NULL,
@@ -28,19 +28,19 @@ export class AuthIdentitiesV11772400000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_auth_identities_user_id" ON "auth_identities" ("userId")`,
+      `CREATE INDEX IF NOT EXISTS "idx_auth_identities_user_id" ON "auth_identities" ("userId")`,
     );
 
     // Unique: (provider, providerUserId) where providerUserId IS NOT NULL
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "uq_auth_identities_provider_provider_user_id"
+      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_auth_identities_provider_provider_user_id"
        ON "auth_identities" ("provider", "providerUserId")
        WHERE "providerUserId" IS NOT NULL`,
     );
 
     // Unique: (provider='PASSWORD', email) where email IS NOT NULL
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "uq_auth_identities_password_email"
+      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_auth_identities_password_email"
        ON "auth_identities" ("provider", "email")
        WHERE "provider" = 'PASSWORD' AND "email" IS NOT NULL`,
     );
@@ -57,9 +57,9 @@ export class AuthIdentitiesV11772400000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS "idx_auth_identities_user_id"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "auth_identities" DROP CONSTRAINT "fk_auth_identities_user"`,
+      `ALTER TABLE "auth_identities" DROP CONSTRAINT IF EXISTS "fk_auth_identities_user"`,
     );
-    await queryRunner.query(`DROP TABLE "auth_identities"`);
-    await queryRunner.query(`DROP TYPE "auth_identities_provider_enum"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "auth_identities"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "auth_identities_provider_enum"`);
   }
 }

@@ -5,7 +5,7 @@ export class LeagueStandingsSnapshotsV11770400000000 implements MigrationInterfa
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "league_standings_snapshots" (
+      `CREATE TABLE IF NOT EXISTS "league_standings_snapshots" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "leagueId" uuid NOT NULL,
         "version" integer NOT NULL,
@@ -18,26 +18,26 @@ export class LeagueStandingsSnapshotsV11770400000000 implements MigrationInterfa
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_standings_snapshots_leagueId" ON "league_standings_snapshots" ("leagueId")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_standings_snapshots_leagueId" ON "league_standings_snapshots" ("leagueId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_league_standings_snapshots_computedAt" ON "league_standings_snapshots" ("computedAt")`,
+      `CREATE INDEX IF NOT EXISTS "IDX_league_standings_snapshots_computedAt" ON "league_standings_snapshots" ("computedAt")`,
     );
     await queryRunner.query(
-      `CREATE UNIQUE INDEX "UQ_league_standings_snapshots_leagueId_version" ON "league_standings_snapshots" ("leagueId", "version")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_league_standings_snapshots_leagueId_version" ON "league_standings_snapshots" ("leagueId", "version")`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `DROP INDEX "UQ_league_standings_snapshots_leagueId_version"`,
+      `DROP INDEX IF EXISTS "UQ_league_standings_snapshots_leagueId_version"`,
     );
     await queryRunner.query(
-      `DROP INDEX "IDX_league_standings_snapshots_computedAt"`,
+      `DROP INDEX IF EXISTS "IDX_league_standings_snapshots_computedAt"`,
     );
     await queryRunner.query(
-      `DROP INDEX "IDX_league_standings_snapshots_leagueId"`,
+      `DROP INDEX IF EXISTS "IDX_league_standings_snapshots_leagueId"`,
     );
-    await queryRunner.query(`DROP TABLE "league_standings_snapshots"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "league_standings_snapshots"`);
   }
 }

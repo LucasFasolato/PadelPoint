@@ -5,7 +5,7 @@ export class PasswordResetTokensV11772600000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "password_reset_tokens" (
+      CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
         "id"         uuid NOT NULL DEFAULT uuid_generate_v4(),
         "userId"     uuid NOT NULL,
         "tokenHash"  character varying(255) NOT NULL,
@@ -22,11 +22,11 @@ export class PasswordResetTokensV11772600000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_password_reset_tokens_user_id" ON "password_reset_tokens" ("userId")`,
+      `CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_user_id" ON "password_reset_tokens" ("userId")`,
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_password_reset_tokens_token_hash" ON "password_reset_tokens" ("tokenHash")`,
+      `CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_token_hash" ON "password_reset_tokens" ("tokenHash")`,
     );
   }
 
@@ -38,8 +38,8 @@ export class PasswordResetTokensV11772600000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS "idx_password_reset_tokens_user_id"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "password_reset_tokens" DROP CONSTRAINT "fk_password_reset_tokens_user"`,
+      `ALTER TABLE "password_reset_tokens" DROP CONSTRAINT IF EXISTS "fk_password_reset_tokens_user"`,
     );
-    await queryRunner.query(`DROP TABLE "password_reset_tokens"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "password_reset_tokens"`);
   }
 }

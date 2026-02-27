@@ -53,7 +53,7 @@ export class ChallengesBaseV11768310000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE TABLE "challenges" (
+      `CREATE TABLE IF NOT EXISTS "challenges" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "type" "public"."challenges_type_enum" NOT NULL,
         "status" "public"."challenges_status_enum" NOT NULL DEFAULT 'pending',
@@ -73,28 +73,28 @@ export class ChallengesBaseV11768310000000 implements MigrationInterface {
     );
 
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_type" ON "challenges" ("type") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_type" ON "challenges" ("type") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_status" ON "challenges" ("status") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_status" ON "challenges" ("status") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_teamA1Id" ON "challenges" ("teamA1Id") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_teamA1Id" ON "challenges" ("teamA1Id") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_teamA2Id" ON "challenges" ("teamA2Id") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_teamA2Id" ON "challenges" ("teamA2Id") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_teamB1Id" ON "challenges" ("teamB1Id") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_teamB1Id" ON "challenges" ("teamB1Id") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_teamB2Id" ON "challenges" ("teamB2Id") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_teamB2Id" ON "challenges" ("teamB2Id") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_invitedOpponentId" ON "challenges" ("invitedOpponentId") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_invitedOpponentId" ON "challenges" ("invitedOpponentId") `,
     );
     await queryRunner.query(
-      `CREATE INDEX "IDX_challenges_reservationId" ON "challenges" ("reservationId") `,
+      `CREATE INDEX IF NOT EXISTS "IDX_challenges_reservationId" ON "challenges" ("reservationId") `,
     );
 
     const hasUsers = await queryRunner.hasTable('users');
@@ -160,7 +160,7 @@ export class ChallengesBaseV11768310000000 implements MigrationInterface {
     await queryRunner.query(
       `DROP INDEX IF EXISTS "public"."IDX_challenges_type"`,
     );
-    await queryRunner.query(`DROP TABLE "challenges"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "challenges"`);
     await queryRunner.query(
       `DROP TYPE IF EXISTS "public"."challenges_status_enum"`,
     );

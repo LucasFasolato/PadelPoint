@@ -5,7 +5,7 @@ export class PlayerProfilesV11772000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "player_profiles" (
+      CREATE TABLE IF NOT EXISTS "player_profiles" (
         "userId" uuid NOT NULL,
         "bio" character varying(240),
         "playStyleTags" jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -22,7 +22,7 @@ export class PlayerProfilesV11772000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE "player_profiles"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "player_profiles"`);
   }
 }
 
