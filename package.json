@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "typeorm": "node ./node_modules/typeorm/cli-ts-node-commonjs.js -d src/database/typeorm-cli.datasource.ts",
+    "typeorm": "node ./node_modules/typeorm/cli.js -d dist/database/typeorm.datasource.js",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
