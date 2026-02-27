@@ -11,6 +11,8 @@ import { MatchType } from '../../matches/enums/match-type.enum';
 import { City } from '../../geo/entities/city.entity';
 import { Province } from '../../geo/entities/province.entity';
 import { User } from '../../users/entities/user.entity';
+import { UserNotification } from '../../notifications/entities/user-notification.entity';
+import { UserNotificationType } from '../../notifications/enums/user-notification-type.enum';
 import {
   GlobalRankingSnapshot,
   GlobalRankingSnapshotRow,
@@ -134,6 +136,8 @@ export class RankingsService {
     private readonly cityRepo: Repository<City>,
     @InjectRepository(Province)
     private readonly provinceRepo: Repository<Province>,
+    @InjectRepository(UserNotification)
+    private readonly userNotificationRepo: Repository<UserNotification>,
   ) {}
 
   async getLeaderboard(params: LeaderboardParams) {
@@ -346,6 +350,8 @@ export class RankingsService {
           timeframe: args.timeframe,
           modeKey: args.modeKey,
         });
+
+        await this.emitRankingFeedEvents(saved, rowsWithMovement, resolution);
 
         return saved;
       } catch (err) {
@@ -825,5 +831,68 @@ export class RankingsService {
   private isUniqueViolation(err: unknown): boolean {
     if (!(err instanceof QueryFailedError)) return false;
     return (err as QueryFailedError & { code?: string }).code === '23505';
+  }
+
+  private async emitRankingFeedEvents(
+    snapshot: GlobalRankingSnapshot,
+    rows: GlobalRankingSnapshotRow[],
+    resolution: ScopeResolution,
+  ): Promise<void> {
+    const snapshotData: Record<string, unknown> = {
+      snapshotId: snapshot.id,
+      version: snapshot.version,
+      scope: snapshot.scope,
+      provinceCode: resolution.provinceCodeIso,
+      cityId: snapshot.cityId,
+      category: snapshot.categoryKey,
+      timeframe: snapshot.timeframe,
+      mode: snapshot.modeKey,
+      asOfDate: snapshot.asOfDate,
+      totalPlayers: rows.length,
+      dimensionKey: snapshot.dimensionKey,
+    };
+
+    await this.userNotificationRepo.insert({
+      userId: null,
+      type: UserNotificationType.RANKING_SNAPSHOT_PUBLISHED,
+      title: 'Ranking snapshot published',
+      body: `Ranking updated for ${snapshot.scope.toLowerCase()} scope`,
+      data: snapshotData,
+      readAt: null,
+    });
+
+    const movements = rows.filter(
+      (row) => typeof row.delta === 'number' && row.delta !== 0,
+    );
+    if (movements.length === 0) return;
+
+    const inserts = movements.map((row) => {
+      const delta = row.delta as number;
+      const direction = delta > 0 ? 'up' : 'down';
+      const absDelta = Math.abs(delta);
+      const plural = absDelta === 1 ? '' : 's';
+
+      return {
+        userId: row.userId,
+        type: UserNotificationType.RANKING_MOVEMENT,
+        title: `You moved ${direction} ${absDelta} position${plural}`,
+        body: `Now ranked #${row.position}`,
+        data: {
+          ...snapshotData,
+          userId: row.userId,
+          deltaPositions: delta,
+          oldPosition: row.oldPosition ?? null,
+          newPosition: row.position,
+          rating: row.rating,
+          link: '/rankings',
+        },
+        readAt: null as Date | null,
+      };
+    });
+
+    const chunkSize = 500;
+    for (let i = 0; i < inserts.length; i += chunkSize) {
+      await this.userNotificationRepo.insert(inserts.slice(i, i + chunkSize));
+    }
   }
 }

@@ -9,10 +9,12 @@ import { NotificationsService } from './services/notifications.service';
 import { NotificationService } from './services/notification.service';
 import { NotificationEventsService } from './services/notification-events.service';
 import { UserNotificationsService } from './services/user-notifications.service';
+import { ActivityFeedService } from './services/activity-feed.service';
 import { NotificationsGateway } from './gateways/notifications.gateway';
 import { NotificationsAdminController } from './controllers/notifications-admin.controller';
 import { UserNotificationsController } from './controllers/user-notifications.controller';
 import { HealthController } from './controllers/health.controller';
+import { MeActivityController } from './controllers/me-activity.controller';
 
 @Module({
   imports: [
@@ -27,12 +29,14 @@ import { HealthController } from './controllers/health.controller';
     NotificationsAdminController,
     UserNotificationsController,
     HealthController,
+    MeActivityController,
   ],
   providers: [
     NotificationsService,
     NotificationService,
     NotificationEventsService,
     UserNotificationsService,
+    ActivityFeedService,
     NotificationsGateway,
   ],
   exports: [
@@ -40,6 +44,7 @@ import { HealthController } from './controllers/health.controller';
     NotificationEventsService,
     NotificationService,
     UserNotificationsService,
+    ActivityFeedService,
     NotificationsGateway,
   ],
 })

@@ -14,6 +14,7 @@
     "verify:migrations:clean": "node scripts/verify-migrations-clean-db.js",
     "prebuild": "npm run lint:quotes",
     "build": "nest build",
+    "seed:activity-feed": "ts-node -r tsconfig-paths/register src/scripts/seed-activity-feed.ts",
     "lint:quotes": "node scripts/check-unescaped-apostrophes.js",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

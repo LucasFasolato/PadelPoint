@@ -7,6 +7,7 @@ import { Province } from '../geo/entities/province.entity';
 import { GlobalRankingSnapshot } from './entities/global-ranking-snapshot.entity';
 import { RankingsController } from './controllers/rankings.controller';
 import { RankingsService } from './services/rankings.service';
+import { UserNotification } from '../notifications/entities/user-notification.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { RankingsService } from './services/rankings.service';
       User,
       City,
       Province,
+      UserNotification,
     ]),
   ],
   controllers: [RankingsController],
@@ -23,4 +25,3 @@ import { RankingsService } from './services/rankings.service';
   exports: [RankingsService],
 })
 export class RankingsModule {}
-

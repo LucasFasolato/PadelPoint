@@ -15,8 +15,8 @@ export class UserNotification {
   id!: string;
 
   @Index()
-  @Column({ type: 'uuid' })
-  userId!: string;
+  @Column({ type: 'uuid', nullable: true })
+  userId!: string | null;
 
   @Column({ type: 'enum', enum: UserNotificationType })
   type!: UserNotificationType;

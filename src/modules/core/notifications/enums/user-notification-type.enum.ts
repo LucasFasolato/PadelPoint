@@ -9,6 +9,8 @@ export enum UserNotificationType {
   LEAGUE_INVITE_ACCEPTED = 'league.invite_accepted',
   LEAGUE_INVITE_DECLINED = 'league.invite_declined',
   LEAGUE_RANKING_MOVED = 'league.ranking_moved',
+  RANKING_SNAPSHOT_PUBLISHED = 'ranking.snapshot_published',
+  RANKING_MOVEMENT = 'ranking.movement',
   MATCH_DISPUTED = 'match.disputed',
   MATCH_RESOLVED = 'match.resolved',
   SYSTEM = 'system',
