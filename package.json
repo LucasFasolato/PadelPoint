@@ -8,6 +8,7 @@
   "scripts": {
     "typeorm": "node ./node_modules/typeorm/cli.js -d dist/database/typeorm.datasource.js",
     "migration:generate": "npm run typeorm -- migration:generate",
+    "migration:baseline": "node dist/scripts/baseline-migrations.js",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
     "prebuild": "npm run lint:quotes",
