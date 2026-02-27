@@ -19,7 +19,7 @@ import { ReportMatchDto, RejectMatchDto } from '../dto/report-match.dto';
 import { DisputeMatchDto } from '../dto/dispute-match.dto';
 import { ResolveDisputeDto } from '../dto/resolve-dispute.dto';
 import { UserRole } from '../../users/enums/user-role.enum';
-import { PendingConfirmationsResponseDto } from '../dto/pending-confirmation.dto';
+import { MyPendingConfirmationsResponseDto } from '../dto/my-pending-confirmation.dto';
 import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
@@ -36,7 +36,7 @@ export class MatchesController {
   }
 
   @Get('me/pending-confirmations')
-  @ApiOkResponse({ type: PendingConfirmationsResponseDto })
+  @ApiOkResponse({ type: MyPendingConfirmationsResponseDto })
   async getPendingConfirmations(
     @Req() req: Request,
     @Query() query: PendingConfirmationsQueryDto,

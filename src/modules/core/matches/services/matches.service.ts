@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,6 +12,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'crypto';
 
 import {
   MatchResult,
@@ -55,6 +57,53 @@ const TZ = 'America/Argentina/Cordoba';
 
 type PlayerRef = { userId: string | null; displayName: string | null };
 
+type PendingConfirmationStatus = 'PENDING_CONFIRMATION';
+
+type PendingConfirmationCta = {
+  primary: 'Confirmar' | 'Ver';
+  href?: string;
+};
+
+type MyPendingConfirmationView = {
+  id: string;
+  matchId: string;
+  status: PendingConfirmationStatus;
+  opponentName: string;
+  opponentAvatarUrl?: string | null;
+  leagueId?: string | null;
+  leagueName?: string | null;
+  playedAt?: string;
+  score?: string | null;
+  cta: PendingConfirmationCta;
+};
+
+type PendingConfirmationRawRow = {
+  matchId: string;
+  challengeId: string | null;
+  leagueId: string | null;
+  leagueName: string | null;
+  playedAt: Date | string | null;
+  createdAt: Date | string | null;
+  teamASet1: number | null;
+  teamBSet1: number | null;
+  teamASet2: number | null;
+  teamBSet2: number | null;
+  teamASet3: number | null;
+  teamBSet3: number | null;
+  teamA1Id: string | null;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+  teamA1DisplayName: string | null;
+  teamA1Email: string | null;
+  teamA2DisplayName: string | null;
+  teamA2Email: string | null;
+  teamB1DisplayName: string | null;
+  teamB1Email: string | null;
+  teamB2DisplayName: string | null;
+  teamB2Email: string | null;
+};
+
 type PendingConfirmationView = {
   matchId: string;
   challengeId: string | null;
@@ -78,6 +127,8 @@ type ParticipantIds = {
   all: string[];
   captains: { A: string; B: string };
 };
+
+class SafePendingConfirmationsFallbackError extends Error {}
 
 @Injectable()
 export class MatchesService {
@@ -1346,59 +1397,113 @@ export class MatchesService {
   async getPendingConfirmations(
     userId: string,
     opts: { cursor?: string; limit?: number },
-  ): Promise<{ items: PendingConfirmationView[]; nextCursor: string | null }> {
+  ): Promise<{
+    items: MyPendingConfirmationView[];
+    nextCursor: string | null;
+  }> {
     const startMs = Date.now();
     const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
 
-    // Step 1: get all challenge IDs where this user is a participant
-    const challenges = await this.challengeRepo.find({
-      where: [
-        { teamA1Id: userId },
-        { teamA2Id: userId },
-        { teamB1Id: userId },
-        { teamB2Id: userId },
-      ],
-    });
+    try {
+      const qb = this.matchRepo
+        .createQueryBuilder('m')
+        .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
+        .leftJoin(League, 'l', 'l.id = m."leagueId"')
+        .leftJoin(User, 'a1', 'a1.id = c."teamA1Id"')
+        .leftJoin(User, 'a2', 'a2.id = c."teamA2Id"')
+        .leftJoin(User, 'b1', 'b1.id = c."teamB1Id"')
+        .leftJoin(User, 'b2', 'b2.id = c."teamB2Id"')
+        .select([
+          'm.id AS "matchId"',
+          'm."challengeId" AS "challengeId"',
+          'm."leagueId" AS "leagueId"',
+          'l.name AS "leagueName"',
+          'm."playedAt" AS "playedAt"',
+          'm."createdAt" AS "createdAt"',
+          'm."teamASet1" AS "teamASet1"',
+          'm."teamBSet1" AS "teamBSet1"',
+          'm."teamASet2" AS "teamASet2"',
+          'm."teamBSet2" AS "teamBSet2"',
+          'm."teamASet3" AS "teamASet3"',
+          'm."teamBSet3" AS "teamBSet3"',
+          'c."teamA1Id" AS "teamA1Id"',
+          'c."teamA2Id" AS "teamA2Id"',
+          'c."teamB1Id" AS "teamB1Id"',
+          'c."teamB2Id" AS "teamB2Id"',
+          'a1."displayName" AS "teamA1DisplayName"',
+          'a1.email AS "teamA1Email"',
+          'a2."displayName" AS "teamA2DisplayName"',
+          'a2.email AS "teamA2Email"',
+          'b1."displayName" AS "teamB1DisplayName"',
+          'b1.email AS "teamB1Email"',
+          'b2."displayName" AS "teamB2DisplayName"',
+          'b2.email AS "teamB2Email"',
+        ])
+        .where('m.status = :status', {
+          status: MatchResultStatus.PENDING_CONFIRM,
+        })
+        .andWhere('m."reportedByUserId" != :userId', { userId })
+        .andWhere(
+          '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
+          { userId },
+        )
+        .orderBy('COALESCE(m."playedAt", m."createdAt")', 'DESC')
+        .addOrderBy('m.id', 'DESC')
+        .take(limit + 1);
 
-    const challengeIds = challenges.map((ch) => ch.id);
-    if (challengeIds.length === 0) return { items: [], nextCursor: null };
+      const parsedCursor = this.parsePendingConfirmationsCursor(opts.cursor);
+      if (parsedCursor) {
+        qb.andWhere(
+          '(COALESCE(m."playedAt", m."createdAt"), m.id) < (:cursorDate, :cursorId)',
+          parsedCursor,
+        );
+      }
 
-    const challengeMap = new Map(challenges.map((ch) => [ch.id, ch]));
+      const rows = await qb.getRawMany<PendingConfirmationRawRow>();
+      if (!Array.isArray(rows)) {
+        throw new SafePendingConfirmationsFallbackError(
+          'Unexpected pending confirmations query result shape',
+        );
+      }
 
-    // Step 2: query PENDING_CONFIRM matches where caller is not the reporter
-    const qb = this.matchRepo
-      .createQueryBuilder('m')
-      .where('m."challengeId" IN (:...challengeIds)', { challengeIds })
-      .andWhere('m.status = :status', {
-        status: MatchResultStatus.PENDING_CONFIRM,
-      })
-      .andWhere('m."reportedByUserId" != :userId', { userId })
-      .orderBy('m."playedAt"', 'DESC')
-      .addOrderBy('m.id', 'DESC')
-      .take(limit + 1);
+      const hasMore = rows.length > limit;
+      const pagedRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor =
+        hasMore && pagedRows.length > 0
+          ? this.buildPendingConfirmationsCursor(
+              pagedRows[pagedRows.length - 1],
+            )
+          : null;
 
-    if (opts.cursor) {
-      const parts = opts.cursor.split('|');
-      qb.andWhere('(m."playedAt", m.id) < (:cursorDate, :cursorId)', {
-        cursorDate: new Date(parts[0]),
-        cursorId: parts[1],
+      const result = this.toMyPendingConfirmationViews(userId, pagedRows);
+
+      this.logger.debug(
+        `getPendingConfirmations: userId=${userId} rowsFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
+      );
+
+      return { items: result, nextCursor };
+    } catch (err) {
+      if (err instanceof SafePendingConfirmationsFallbackError) {
+        this.logger.warn(
+          `getPendingConfirmations safe fallback applied for userId=${userId}: ${err.message}`,
+        );
+        return { items: [], nextCursor: null };
+      }
+
+      const errorId = randomUUID();
+      const reason = err instanceof Error ? err.message : 'unknown_error';
+      this.logger.error(
+        `getPendingConfirmations failed errorId=${errorId} userId=${userId} reason=${reason}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw new InternalServerErrorException({
+        statusCode: 500,
+        code: 'PENDING_CONFIRMATIONS_UNAVAILABLE',
+        message:
+          'Unable to load pending confirmations at the moment. Please try again.',
+        errorId,
       });
     }
-
-    const rows = await qb.getMany();
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore
-      ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
-      : null;
-
-    const result = await this.toPendingConfirmationViews(items, challengeMap);
-
-    this.logger.debug(
-      `getPendingConfirmations: userId=${userId} candidateChallenges=${challengeIds.length} matchesFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
-    );
-
-    return { items: result, nextCursor };
   }
 
   async getLeaguePendingConfirmations(
@@ -2074,6 +2179,161 @@ export class MatchesService {
         resolution: DisputeResolution.CONFIRM_AS_IS,
       };
     });
+  }
+
+  private parsePendingConfirmationsCursor(
+    cursor?: string,
+  ): { cursorDate: string; cursorId: string } | null {
+    if (!cursor) return null;
+    const [cursorDateRaw, cursorId] = cursor.split('|');
+    if (!cursorDateRaw || !cursorId) {
+      this.logger.warn(
+        `Invalid pending confirmations cursor format. cursor=${cursor}`,
+      );
+      return null;
+    }
+
+    const parsed = new Date(cursorDateRaw);
+    if (Number.isNaN(parsed.getTime())) {
+      this.logger.warn(
+        `Invalid pending confirmations cursor date. cursor=${cursor}`,
+      );
+      return null;
+    }
+
+    return { cursorDate: parsed.toISOString(), cursorId };
+  }
+
+  private buildPendingConfirmationsCursor(
+    row: PendingConfirmationRawRow,
+  ): string {
+    const sortIso =
+      this.toIsoString(row.playedAt) ?? this.toIsoString(row.createdAt);
+    if (!sortIso || !row.matchId) {
+      throw new SafePendingConfirmationsFallbackError(
+        'Unable to build pending confirmations cursor',
+      );
+    }
+    return `${sortIso}|${row.matchId}`;
+  }
+
+  private toMyPendingConfirmationViews(
+    userId: string,
+    rows: PendingConfirmationRawRow[],
+  ): MyPendingConfirmationView[] {
+    return rows.map((row) => this.toMyPendingConfirmationView(userId, row));
+  }
+
+  private toMyPendingConfirmationView(
+    userId: string,
+    row: PendingConfirmationRawRow,
+  ): MyPendingConfirmationView {
+    const teamAIds = [row.teamA1Id, row.teamA2Id].filter(
+      (id): id is string => !!id,
+    );
+    const teamBIds = [row.teamB1Id, row.teamB2Id].filter(
+      (id): id is string => !!id,
+    );
+
+    const isUserTeamA = teamAIds.includes(userId);
+    const isUserTeamB = teamBIds.includes(userId);
+
+    const labels = new Map<string, string | null>([
+      [
+        row.teamA1Id ?? '',
+        this.coalesceDisplay(row.teamA1DisplayName, row.teamA1Email),
+      ],
+      [
+        row.teamA2Id ?? '',
+        this.coalesceDisplay(row.teamA2DisplayName, row.teamA2Email),
+      ],
+      [
+        row.teamB1Id ?? '',
+        this.coalesceDisplay(row.teamB1DisplayName, row.teamB1Email),
+      ],
+      [
+        row.teamB2Id ?? '',
+        this.coalesceDisplay(row.teamB2DisplayName, row.teamB2Email),
+      ],
+    ]);
+
+    let opponentIds: string[] = [];
+    if (isUserTeamA) {
+      opponentIds = teamBIds;
+    } else if (isUserTeamB) {
+      opponentIds = teamAIds;
+    } else {
+      this.logger.warn(
+        `Pending confirmation with unexpected participant relation. matchId=${row.matchId} challengeId=${row.challengeId} userId=${userId}`,
+      );
+    }
+
+    const opponentNames = opponentIds
+      .map((id) => (labels.get(id) ?? '').trim())
+      .filter((name): name is string => name.length > 0);
+    const uniqueOpponentNames = [...new Set(opponentNames)];
+    const opponentName =
+      uniqueOpponentNames.length > 0
+        ? uniqueOpponentNames.join(' / ')
+        : 'Rival';
+
+    if (opponentName === 'Rival') {
+      this.logger.warn(
+        `Pending confirmation missing opponent identity fallback applied. matchId=${row.matchId} challengeId=${row.challengeId} userId=${userId}`,
+      );
+    }
+
+    const playedAtIso = this.toIsoString(row.playedAt) ?? undefined;
+    const scoreLabel = this.formatScoreLabel(row);
+
+    return {
+      id: row.matchId,
+      matchId: row.matchId,
+      status: 'PENDING_CONFIRMATION',
+      opponentName,
+      opponentAvatarUrl: null,
+      leagueId: row.leagueId ?? null,
+      leagueName: row.leagueName ?? null,
+      playedAt: playedAtIso,
+      score: scoreLabel,
+      cta: {
+        primary: 'Confirmar',
+        href: `/matches/${row.matchId}`,
+      },
+    };
+  }
+
+  private coalesceDisplay(
+    displayName: string | null | undefined,
+    email: string | null | undefined,
+  ): string | null {
+    const display = (displayName ?? '').trim();
+    if (display.length > 0) return display;
+    const emailPrefix = (email ?? '').split('@')[0]?.trim() ?? '';
+    return emailPrefix.length > 0 ? emailPrefix : null;
+  }
+
+  private formatScoreLabel(row: PendingConfirmationRawRow): string | null {
+    const sets: string[] = [];
+    if (row.teamASet1 != null && row.teamBSet1 != null) {
+      sets.push(`${row.teamASet1}-${row.teamBSet1}`);
+    }
+    if (row.teamASet2 != null && row.teamBSet2 != null) {
+      sets.push(`${row.teamASet2}-${row.teamBSet2}`);
+    }
+    if (row.teamASet3 != null && row.teamBSet3 != null) {
+      sets.push(`${row.teamASet3}-${row.teamBSet3}`);
+    }
+    return sets.length > 0 ? sets.join(' ') : null;
+  }
+
+  private toIsoString(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value.toISOString();
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
   private async toPendingConfirmationViews(

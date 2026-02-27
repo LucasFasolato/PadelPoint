@@ -1188,43 +1188,100 @@ describe('MatchesService', () => {
   // ── getPendingConfirmations ────────────────────────────────────────────────
 
   describe('getPendingConfirmations', () => {
-    it('returns empty list when user has no challenges (non-participant)', async () => {
-      // User OUTSIDER has no challenges
-      challengeRepo.find.mockResolvedValue([]);
-
-      const result = await service.getPendingConfirmations(OUTSIDER, {});
-
-      expect(result.items).toHaveLength(0);
-      expect(result.nextCursor).toBeNull();
-      // Match query should not be called since there are no challenge IDs
-      expect(matchRepo.createQueryBuilder).not.toHaveBeenCalled();
-    });
-
-    it('returns empty list when all PENDING_CONFIRM matches were reported by the caller', async () => {
-      // USER_A1 has a challenge but is the reporter — should not appear in pending list
-      const ch = fakeChallenge();
-      challengeRepo.find.mockResolvedValue([ch]);
-
-      const pendingMatch = fakeMatch({
-        status: MatchResultStatus.PENDING_CONFIRM,
-        reportedByUserId: USER_A1, // caller is the reporter
-      });
-
+    it('returns empty list when user has no pending confirmations', async () => {
       const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([]), // query already filters reporter≠userId
+        getRawMany: jest.fn().mockResolvedValue([]),
       };
-      matchRepo.createQueryBuilder.mockReturnValue(qb);
-      userRepo.find.mockResolvedValue([]);
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.getPendingConfirmations(OUTSIDER, {});
+
+      expect(result.items).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+      expect(matchRepo.createQueryBuilder).toHaveBeenCalledWith('m');
+    });
+
+    it('returns empty list when all PENDING_CONFIRM matches were reported by the caller', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
 
       const result = await service.getPendingConfirmations(USER_A1, {});
 
       expect(result.items).toHaveLength(0);
       expect(result.nextCursor).toBeNull();
+    });
+
+    it('maps opponentName fallback to Rival when opponent relation is missing', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            matchId: 'match-pending-1',
+            challengeId: 'challenge-1',
+            leagueId: 'league-1',
+            leagueName: 'League One',
+            playedAt: '2025-06-10T10:00:00.000Z',
+            createdAt: '2025-06-10T09:00:00.000Z',
+            teamASet1: 6,
+            teamBSet1: 4,
+            teamASet2: null,
+            teamBSet2: null,
+            teamASet3: null,
+            teamBSet3: null,
+            teamA1Id: USER_A1,
+            teamA2Id: null,
+            teamB1Id: null,
+            teamB2Id: null,
+            teamA1DisplayName: 'A1',
+            teamA1Email: 'a1@test.com',
+            teamA2DisplayName: null,
+            teamA2Email: null,
+            teamB1DisplayName: null,
+            teamB1Email: null,
+            teamB2DisplayName: null,
+            teamB2Email: null,
+          },
+        ]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.getPendingConfirmations(USER_A1, {});
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          id: 'match-pending-1',
+          matchId: 'match-pending-1',
+          status: 'PENDING_CONFIRMATION',
+          opponentName: 'Rival',
+          cta: expect.objectContaining({ primary: 'Confirmar' }),
+        }),
+      );
     });
   });
 
