@@ -295,7 +295,9 @@ describe('Leagues (e2e)', () => {
       expect(res.body.shareUrlPath).toContain(
         `/public/leagues/${LEAGUE_ID}/standings`,
       );
-      expect(res.body.shareUrl).toBe(`${PUBLIC_APP_URL}${res.body.shareUrlPath}`);
+      expect(res.body.shareUrl).toBe(
+        `${PUBLIC_APP_URL}${res.body.shareUrlPath}`,
+      );
       expect(res.body.shareText).toContain(res.body.shareUrl);
       expect(leaguesService.enableShare).toHaveBeenCalledWith(
         FAKE_CREATOR.userId,
@@ -332,7 +334,9 @@ describe('Leagues (e2e)', () => {
         .expect(200);
 
       expect(res.body.enabled).toBe(true);
-      expect(res.body.shareUrl).toContain(`${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings`);
+      expect(res.body.shareUrl).toContain(
+        `${PUBLIC_APP_URL}/public/leagues/${LEAGUE_ID}/standings`,
+      );
       expect(res.body.shareText).toContain(res.body.shareUrl);
       expect(leaguesService.getShareStatus).toHaveBeenCalledWith(
         FAKE_INVITEE.userId,
@@ -423,10 +427,9 @@ describe('Leagues (e2e)', () => {
       expect(res.body.league.name).toBe('Summer League');
       expect(res.body.standings[0].displayName).toBe('Creator Player');
       expect(res.body.standings[0].email).toBeUndefined();
-      expect(leaguesService.getPublicStandingsByShareToken).toHaveBeenCalledWith(
-        LEAGUE_ID,
-        'share-token-abc',
-      );
+      expect(
+        leaguesService.getPublicStandingsByShareToken,
+      ).toHaveBeenCalledWith(LEAGUE_ID, 'share-token-abc');
     });
 
     it('should return 403 when token is missing', async () => {
@@ -520,10 +523,9 @@ describe('Leagues (e2e)', () => {
       expect(res.body.top).toHaveLength(1);
       expect(res.body.top[0].displayName).toBe('Creator Player');
       expect(res.body.top[0].email).toBeUndefined();
-      expect(leaguesService.getPublicStandingsOgByShareToken).toHaveBeenCalledWith(
-        LEAGUE_ID,
-        'share-token-abc',
-      );
+      expect(
+        leaguesService.getPublicStandingsOgByShareToken,
+      ).toHaveBeenCalledWith(LEAGUE_ID, 'share-token-abc');
     });
 
     it('should return empty top when no snapshot exists', async () => {
@@ -822,25 +824,40 @@ describe('Leagues (e2e)', () => {
 
   describe('GET /leagues', () => {
     it('should list leagues for authenticated user', async () => {
-      leaguesService.listMyLeagues.mockResolvedValue([
-        {
-          id: LEAGUE_ID,
-          name: 'Summer League',
-          status: 'upcoming',
-          startDate: '2025-06-01',
-          endDate: '2025-06-30',
-          creatorId: FAKE_CREATOR.userId,
-          createdAt: '2025-01-01T12:00:00.000Z',
-        },
-      ]);
+      leaguesService.listMyLeagues.mockResolvedValue({
+        items: [
+          {
+            id: LEAGUE_ID,
+            name: 'Summer League',
+            mode: 'SCHEDULED',
+            status: 'UPCOMING',
+            role: 'OWNER',
+            membersCount: 8,
+            cityName: 'Rosario',
+            provinceCode: 'AR-S',
+            lastActivityAt: '2025-01-01T12:00:00.000Z',
+          },
+        ],
+      });
 
       const res = await request(app.getHttpServer())
         .get('/leagues')
         .expect(200);
 
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].name).toBe('Summer League');
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].name).toBe('Summer League');
+      expect(res.body.items[0].mode).toBe('SCHEDULED');
       expect(res.headers['cache-control']).toContain('no-store');
+    });
+
+    it('should return 200 with empty items when user has no leagues', async () => {
+      leaguesService.listMyLeagues.mockResolvedValue({ items: [] });
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues')
+        .expect(200);
+
+      expect(res.body).toEqual({ items: [] });
     });
   });
 
@@ -848,7 +865,7 @@ describe('Leagues (e2e)', () => {
 
   describe('Cache-Control headers', () => {
     it('GET /leagues should include no-cache headers', async () => {
-      leaguesService.listMyLeagues.mockResolvedValue([]);
+      leaguesService.listMyLeagues.mockResolvedValue({ items: [] });
 
       const res = await request(app.getHttpServer())
         .get('/leagues')

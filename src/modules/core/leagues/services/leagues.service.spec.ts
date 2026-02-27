@@ -419,6 +419,71 @@ describe('LeaguesService', () => {
     });
   });
 
+  // -- listMyLeagues --------------------------------------------
+
+  describe('listMyLeagues', () => {
+    it('should map null-safe league list fields with fallbacks', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-1',
+            name: null,
+            mode: null,
+            status: null,
+            role: null,
+            membersCount: null,
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'league-1',
+            name: 'Liga',
+            mode: 'SCHEDULED',
+            status: 'UPCOMING',
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ],
+      });
+    });
+
+    it('should map unexpected errors to LEAGUES_UNAVAILABLE with errorId', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockRejectedValue(new Error('db_failed')),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      await expect(service.listMyLeagues(FAKE_USER_ID)).rejects.toMatchObject({
+        response: {
+          code: 'LEAGUES_UNAVAILABLE',
+          errorId: expect.any(String),
+        },
+      });
+    });
+  });
+
   // -- getLeagueDetail -------------------------------------------
 
   describe('getLeagueDetail', () => {
@@ -482,17 +547,24 @@ describe('LeaguesService', () => {
     it('enableShare should generate and persist a share token', async () => {
       const league = fakeLeague({ id: 'league-share-1', shareToken: null });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
       leagueRepo.save.mockImplementation(async (l: any) => l);
 
       const result = await service.enableShare(FAKE_USER_ID, league.id);
 
       expect(leagueRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ id: league.id, shareToken: expect.any(String) }),
+        expect.objectContaining({
+          id: league.id,
+          shareToken: expect.any(String),
+        }),
       );
       expect(result.shareToken).toEqual(expect.any(String));
       expect(result.shareToken.length).toBeGreaterThanOrEqual(40);
-      expect(result.shareUrlPath).toContain(`/public/leagues/${league.id}/standings?token=`);
+      expect(result.shareUrlPath).toContain(
+        `/public/leagues/${league.id}/standings?token=`,
+      );
       expect(result.shareUrl).toBe(`${PUBLIC_APP_URL}${result.shareUrlPath}`);
       expect(result.shareText).toContain(result.shareUrl);
     });
@@ -503,7 +575,9 @@ describe('LeaguesService', () => {
         shareToken: 'existing-share-token',
       });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.ADMIN }),
+      );
 
       const result = await service.enableShare(FAKE_USER_ID, league.id);
 
@@ -518,20 +592,31 @@ describe('LeaguesService', () => {
         shareToken: 'member-visible-token',
       });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.MEMBER }),
+      );
 
       const result = await service.enableShare(FAKE_USER_ID, league.id);
 
-      expect(result.shareUrl).toContain(`${PUBLIC_APP_URL}/public/leagues/${league.id}/standings`);
+      expect(result.shareUrl).toContain(
+        `${PUBLIC_APP_URL}/public/leagues/${league.id}/standings`,
+      );
       expect(leagueRepo.save).not.toHaveBeenCalled();
     });
 
     it('getShareStatus should return disabled=false payload for members', async () => {
-      const league = fakeLeague({ id: 'league-share-status-1', shareToken: null });
+      const league = fakeLeague({
+        id: 'league-share-status-1',
+        shareToken: null,
+      });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.MEMBER }),
+      );
 
-      await expect(service.getShareStatus(FAKE_USER_ID, league.id)).resolves.toEqual({
+      await expect(
+        service.getShareStatus(FAKE_USER_ID, league.id),
+      ).resolves.toEqual({
         enabled: false,
       });
     });
@@ -542,7 +627,9 @@ describe('LeaguesService', () => {
         shareToken: 'share-enabled-token',
       });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.MEMBER }),
+      );
 
       const result = await service.getShareStatus(FAKE_USER_ID, league.id);
 
@@ -561,7 +648,9 @@ describe('LeaguesService', () => {
         shareToken: 'token-to-clear',
       });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
       leagueRepo.save.mockImplementation(async (l: any) => l);
 
       const result = await service.disableShare(FAKE_USER_ID, league.id);
@@ -577,7 +666,9 @@ describe('LeaguesService', () => {
     it('should forbid avatar update for non-admin/non-owner member', async () => {
       const league = fakeLeague();
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.MEMBER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.MEMBER }),
+      );
 
       await expect(
         service.setLeagueAvatar(FAKE_USER_ID, league.id, {
@@ -593,7 +684,9 @@ describe('LeaguesService', () => {
         .mockResolvedValueOnce(league)
         .mockResolvedValueOnce(league)
         .mockResolvedValueOnce(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.ADMIN }),
+      );
       memberRepo.find.mockResolvedValue(members);
       mediaAssetRepo.findOne.mockResolvedValue({
         id: 'media-1',
@@ -603,10 +696,14 @@ describe('LeaguesService', () => {
       } as MediaAsset);
       leagueRepo.save.mockImplementation(async (value: any) => value);
 
-      const result = await service.updateLeagueProfile(FAKE_USER_ID, league.id, {
-        name: 'Renamed League',
-        mediaAssetId: 'media-1',
-      });
+      const result = await service.updateLeagueProfile(
+        FAKE_USER_ID,
+        league.id,
+        {
+          name: 'Renamed League',
+          mediaAssetId: 'media-1',
+        },
+      );
 
       expect(leagueRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -775,7 +872,9 @@ describe('LeaguesService', () => {
     it('deletes an empty league when caller is owner/admin', async () => {
       const league = fakeLeague({ id: 'league-delete-1' });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
       matchResultRepo.count.mockResolvedValue(0);
       memberRepo.count.mockResolvedValue(1);
       leagueRepo.delete.mockResolvedValue({ affected: 1 });
@@ -789,10 +888,14 @@ describe('LeaguesService', () => {
     it('returns 409 when league has matches', async () => {
       const league = fakeLeague({ id: 'league-delete-2' });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.ADMIN }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.ADMIN }),
+      );
       matchResultRepo.count.mockResolvedValue(2);
 
-      await expect(service.deleteLeague(FAKE_USER_ID, league.id)).rejects.toMatchObject({
+      await expect(
+        service.deleteLeague(FAKE_USER_ID, league.id),
+      ).rejects.toMatchObject({
         response: {
           code: 'LEAGUE_DELETE_HAS_MATCHES',
           reason: 'HAS_MATCHES',
@@ -803,11 +906,15 @@ describe('LeaguesService', () => {
     it('returns 409 when league has more than one member', async () => {
       const league = fakeLeague({ id: 'league-delete-3' });
       leagueRepo.findOne.mockResolvedValue(league);
-      memberRepo.findOne.mockResolvedValue(fakeMember({ role: LeagueRole.OWNER }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ role: LeagueRole.OWNER }),
+      );
       matchResultRepo.count.mockResolvedValue(0);
       memberRepo.count.mockResolvedValue(2);
 
-      await expect(service.deleteLeague(FAKE_USER_ID, league.id)).rejects.toMatchObject({
+      await expect(
+        service.deleteLeague(FAKE_USER_ID, league.id),
+      ).rejects.toMatchObject({
         response: {
           code: 'LEAGUE_DELETE_HAS_MEMBERS',
           reason: 'HAS_MEMBERS',

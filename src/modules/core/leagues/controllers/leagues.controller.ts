@@ -37,6 +37,7 @@ import { LeagueActivityQueryDto } from '../dto/league-activity-query.dto';
 import { LeagueStandingsHistoryQueryDto } from '../dto/league-standings-history-query.dto';
 import { StandingsWithMovementDto } from '../dto/standings-row.dto';
 import { ActivityListResponseDto } from '../dto/activity-view.dto';
+import { ListLeaguesResponseDto } from '../dto/list-leagues.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -64,6 +65,7 @@ export class LeaguesController {
   @Get()
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: ListLeaguesResponseDto })
   list(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.leaguesService.listMyLeagues(user.userId);
@@ -239,7 +241,9 @@ export class LeaguesController {
       },
     },
   })
-  @ApiForbiddenResponse({ description: 'Caller is not owner/admin of the league' })
+  @ApiForbiddenResponse({
+    description: 'Caller is not owner/admin of the league',
+  })
   @ApiNotFoundResponse({ description: 'League not found' })
   deleteLeague(
     @Req() req: Request,

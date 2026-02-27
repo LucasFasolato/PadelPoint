@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   Logger,
   NotFoundException,
@@ -27,6 +28,8 @@ import { UpdateMemberRoleDto } from '../dto/update-member-role.dto';
 import { LeagueRole } from '../enums/league-role.enum';
 import { DEFAULT_LEAGUE_SETTINGS } from '../types/league-settings.type';
 import { User } from '../../users/entities/user.entity';
+import { City } from '../../geo/entities/city.entity';
+import { Province } from '../../geo/entities/province.entity';
 import { MediaAsset } from '@core/media/entities/media-asset.entity';
 import { MatchResult } from '../../matches/entities/match-result.entity';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
@@ -55,6 +58,34 @@ function toApiStatus(status: LeagueStatus): string {
   if (status === LeagueStatus.DRAFT) return 'upcoming';
   return status; // 'active' | 'finished' stay the same
 }
+
+type LeagueListMode = string;
+type LeagueListStatus = string;
+type LeagueListRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
+type LeagueListItemView = {
+  id: string;
+  name: string;
+  mode: LeagueListMode;
+  status: LeagueListStatus;
+  role?: LeagueListRole;
+  membersCount?: number;
+  cityName?: string | null;
+  provinceCode?: string | null;
+  lastActivityAt?: string | null;
+};
+
+type LeagueListRawRow = {
+  id: string | null;
+  name: string | null;
+  mode: string | null;
+  status: string | null;
+  role: string | null;
+  membersCount: number | string | null;
+  cityName: string | null;
+  provinceCode: string | null;
+  lastActivityAt: Date | string | null;
+};
 
 @Injectable()
 export class LeaguesService {
@@ -214,7 +245,10 @@ export class LeaguesService {
       .filter((email) => email.length > 0);
     const normalizedUniqueEmails = Array.from(new Set(normalizedEmails));
 
-    const cappedEmails = normalizedUniqueEmails.slice(0, MINI_MAX_INVITE_EMAILS);
+    const cappedEmails = normalizedUniqueEmails.slice(
+      0,
+      MINI_MAX_INVITE_EMAILS,
+    );
     const slotLimitedEmails = cappedEmails.slice(0, MINI_MAX_PLAYERS - 1);
 
     const league = await this.createLeague(userId, {
@@ -224,17 +258,20 @@ export class LeaguesService {
 
     const createdInvites =
       slotLimitedEmails.length > 0
-        ? await this.createInvites(userId, league.id, { emails: slotLimitedEmails })
+        ? await this.createInvites(userId, league.id, {
+            emails: slotLimitedEmails,
+          })
         : [];
 
-    const invitedExistingUsers = createdInvites.filter(
-      (invite) => Boolean(invite.invitedUserId),
+    const invitedExistingUsers = createdInvites.filter((invite) =>
+      Boolean(invite.invitedUserId),
     ).length;
     const invitedByEmailOnly = createdInvites.filter(
       (invite) => !invite.invitedUserId && Boolean(invite.invitedEmail),
     ).length;
     const skipped =
-      (normalizedEmails.length - normalizedUniqueEmails.length) +
+      normalizedEmails.length -
+      normalizedUniqueEmails.length +
       (normalizedUniqueEmails.length - slotLimitedEmails.length) +
       (slotLimitedEmails.length - createdInvites.length);
 
@@ -252,30 +289,78 @@ export class LeaguesService {
   // -- list ---------------------------------------------------------
 
   async listMyLeagues(userId: string) {
-    const leagues = await this.leagueRepo
-      .createQueryBuilder('l')
-      .innerJoin(
-        LeagueMember,
-        'm',
-        'm."leagueId" = l.id AND m."userId" = :userId',
-        { userId },
-      )
-      .orderBy('l."createdAt"', 'DESC')
-      .getMany();
+    try {
+      const rows = await this.leagueRepo
+        .createQueryBuilder('l')
+        .innerJoin(
+          LeagueMember,
+          'myMember',
+          'myMember."leagueId" = l.id AND myMember."userId" = :userId',
+          { userId },
+        )
+        .leftJoin(User, 'creator', 'creator.id = l."creatorId"')
+        .leftJoin(City, 'city', 'city.id = creator."cityId"')
+        .leftJoin(Province, 'province', 'province.id = city."provinceId"')
+        .select([
+          'l.id AS id',
+          'l.name AS name',
+          'l.mode AS mode',
+          'l.status AS status',
+          'myMember.role AS role',
+          'city.name AS "cityName"',
+          'province.code AS "provinceCode"',
+        ])
+        .addSelect(
+          (subQuery) =>
+            subQuery
+              .select('COUNT(1)')
+              .from(LeagueMember, 'lm')
+              .where('lm."leagueId" = l.id'),
+          'membersCount',
+        )
+        .addSelect(
+          (subQuery) =>
+            subQuery
+              .select('MAX(la."createdAt")')
+              .from(LeagueActivity, 'la')
+              .where('la."leagueId" = l.id'),
+          'lastActivityAt',
+        )
+        .orderBy(
+          'COALESCE((SELECT MAX(la."createdAt") FROM "league_activity" la WHERE la."leagueId" = l.id), l."createdAt")',
+          'DESC',
+        )
+        .addOrderBy('l.id', 'DESC')
+        .getRawMany<LeagueListRawRow>();
 
-    return leagues.map((l) => ({
-      id: l.id,
-      name: l.name,
-      mode: l.mode,
-      status: toApiStatus(l.status),
-      isPermanent: this.isPermanentLeague(l),
-      dateRangeEnabled: this.isDateRangeEnabledLeague(l),
-      ...this.toLeagueDatesView(l),
-      avatarUrl: l.avatarUrl ?? null,
-      avatarMediaAssetId: l.avatarMediaAssetId ?? null,
-      creatorId: l.creatorId,
-      createdAt: l.createdAt.toISOString(),
-    }));
+      const items = Array.isArray(rows)
+        ? rows.map((row) => this.toLeagueListItemView(row))
+        : [];
+
+      return { items };
+    } catch (err) {
+      const errorId = crypto.randomUUID();
+      const reason = err instanceof Error ? err.message : 'unknown_error';
+      this.logger.error(
+        JSON.stringify({
+          event: 'leagues.list.failed',
+          errorId,
+          userId,
+          context: {
+            endpoint: 'GET /leagues',
+            query: 'my-leagues-list-v2',
+          },
+          reason,
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw new InternalServerErrorException({
+        statusCode: 500,
+        code: 'LEAGUES_UNAVAILABLE',
+        message: 'Unable to load leagues at the moment. Please try again.',
+        errorId,
+      });
+    }
   }
 
   // -- detail -------------------------------------------------------
@@ -327,7 +412,11 @@ export class LeaguesService {
       return this.toShareEnableView(leagueId, league.shareToken);
     }
 
-    for (let attempt = 0; attempt < LEAGUE_SHARE_TOKEN_GENERATE_RETRIES; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < LEAGUE_SHARE_TOKEN_GENERATE_RETRIES;
+      attempt++
+    ) {
       league.shareToken = this.generateLeagueShareToken();
       try {
         await this.leagueRepo.save(league);
@@ -432,10 +521,11 @@ export class LeaguesService {
     }
 
     const latestVersion = latestHistory[0].version;
-    const snapshot = await this.leagueStandingsService.getStandingsSnapshotByVersion(
-      leagueId,
-      latestVersion,
-    );
+    const snapshot =
+      await this.leagueStandingsService.getStandingsSnapshotByVersion(
+        leagueId,
+        latestVersion,
+      );
 
     if (!snapshot) {
       return {
@@ -509,7 +599,9 @@ export class LeaguesService {
 
     await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
 
-    const matchesCount = await this.matchResultRepo.count({ where: { leagueId } });
+    const matchesCount = await this.matchResultRepo.count({
+      where: { leagueId },
+    });
     if (matchesCount > 0) {
       throw new ConflictException({
         statusCode: 409,
@@ -1116,7 +1208,11 @@ export class LeaguesService {
     return this.getLeagueDetail(userId, leagueId);
   }
 
-  async setLeagueAvatar(userId: string, leagueId: string, dto: SetLeagueAvatarDto) {
+  async setLeagueAvatar(
+    userId: string,
+    leagueId: string,
+    dto: SetLeagueAvatarDto,
+  ) {
     return this.updateLeagueProfile(userId, leagueId, dto);
   }
 
@@ -1339,6 +1435,82 @@ export class LeaguesService {
     }
   }
 
+  private toLeagueListItemView(row: LeagueListRawRow): LeagueListItemView {
+    const id = typeof row.id === 'string' && row.id.length > 0 ? row.id : '';
+    const rawName = (row.name ?? '').trim();
+    const parsedMembersCount = this.toSafeInteger(row.membersCount);
+    const role = this.toLeagueListRole(row.role);
+    const lastActivityAt = this.toNullableIsoString(row.lastActivityAt);
+
+    const item: LeagueListItemView = {
+      id,
+      name: rawName.length > 0 ? rawName : 'Liga',
+      mode: this.toLeagueListMode(row.mode),
+      status: this.toLeagueListStatus(row.status),
+    };
+
+    if (role) item.role = role;
+    if (parsedMembersCount !== undefined)
+      item.membersCount = parsedMembersCount;
+    item.cityName = row.cityName ?? null;
+    item.provinceCode = row.provinceCode ?? null;
+    item.lastActivityAt = lastActivityAt;
+
+    return item;
+  }
+
+  private toLeagueListMode(mode: string | null | undefined): LeagueListMode {
+    const normalized = (mode ?? '').trim().toLowerCase();
+    if (normalized === 'open') return 'OPEN';
+    if (normalized === 'scheduled') return 'SCHEDULED';
+    if (normalized === 'mini') return 'MINI';
+    return normalized.length > 0 ? normalized.toUpperCase() : 'SCHEDULED';
+  }
+
+  private toLeagueListStatus(
+    status: string | null | undefined,
+  ): LeagueListStatus {
+    const normalized = (status ?? '').trim().toLowerCase();
+    if (normalized === 'draft' || normalized === 'upcoming') return 'UPCOMING';
+    if (normalized === 'active') return 'ACTIVE';
+    if (normalized === 'finished') return 'FINISHED';
+    return normalized.length > 0 ? normalized.toUpperCase() : 'UPCOMING';
+  }
+
+  private toLeagueListRole(
+    role: string | null | undefined,
+  ): LeagueListRole | undefined {
+    const normalized = (role ?? '').trim().toUpperCase();
+    if (normalized === 'OWNER') return 'OWNER';
+    if (normalized === 'ADMIN') return 'ADMIN';
+    if (normalized === 'MEMBER') return 'MEMBER';
+    return undefined;
+  }
+
+  private toSafeInteger(
+    value: number | string | null | undefined,
+  ): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.trunc(value));
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isNaN(parsed)) return Math.max(0, parsed);
+    }
+    return undefined;
+  }
+
+  private toNullableIsoString(
+    value: Date | string | null | undefined,
+  ): string | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value.toISOString();
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
   private toLeagueView(league: League, members: LeagueMember[]) {
     const status = this.resolveLeagueStatusForView(league, members.length);
     const canRecordMatches = this.canRecordMatches(league, members.length);
@@ -1426,7 +1598,9 @@ export class LeaguesService {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private isPermanentLeague(league: Pick<League, 'mode' | 'isPermanent'>): boolean {
+  private isPermanentLeague(
+    league: Pick<League, 'mode' | 'isPermanent'>,
+  ): boolean {
     if (league.mode === LeagueMode.OPEN || league.mode === LeagueMode.MINI) {
       return true;
     }
@@ -1458,7 +1632,10 @@ export class LeaguesService {
     league: League,
     dto: SetLeagueAvatarDto,
   ): Promise<void> {
-    const hasMediaAssetId = Object.prototype.hasOwnProperty.call(dto, 'mediaAssetId');
+    const hasMediaAssetId = Object.prototype.hasOwnProperty.call(
+      dto,
+      'mediaAssetId',
+    );
     const hasUrl = Object.prototype.hasOwnProperty.call(dto, 'url');
     const hasAvatarUrl = Object.prototype.hasOwnProperty.call(dto, 'avatarUrl');
 
