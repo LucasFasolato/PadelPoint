@@ -21,6 +21,7 @@ import { MediaModule } from './modules/core/media/media.module';
 import { NotificationsModule } from './modules/core/notifications/notifications.module';
 import { LeaguesModule } from './modules/core/leagues/leagues.module';
 import { PlayersModule } from './modules/core/players/players.module';
+import { RankingsModule } from './modules/core/rankings/rankings.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PlayersModule } from './modules/core/players/players.module';
     NotificationsModule,
     LeaguesModule,
     PlayersModule,
+    RankingsModule,
   ],
 })
 export class AppModule {}
