@@ -102,6 +102,7 @@ describe('Leagues (e2e)', () => {
       createLeague: jest.fn(),
       listMyLeagues: jest.fn(),
       getLeagueDetail: jest.fn(),
+      updateMemberRole: jest.fn(),
       createInvites: jest.fn(),
       getInviteByToken: jest.fn(),
       acceptInvite: jest.fn(),
@@ -118,6 +119,10 @@ describe('Leagues (e2e)', () => {
 
     standingsService = {
       recomputeLeague: jest.fn(),
+      getStandingsWithMovement: jest.fn(),
+      getLatestStandings: jest.fn(),
+      getStandingsHistory: jest.fn(),
+      getStandingsSnapshotByVersion: jest.fn(),
     };
 
     activityService = {
@@ -702,6 +707,42 @@ describe('Leagues (e2e)', () => {
       );
     });
 
+    it('should keep invite accept response contract keys stable', async () => {
+      leaguesService.acceptInvite.mockResolvedValue({
+        member: {
+          userId: FAKE_INVITEE.userId,
+          displayName: 'Invitee Player',
+          points: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          position: null,
+          joinedAt: '2025-01-01T12:00:00.000Z',
+        },
+        alreadyMember: false,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/invites/${INVITE_ID}/accept`)
+        .set('x-test-user', 'invitee')
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          member: expect.objectContaining({
+            userId: expect.any(String),
+            displayName: expect.any(String),
+            points: expect.any(Number),
+            wins: expect.any(Number),
+            losses: expect.any(Number),
+            draws: expect.any(Number),
+            joinedAt: expect.any(String),
+          }),
+          alreadyMember: expect.any(Boolean),
+        }),
+      );
+    });
+
     it('should be idempotent on duplicate accept', async () => {
       leaguesService.acceptInvite.mockResolvedValue({
         member: {
@@ -755,6 +796,21 @@ describe('Leagues (e2e)', () => {
       expect(res.body.ok).toBe(true);
     });
 
+    it('should keep invite decline response contract keys stable', async () => {
+      leaguesService.declineInvite.mockResolvedValue({ ok: true });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/invites/${INVITE_ID}/decline`)
+        .set('x-test-user', 'invitee')
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          ok: expect.any(Boolean),
+        }),
+      );
+    });
+
     it('should return 400 for invalid invite id param', async () => {
       const res = await request(app.getHttpServer())
         .post('/leagues/invites/bad-invite-id/decline')
@@ -795,6 +851,37 @@ describe('Leagues (e2e)', () => {
       expect(res.body.members[1].points).toBe(3);
     });
 
+    it('should keep league detail response contract keys stable', async () => {
+      leaguesService.getLeagueDetail.mockResolvedValue(leagueView);
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}`)
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          id: expect.any(String),
+          name: expect.any(String),
+          mode: expect.any(String),
+          creatorId: expect.any(String),
+          status: expect.any(String),
+          createdAt: expect.any(String),
+          members: expect.any(Array),
+        }),
+      );
+      expect(res.body.members[0]).toEqual(
+        expect.objectContaining({
+          userId: expect.any(String),
+          displayName: expect.any(String),
+          points: expect.any(Number),
+          wins: expect.any(Number),
+          losses: expect.any(Number),
+          draws: expect.any(Number),
+          joinedAt: expect.any(String),
+        }),
+      );
+    });
+
     it('should return LEAGUE_FORBIDDEN for non-member', async () => {
       leaguesService.getLeagueDetail.mockRejectedValue(
         new ForbiddenException({
@@ -817,6 +904,93 @@ describe('Leagues (e2e)', () => {
         .expect(400);
 
       expect(res.body.code).toBe('INVALID_UUID_PARAM');
+    });
+  });
+
+  describe('GET /leagues/:id/standings', () => {
+    it('should keep standings response contract keys stable', async () => {
+      leaguesService.getLeagueDetail.mockResolvedValue(leagueView);
+      standingsService.getStandingsWithMovement?.mockResolvedValue({
+        computedAt: '2026-02-27T20:00:00.000Z',
+        rows: [
+          {
+            userId: FAKE_CREATOR.userId,
+            displayName: 'Creator Player',
+            points: 6,
+            wins: 2,
+            losses: 0,
+            draws: 0,
+            setsDiff: 4,
+            gamesDiff: 12,
+            position: 1,
+            delta: 1,
+            oldPosition: 2,
+            movementType: 'UP',
+          },
+        ],
+        movement: {
+          [FAKE_CREATOR.userId]: { delta: 1 },
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/standings`)
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          computedAt: expect.any(String),
+          rows: expect.any(Array),
+          movement: expect.any(Object),
+        }),
+      );
+      expect(res.body.rows[0]).toEqual(
+        expect.objectContaining({
+          userId: expect.any(String),
+          displayName: expect.any(String),
+          points: expect.any(Number),
+          wins: expect.any(Number),
+          losses: expect.any(Number),
+          draws: expect.any(Number),
+          setsDiff: expect.any(Number),
+          gamesDiff: expect.any(Number),
+          position: expect.any(Number),
+        }),
+      );
+    });
+  });
+
+  describe('PATCH /leagues/:id/members/:memberId/role', () => {
+    it('should keep member role update response contract keys stable', async () => {
+      leaguesService.updateMemberRole?.mockResolvedValue({
+        userId: FAKE_INVITEE.userId,
+        displayName: 'Invitee Player',
+        role: 'member',
+        points: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        position: 2,
+        joinedAt: '2025-01-02T12:00:00.000Z',
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/leagues/${LEAGUE_ID}/members/${FAKE_INVITEE.userId}/role`)
+        .send({ role: 'member' })
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          userId: expect.any(String),
+          displayName: expect.any(String),
+          role: expect.any(String),
+          points: expect.any(Number),
+          wins: expect.any(Number),
+          losses: expect.any(Number),
+          draws: expect.any(Number),
+          joinedAt: expect.any(String),
+        }),
+      );
     });
   });
 
@@ -848,6 +1022,42 @@ describe('Leagues (e2e)', () => {
       expect(res.body.items[0].name).toBe('Summer League');
       expect(res.body.items[0].mode).toBe('SCHEDULED');
       expect(res.headers['cache-control']).toContain('no-store');
+    });
+
+    it('should keep league list response contract keys stable', async () => {
+      leaguesService.listMyLeagues.mockResolvedValue({
+        items: [
+          {
+            id: LEAGUE_ID,
+            name: 'Summer League',
+            mode: 'SCHEDULED',
+            status: 'UPCOMING',
+            role: 'OWNER',
+            membersCount: 8,
+            cityName: 'Rosario',
+            provinceCode: 'AR-S',
+            lastActivityAt: '2025-01-01T12:00:00.000Z',
+          },
+        ],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues')
+        .expect(200);
+
+      expect(res.body.items[0]).toEqual(
+        expect.objectContaining({
+          id: expect.any(String),
+          name: expect.any(String),
+          mode: expect.any(String),
+          status: expect.any(String),
+          role: expect.any(String),
+          membersCount: expect.any(Number),
+          cityName: expect.any(String),
+          provinceCode: expect.any(String),
+          lastActivityAt: expect.any(String),
+        }),
+      );
     });
 
     it('should return 200 with empty items when user has no leagues', async () => {
