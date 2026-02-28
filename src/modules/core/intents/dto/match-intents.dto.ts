@@ -73,3 +73,8 @@ export class MatchIntentsResponseDto {
   @ApiProperty({ type: [MatchIntentItemDto] })
   items: MatchIntentItemDto[];
 }
+
+export class MatchIntentItemResponseDto {
+  @ApiProperty({ type: MatchIntentItemDto })
+  item: MatchIntentItemDto;
+}

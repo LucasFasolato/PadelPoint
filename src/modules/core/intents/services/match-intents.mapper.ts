@@ -4,6 +4,8 @@ import { ChallengeType } from '@core/challenges/enums/challenge-type.enum';
 import { MatchResultStatus } from '@core/matches/entities/match-result.entity';
 import { MatchType } from '@core/matches/enums/match-type.enum';
 
+export const FIND_PARTNER_MESSAGE_MARKER = '[INTENT:FIND_PARTNER]';
+
 export type MatchIntentSourceType =
   | 'CHALLENGE'
   | 'OPEN_CHALLENGE'
@@ -76,6 +78,7 @@ export type ChallengeIntentSource = {
   teamB1?: IntentUserRef | null;
   teamB2?: IntentUserRef | null;
   invitedOpponent?: IntentUserRef | null;
+  message?: string | null;
   location?: IntentLocationRef | null;
   matchId?: string | null;
 };
@@ -206,6 +209,12 @@ function resolveChallengeIntentType(
   userId: string,
 ): MatchIntentType {
   if (source.type === ChallengeType.OPEN) {
+    if (
+      (source.teamA1Id === userId || source.teamA2Id === userId) &&
+      isFindPartnerTaggedMessage(source.message)
+    ) {
+      return 'FIND_PARTNER';
+    }
     if (source.teamA1Id === userId || source.teamA2Id === userId) {
       return 'FIND_OPPONENT';
     }
@@ -385,4 +394,11 @@ function toIsoOrEpoch(value?: Date | string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return new Date(0).toISOString();
   return parsed.toISOString();
+}
+
+export function isFindPartnerTaggedMessage(
+  message: string | null | undefined,
+): boolean {
+  const value = (message ?? '').trim();
+  return value.startsWith(FIND_PARTNER_MESSAGE_MARKER);
 }

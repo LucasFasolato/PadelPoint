@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -29,6 +29,9 @@ describe('Me Intents (e2e)', () => {
   beforeEach(async () => {
     intentsService = {
       listForUser: jest.fn(),
+      createDirectIntent: jest.fn(),
+      createOpenIntent: jest.fn(),
+      createFindPartnerIntent: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -92,6 +95,113 @@ describe('Me Intents (e2e)', () => {
         cta: expect.objectContaining({
           primary: expect.any(String),
         }),
+      }),
+    );
+  });
+
+  it('POST /me/intents/direct creates direct intent', async () => {
+    intentsService.createDirectIntent?.mockResolvedValue({
+      item: {
+        id: 'intent-direct',
+        sourceType: 'CHALLENGE',
+        intentType: 'DIRECT',
+        mode: 'COMPETITIVE',
+        status: 'PENDING',
+        createdAt: '2026-02-27T10:00:00.000Z',
+        cta: { primary: 'Ver', href: '/challenges/intent-direct' },
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/me/intents/direct')
+      .send({ opponentUserId: 'opp-1', mode: 'COMPETITIVE', message: 'Vamos?' })
+      .expect(201);
+
+    expect(res.body).toEqual({
+      item: expect.objectContaining({
+        id: 'intent-direct',
+        intentType: 'DIRECT',
+      }),
+    });
+    expect(intentsService.createDirectIntent).toHaveBeenCalledWith(
+      FAKE_USER.userId,
+      expect.objectContaining({
+        opponentUserId: 'opp-1',
+        mode: 'COMPETITIVE',
+      }),
+    );
+  });
+
+  it('POST /me/intents/open creates open intent', async () => {
+    intentsService.createOpenIntent?.mockResolvedValue({
+      item: {
+        id: 'intent-open',
+        sourceType: 'OPEN_CHALLENGE',
+        intentType: 'FIND_OPPONENT',
+        mode: 'FRIENDLY',
+        status: 'PENDING',
+        createdAt: '2026-02-27T10:00:00.000Z',
+        cta: { primary: 'Ver', href: '/challenges/intent-open' },
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/me/intents/open')
+      .send({ mode: 'FRIENDLY', category: '7ma', expiresInHours: 72 })
+      .expect(201);
+
+    expect(res.body).toEqual({
+      item: expect.objectContaining({
+        id: 'intent-open',
+        intentType: 'FIND_OPPONENT',
+      }),
+    });
+  });
+
+  it('POST /me/intents/find-partner creates find-partner intent', async () => {
+    intentsService.createFindPartnerIntent?.mockResolvedValue({
+      item: {
+        id: 'intent-partner',
+        sourceType: 'OPEN_CHALLENGE',
+        intentType: 'FIND_PARTNER',
+        mode: 'COMPETITIVE',
+        status: 'PENDING',
+        createdAt: '2026-02-27T10:00:00.000Z',
+        cta: { primary: 'Ver', href: '/challenges/intent-partner' },
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/me/intents/find-partner')
+      .send({ mode: 'COMPETITIVE', message: 'Busco companero', expiresInHours: 48 })
+      .expect(201);
+
+    expect(res.body).toEqual({
+      item: expect.objectContaining({
+        id: 'intent-partner',
+        intentType: 'FIND_PARTNER',
+      }),
+    });
+  });
+
+  it('returns 409 ALREADY_ACTIVE when duplicate intent is detected', async () => {
+    intentsService.createDirectIntent?.mockRejectedValue(
+      new ConflictException({
+        statusCode: 409,
+        code: 'ALREADY_ACTIVE',
+        message: 'An active direct intent already exists',
+      }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .post('/me/intents/direct')
+      .send({ opponentUserId: 'opp-1', mode: 'COMPETITIVE' })
+      .expect(409);
+
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        statusCode: 409,
+        code: 'ALREADY_ACTIVE',
       }),
     );
   });

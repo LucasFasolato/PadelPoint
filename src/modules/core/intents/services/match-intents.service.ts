@@ -1,11 +1,25 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ChallengeInvite } from '@core/challenges/entities/challenge-invite.entity';
 import { Challenge } from '@core/challenges/entities/challenge.entity';
 import { MatchResult, MatchResultStatus } from '@core/matches/entities/match-result.entity';
+import { MatchType } from '@core/matches/enums/match-type.enum';
+import { ChallengeStatus } from '@core/challenges/enums/challenge-status.enum';
+import { ChallengeType } from '@core/challenges/enums/challenge-type.enum';
+import { ChallengesService } from '@core/challenges/services/challenges.service';
+import { CompetitiveService } from '@core/competitive/services/competitive.service';
+import { normalizeCategoryFilter } from '@core/rankings/utils/ranking-computation.util';
 import {
+  FIND_PARTNER_MESSAGE_MARKER,
   MatchIntentItem,
+  MatchIntentType,
+  isFindPartnerTaggedMessage,
   mapChallengeIntent,
   mapFindPartnerIntent,
   mapPendingConfirmationIntent,
@@ -16,14 +30,27 @@ import {
   MatchIntentTypeFilter,
   MeIntentsQueryDto,
 } from '../dto/me-intents-query.dto';
+import {
+  CreateDirectIntentDto,
+  CreateFindPartnerIntentDto,
+  CreateOpenIntentDto,
+} from '../dto/create-intent.dto';
 
 type MatchIntentListResponse = { items: MatchIntentItem[] };
+type MatchIntentItemResponse = { item: MatchIntentItem };
 
 @Injectable()
 export class MatchIntentsService {
   private readonly logger = new Logger(MatchIntentsService.name);
+  private readonly activeChallengeStatuses = [
+    ChallengeStatus.PENDING,
+    ChallengeStatus.ACCEPTED,
+    ChallengeStatus.READY,
+  ];
 
   constructor(
+    private readonly challengesService: ChallengesService,
+    private readonly competitiveService: CompetitiveService,
     @InjectRepository(Challenge)
     private readonly challengeRepo: Repository<Challenge>,
     @InjectRepository(MatchResult)
@@ -31,6 +58,95 @@ export class MatchIntentsService {
     @InjectRepository(ChallengeInvite)
     private readonly challengeInviteRepo: Repository<ChallengeInvite>,
   ) {}
+
+  async createDirectIntent(
+    userId: string,
+    dto: CreateDirectIntentDto,
+  ): Promise<MatchIntentItemResponse> {
+    const opponentUserId = (dto.opponentUserId ?? '').trim();
+    if (!opponentUserId) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'OPPONENT_REQUIRED',
+        message: 'opponentUserId is required',
+      });
+    }
+
+    const mode = this.normalizeModeOrThrow(dto.mode);
+    const exists = await this.hasActiveDirectIntent(userId, opponentUserId, mode);
+    if (exists) {
+      this.throwAlreadyActive('An active direct intent already exists');
+    }
+
+    const created = await this.challengesService.createDirect({
+      meUserId: userId,
+      opponentUserId,
+      message: dto.message ?? null,
+      matchType: mode,
+    });
+    const item = await this.loadChallengeIntentById(
+      created.id,
+      userId,
+      'DIRECT',
+    );
+    return { item };
+  }
+
+  async createOpenIntent(
+    userId: string,
+    dto: CreateOpenIntentDto,
+  ): Promise<MatchIntentItemResponse> {
+    const mode = this.normalizeModeOrThrow(dto.mode);
+    const expiresInHours = this.clampExpiresHours(dto.expiresInHours);
+    const exists = await this.hasActiveOpenIntent(userId, mode);
+    if (exists) {
+      this.throwAlreadyActive('An active open intent already exists');
+    }
+
+    const targetCategory = await this.resolveTargetCategory(
+      userId,
+      dto.category,
+    );
+    const created = await this.challengesService.createOpen({
+      meUserId: userId,
+      targetCategory,
+      matchType: mode,
+    });
+    const item = await this.loadChallengeIntentById(
+      created.id,
+      userId,
+      'FIND_OPPONENT',
+    );
+    item.expiresAt = this.computeExpiresAt(item.createdAt, expiresInHours);
+    return { item };
+  }
+
+  async createFindPartnerIntent(
+    userId: string,
+    dto: CreateFindPartnerIntentDto,
+  ): Promise<MatchIntentItemResponse> {
+    const mode = this.normalizeModeOrThrow(dto.mode);
+    const expiresInHours = this.clampExpiresHours(dto.expiresInHours);
+    const exists = await this.hasActiveFindPartnerIntent(userId, mode);
+    if (exists) {
+      this.throwAlreadyActive('An active find-partner intent already exists');
+    }
+
+    const targetCategory = await this.resolveTargetCategory(userId);
+    const created = await this.challengesService.createOpen({
+      meUserId: userId,
+      targetCategory,
+      matchType: mode,
+      message: this.buildFindPartnerMessage(dto.message),
+    });
+    const item = await this.loadChallengeIntentById(
+      created.id,
+      userId,
+      'FIND_PARTNER',
+    );
+    item.expiresAt = this.computeExpiresAt(item.createdAt, expiresInHours);
+    return { item };
+  }
 
   async listForUser(
     userId: string,
@@ -129,6 +245,7 @@ export class MatchIntentsService {
           teamB1: challenge.teamB1,
           teamB2: challenge.teamB2,
           invitedOpponent: challenge.invitedOpponent,
+          message: challenge.message,
           location: {
             cityName: challenge.teamA1?.city?.name ?? null,
             provinceCode: challenge.teamA1?.city?.province?.code ?? null,
@@ -188,6 +305,7 @@ export class MatchIntentsService {
             teamB1: match.challenge?.teamB1,
             teamB2: match.challenge?.teamB2,
             invitedOpponent: match.challenge?.invitedOpponent,
+            message: match.challenge?.message,
             location: {
               cityName: match.challenge?.teamA1?.city?.name ?? null,
               provinceCode: match.challenge?.teamA1?.city?.province?.code ?? null,
@@ -258,6 +376,7 @@ export class MatchIntentsService {
             teamB1: invite.challenge?.teamB1,
             teamB2: invite.challenge?.teamB2,
             invitedOpponent: invite.challenge?.invitedOpponent,
+            message: invite.challenge?.message,
             location: {
               cityName: invite.challenge?.teamA1?.city?.name ?? null,
               provinceCode:
@@ -307,5 +426,213 @@ export class MatchIntentsService {
     const parsed = new Date(value);
     const timestamp = parsed.getTime();
     return Number.isNaN(timestamp) ? 0 : timestamp;
+  }
+
+  private async hasActiveDirectIntent(
+    userId: string,
+    opponentUserId: string,
+    mode: MatchType,
+  ): Promise<boolean> {
+    const row = await this.challengeRepo
+      .createQueryBuilder('c')
+      .leftJoin(MatchResult, 'm', 'm."challengeId" = c.id')
+      .where('c.type = :type', { type: ChallengeType.DIRECT })
+      .andWhere('c."teamA1Id" = :userId', { userId })
+      .andWhere('c."invitedOpponentId" = :opponentUserId', { opponentUserId })
+      .andWhere('c."matchType" = :mode', { mode })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: this.activeChallengeStatuses,
+      })
+      .andWhere('m.id IS NULL')
+      .select('c.id', 'id')
+      .getRawOne<{ id?: string }>();
+
+    return Boolean(row?.id);
+  }
+
+  private async hasActiveOpenIntent(
+    userId: string,
+    mode: MatchType,
+  ): Promise<boolean> {
+    const row = await this.challengeRepo
+      .createQueryBuilder('c')
+      .leftJoin(MatchResult, 'm', 'm."challengeId" = c.id')
+      .where('c.type = :type', { type: ChallengeType.OPEN })
+      .andWhere('c."teamA1Id" = :userId', { userId })
+      .andWhere('c."matchType" = :mode', { mode })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: this.activeChallengeStatuses,
+      })
+      .andWhere('(c.message IS NULL OR c.message NOT LIKE :marker)', {
+        marker: `${FIND_PARTNER_MESSAGE_MARKER}%`,
+      })
+      .andWhere('m.id IS NULL')
+      .select('c.id', 'id')
+      .getRawOne<{ id?: string }>();
+
+    return Boolean(row?.id);
+  }
+
+  private async hasActiveFindPartnerIntent(
+    userId: string,
+    mode: MatchType,
+  ): Promise<boolean> {
+    const row = await this.challengeRepo
+      .createQueryBuilder('c')
+      .leftJoin(MatchResult, 'm', 'm."challengeId" = c.id')
+      .where('c.type = :type', { type: ChallengeType.OPEN })
+      .andWhere('c."teamA1Id" = :userId', { userId })
+      .andWhere('c."matchType" = :mode', { mode })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: this.activeChallengeStatuses,
+      })
+      .andWhere('c.message LIKE :marker', {
+        marker: `${FIND_PARTNER_MESSAGE_MARKER}%`,
+      })
+      .andWhere('m.id IS NULL')
+      .select('c.id', 'id')
+      .getRawOne<{ id?: string }>();
+
+    return Boolean(row?.id);
+  }
+
+  private async loadChallengeIntentById(
+    challengeId: string,
+    userId: string,
+    intentTypeOverride?: MatchIntentType,
+  ): Promise<MatchIntentItem> {
+    const challenge = await this.challengeRepo.findOne({
+      where: { id: challengeId },
+      relations: [
+        'teamA1',
+        'teamA1.city',
+        'teamA1.city.province',
+        'teamA2',
+        'teamB1',
+        'teamB2',
+        'invitedOpponent',
+      ],
+    });
+
+    if (!challenge) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INTENT_UNAVAILABLE',
+        message: 'Unable to map created intent',
+      });
+    }
+
+    const match = await this.matchRepo.findOne({
+      where: { challengeId: challenge.id },
+      select: ['id', 'challengeId'],
+    });
+
+    const item = mapChallengeIntent(
+      {
+        id: challenge.id,
+        type: challenge.type,
+        status: challenge.status,
+        matchType: challenge.matchType,
+        createdAt: challenge.createdAt,
+        teamA1Id: challenge.teamA1Id,
+        teamA2Id: challenge.teamA2Id,
+        teamB1Id: challenge.teamB1Id,
+        teamB2Id: challenge.teamB2Id,
+        invitedOpponentId: challenge.invitedOpponentId,
+        teamA1: challenge.teamA1,
+        teamA2: challenge.teamA2,
+        teamB1: challenge.teamB1,
+        teamB2: challenge.teamB2,
+        invitedOpponent: challenge.invitedOpponent,
+        message: challenge.message,
+        location: {
+          cityName: challenge.teamA1?.city?.name ?? null,
+          provinceCode: challenge.teamA1?.city?.province?.code ?? null,
+        },
+        matchId: match?.id ?? null,
+      },
+      userId,
+    );
+
+    if (intentTypeOverride) {
+      item.intentType = intentTypeOverride;
+    } else if (isFindPartnerTaggedMessage(challenge.message)) {
+      item.intentType = 'FIND_PARTNER';
+    }
+
+    return item;
+  }
+
+  private normalizeModeOrThrow(mode: string): MatchType {
+    const value = (mode ?? '').trim().toUpperCase();
+    if (value === MatchType.COMPETITIVE) return MatchType.COMPETITIVE;
+    if (value === MatchType.FRIENDLY) return MatchType.FRIENDLY;
+    throw new BadRequestException({
+      statusCode: 400,
+      code: 'INVALID_MODE',
+      message: 'mode must be COMPETITIVE or FRIENDLY',
+    });
+  }
+
+  private async resolveTargetCategory(
+    userId: string,
+    categoryRaw?: string,
+  ): Promise<number> {
+    if (typeof categoryRaw === 'string' && categoryRaw.trim().length > 0) {
+      const parsed = normalizeCategoryFilter(categoryRaw);
+      if (parsed.categoryNumber) {
+        return parsed.categoryNumber;
+      }
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INVALID_CATEGORY',
+        message: 'category must map to 1..8',
+      });
+    }
+
+    const profile = await this.competitiveService.getOrCreateProfile(userId);
+    const category = Number((profile as any)?.category ?? 0);
+    if (Number.isInteger(category) && category >= 1 && category <= 8) {
+      return category;
+    }
+
+    throw new BadRequestException({
+      statusCode: 400,
+      code: 'CATEGORY_REQUIRED',
+      message: 'category is required when competitive profile has no category',
+    });
+  }
+
+  private clampExpiresHours(input?: number): number | null {
+    if (input === undefined || input === null) return null;
+    const raw = Number(input);
+    if (!Number.isFinite(raw)) return 24;
+    const clamped = Math.max(1, Math.min(168, Math.round(raw)));
+    return clamped;
+  }
+
+  private computeExpiresAt(
+    createdAtIso: string,
+    expiresInHours: number | null,
+  ): string | null {
+    if (!expiresInHours) return null;
+    const created = new Date(createdAtIso);
+    if (Number.isNaN(created.getTime())) return null;
+    const expires = new Date(created.getTime() + expiresInHours * 60 * 60 * 1000);
+    return expires.toISOString();
+  }
+
+  private buildFindPartnerMessage(message?: string): string {
+    const userMessage = (message ?? '').trim();
+    if (!userMessage) return FIND_PARTNER_MESSAGE_MARKER;
+    return `${FIND_PARTNER_MESSAGE_MARKER} ${userMessage}`;
+  }
+
+  private throwAlreadyActive(message: string): never {
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'ALREADY_ACTIVE',
+      message,
+    });
   }
 }
