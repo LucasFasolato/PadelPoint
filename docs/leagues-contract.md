@@ -361,16 +361,18 @@ Confirmation and dispute endpoints used by league matches:
 
 ## 3) Intent and Match seams (audit findings)
 
-### 3.1 How leagueId is carried today
+### 3.1 How leagueId is carried today (truth rule)
 
 Current behavior:
 - League-scoped challenge intent is represented by `league_challenges.leagueId`
 - Match linkage is represented by `match_results.leagueId`
 - Generic `challenges` entity/table has no first-class `leagueId`
 
-Seam:
-- `MatchesService.reportMatch` still attempts to read `challenge.leagueId` via loose cast.
-- This is a contract smell because `Challenge` does not persist `leagueId` in schema.
+Contract truth:
+- `leagueId` truth for matches is `match_results.leagueId`
+- `reportMatch` must only take `leagueId` from explicit DTO input (if provided)
+- `reportMatch` must not infer `leagueId` from generic `Challenge`
+- League challenge to match linkage is validated at `league_challenges` level (`link-match` flow)
 
 ### 3.2 Accept flow to match creation
 

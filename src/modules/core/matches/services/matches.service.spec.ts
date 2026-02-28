@@ -664,6 +664,14 @@ describe('MatchesService', () => {
       );
     });
 
+    it('should throw LEAGUE_ID_REQUIRED when leagueId is missing', async () => {
+      await expect(
+        service.reportFromReservation(USER_A1, '' as any, validDto),
+      ).rejects.toMatchObject({
+        response: { code: 'LEAGUE_ID_REQUIRED' },
+      });
+    });
+
     it('should throw LEAGUE_FORBIDDEN if caller is not a member', async () => {
       txLeagueRepo.findOne.mockResolvedValue({
         id: LEAGUE_ID,
@@ -760,6 +768,25 @@ describe('MatchesService', () => {
       await service.reportFromReservation(USER_A1, LEAGUE_ID, validDto);
 
       expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reportManual', () => {
+    it('should throw LEAGUE_ID_REQUIRED when leagueId is missing', async () => {
+      await expect(
+        service.reportManual(USER_A1, '' as any, {
+          teamA1Id: USER_A1,
+          teamA2Id: USER_A2,
+          teamB1Id: USER_B1,
+          teamB2Id: USER_B2,
+          sets: [
+            { a: 6, b: 4 },
+            { a: 6, b: 2 },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'LEAGUE_ID_REQUIRED' },
+      });
     });
   });
 
@@ -906,30 +933,25 @@ describe('MatchesService', () => {
       expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
-    it('should inherit leagueId from challenge metadata when dto.leagueId is missing', async () => {
+    it('should not read leagueId from generic Challenge metadata', async () => {
       const readyChallenge = {
         ...fakeChallenge(),
         status: ChallengeStatus.READY,
         reservationId: null,
-        leagueId: 'league-1',
-      } as Challenge & { leagueId: string };
+      } as Challenge;
+
+      Object.defineProperty(readyChallenge, 'leagueId', {
+        configurable: true,
+        get: () => {
+          throw new Error('challenge.leagueId must not be read');
+        },
+      });
 
       txChallengeRepo.createQueryBuilder.mockReturnValue({
         setLock: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         getOne: jest.fn().mockResolvedValue(readyChallenge),
       });
-      txLeagueRepo.findOne.mockResolvedValue({
-        id: 'league-1',
-        mode: 'scheduled',
-        status: 'active',
-      } as any);
-      txMemberRepo.count.mockResolvedValue(4);
-      txMemberRepo.createQueryBuilder.mockReturnValue({
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(4),
-      } as any);
       txMatchRepo.createQueryBuilder.mockReturnValue({
         setLock: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -937,8 +959,9 @@ describe('MatchesService', () => {
       });
       txMatchRepo.create.mockImplementation((input: any) => ({
         ...fakeMatch({
-          id: 'match-league-linked-1',
+          id: 'match-non-league-1',
           challengeId: 'challenge-1',
+          leagueId: null,
           status: MatchResultStatus.PENDING_CONFIRM,
           reportedByUserId: USER_A1,
           confirmedByUserId: null,
@@ -954,9 +977,9 @@ describe('MatchesService', () => {
       });
 
       expect(txMatchRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ leagueId: 'league-1' }),
+        expect.objectContaining({ leagueId: null }),
       );
-      expect(result.leagueId).toBe('league-1');
+      expect(result.leagueId).toBeNull();
       expect(result.status).toBe(MatchResultStatus.PENDING_CONFIRM);
     });
 

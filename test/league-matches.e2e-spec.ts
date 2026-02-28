@@ -58,6 +58,17 @@ const validBody = {
   ],
 };
 
+const validManualBody = {
+  teamA1Id: 'a1111111-1111-4111-a111-111111111111',
+  teamA2Id: 'a2222222-2222-4222-a222-222222222222',
+  teamB1Id: 'b1111111-1111-4111-b111-111111111111',
+  teamB2Id: 'b2222222-2222-4222-b222-222222222222',
+  sets: [
+    { a: 6, b: 3 },
+    { a: 6, b: 4 },
+  ],
+};
+
 const validCaptureResultPayload = {
   playedAt: '2025-06-10T10:00:00.000Z',
   sets: [
@@ -73,6 +84,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   beforeEach(async () => {
     matchesService = {
       reportFromReservation: jest.fn(),
+      reportManual: jest.fn(),
       getEligibleReservations: jest.fn(),
       submitLeagueMatchResult: jest.fn(),
       getLeaguePendingConfirmations: jest.fn(),
@@ -204,6 +216,36 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       .post(`/leagues/${LEAGUE_ID}/report-from-reservation`)
       .send({ ...validBody, extraField: 'bad' })
       .expect(400);
+  });
+
+  describe('POST /leagues/:leagueId/report-manual', () => {
+    it('should create a manual league match with leagueId set', async () => {
+      matchesService.reportManual!.mockResolvedValue({
+        id: 'match-manual-new',
+        leagueId: LEAGUE_ID,
+        challengeId: 'ch-manual',
+        status: MatchResultStatus.PENDING_CONFIRM,
+        teamASet1: 6,
+        teamBSet1: 3,
+        teamASet2: 6,
+        teamBSet2: 4,
+        winnerTeam: 'A',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/report-manual`)
+        .send(validManualBody)
+        .expect(201);
+
+      expect(res.body.id).toBe('match-manual-new');
+      expect(res.body.status).toBe('pending_confirm');
+      expect(res.body.leagueId).toBe(LEAGUE_ID);
+      expect(matchesService.reportManual).toHaveBeenCalledWith(
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+        expect.objectContaining(validManualBody),
+      );
+    });
   });
 
   // ── GET /leagues/:leagueId/eligible-reservations ──────────────

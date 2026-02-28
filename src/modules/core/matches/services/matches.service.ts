@@ -561,6 +561,19 @@ export class MatchesService {
     return league;
   }
 
+  private assertLeagueIdRequired(leagueId: string | null | undefined): string {
+    const normalized =
+      typeof leagueId === 'string' ? leagueId.trim() : String(leagueId ?? '');
+    if (!normalized) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_ID_REQUIRED',
+        message: 'leagueId is required for league match reporting',
+      });
+    }
+    return normalized;
+  }
+
   private toLeagueMatchView(match: MatchResult) {
     const sets: Array<{ a: number; b: number }> = [];
     if (match.teamASet1 != null && match.teamBSet1 != null) {
@@ -635,29 +648,11 @@ export class MatchesService {
         'match',
       );
 
-      // Validate league linkage if provided
-      const challengeLeagueId =
-        typeof (challenge as { leagueId?: unknown }).leagueId === 'string' &&
-        (challenge as { leagueId?: string }).leagueId
-          ? (challenge as { leagueId?: string }).leagueId
-          : null;
-      if (
-        dto.leagueId &&
-        challengeLeagueId &&
-        dto.leagueId !== challengeLeagueId
-      ) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'LEAGUE_MATCH_CHALLENGE_MISMATCH',
-          message: 'challenge leagueId does not match request leagueId',
-        });
-      }
-
       let leagueId: string | null = null;
-      const resolvedLeagueId = dto.leagueId ?? challengeLeagueId ?? null;
+      const resolvedLeagueId = dto.leagueId ?? null;
       if (resolvedLeagueId) {
         // League match requires a reservation-backed challenge
-        if (!challenge.reservationId && !challengeLeagueId) {
+        if (!challenge.reservationId) {
           throw new BadRequestException({
             statusCode: 400,
             code: 'LEAGUE_MATCH_NO_RESERVATION',
@@ -766,6 +761,8 @@ export class MatchesService {
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
+      this.assertLeagueIdRequired(leagueId);
+
       const memberRepo = manager.getRepository(LeagueMember);
       const reservationRepo = manager.getRepository(Reservation);
       const chRepo = manager.getRepository(Challenge);
@@ -980,6 +977,8 @@ export class MatchesService {
     },
   ) {
     return this.dataSource.transaction(async (manager) => {
+      this.assertLeagueIdRequired(leagueId);
+
       const memberRepo = manager.getRepository(LeagueMember);
       const chRepo = manager.getRepository(Challenge);
       const matchRepo = manager.getRepository(MatchResult);
