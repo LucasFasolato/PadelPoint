@@ -61,13 +61,17 @@ function toApiStatus(status: LeagueStatus): string {
 
 type LeagueListMode = string;
 type LeagueListStatus = string;
+type LeagueModeKey = 'OPEN' | 'SCHEDULED' | 'MINI';
+type LeagueStatusKey = 'UPCOMING' | 'ACTIVE' | 'FINISHED';
 type LeagueListRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
 type LeagueListItemView = {
   id: string;
   name: string;
   mode: LeagueListMode;
+  modeKey: LeagueModeKey;
   status: LeagueListStatus;
+  statusKey: LeagueStatusKey;
   role?: LeagueListRole;
   membersCount?: number;
   cityName?: string | null;
@@ -279,7 +283,9 @@ export class LeaguesService {
       leagueId: league.id,
       name: league.name,
       mode: league.mode,
+      modeKey: this.toLeagueModeKey(league.mode),
       status: league.status,
+      statusKey: this.toLeagueStatusKey(league.status),
       invitedExistingUsers,
       invitedByEmailOnly,
       skipped,
@@ -851,10 +857,13 @@ export class LeaguesService {
       status: invite.status,
       expiresAt: invite.expiresAt.toISOString(),
       league: {
+        // Keep legacy casing fields and add normalized keys for new clients.
         id: invite.league.id,
         name: invite.league.name,
         mode: invite.league.mode,
+        modeKey: this.toLeagueModeKey(invite.league.mode),
         status: toApiStatus(invite.league.status),
+        statusKey: this.toLeagueStatusKey(toApiStatus(invite.league.status)),
         ...this.toLeagueDatesView(invite.league),
       },
     };
@@ -1447,6 +1456,8 @@ export class LeaguesService {
       name: rawName.length > 0 ? rawName : 'Liga',
       mode: this.toLeagueListMode(row.mode),
       status: this.toLeagueListStatus(row.status),
+      modeKey: this.toLeagueModeKey(row.mode),
+      statusKey: this.toLeagueStatusKey(row.status),
     };
 
     if (role) item.role = role;
@@ -1467,6 +1478,14 @@ export class LeaguesService {
     return normalized.length > 0 ? normalized.toUpperCase() : 'SCHEDULED';
   }
 
+  private toLeagueModeKey(mode: string | null | undefined): LeagueModeKey {
+    const normalized = this.toLeagueListMode(mode);
+    if (normalized === 'OPEN') return 'OPEN';
+    if (normalized === 'SCHEDULED') return 'SCHEDULED';
+    if (normalized === 'MINI') return 'MINI';
+    return 'SCHEDULED';
+  }
+
   private toLeagueListStatus(
     status: string | null | undefined,
   ): LeagueListStatus {
@@ -1475,6 +1494,16 @@ export class LeaguesService {
     if (normalized === 'active') return 'ACTIVE';
     if (normalized === 'finished') return 'FINISHED';
     return normalized.length > 0 ? normalized.toUpperCase() : 'UPCOMING';
+  }
+
+  private toLeagueStatusKey(
+    status: string | null | undefined,
+  ): LeagueStatusKey {
+    const normalized = this.toLeagueListStatus(status);
+    if (normalized === 'UPCOMING') return 'UPCOMING';
+    if (normalized === 'ACTIVE') return 'ACTIVE';
+    if (normalized === 'FINISHED') return 'FINISHED';
+    return 'UPCOMING';
   }
 
   private toLeagueListRole(
@@ -1519,18 +1548,22 @@ export class LeaguesService {
       : league.mode === LeagueMode.MINI
         ? 'MINI league needs at least 2 members to record matches'
         : 'League is not active';
+    const mode = league.mode;
+    const statusValue = toApiStatus(status);
 
     return {
       id: league.id,
       name: league.name,
-      mode: league.mode,
+      mode,
+      modeKey: this.toLeagueModeKey(mode),
       creatorId: league.creatorId,
       isPermanent: this.isPermanentLeague(league),
       dateRangeEnabled: this.isDateRangeEnabledLeague(league),
       ...this.toLeagueDatesView(league),
       avatarUrl: league.avatarUrl ?? null,
       avatarMediaAssetId: league.avatarMediaAssetId ?? null,
-      status: toApiStatus(status),
+      status: statusValue,
+      statusKey: this.toLeagueStatusKey(statusValue),
       canRecordMatches,
       ...(reason ? { reason } : {}),
       settings: league.settings ?? DEFAULT_LEAGUE_SETTINGS,

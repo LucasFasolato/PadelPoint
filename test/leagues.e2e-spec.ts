@@ -74,6 +74,7 @@ describe('Leagues (e2e)', () => {
     id: LEAGUE_ID,
     name: 'Summer League',
     mode: 'scheduled',
+    modeKey: 'SCHEDULED',
     isPermanent: false,
     dateRangeEnabled: true,
     creatorId: FAKE_CREATOR.userId,
@@ -82,6 +83,7 @@ describe('Leagues (e2e)', () => {
     avatarUrl: null,
     avatarMediaAssetId: null,
     status: 'upcoming',
+    statusKey: 'UPCOMING',
     createdAt: '2025-01-01T12:00:00.000Z',
     members: [
       {
@@ -216,9 +218,11 @@ describe('Leagues (e2e)', () => {
         ...leagueView,
         id: 'league-open',
         mode: 'open',
+        modeKey: 'OPEN',
         startDate: null,
         endDate: null,
         status: 'active',
+        statusKey: 'ACTIVE',
       };
       leaguesService.createLeague.mockResolvedValue(openView);
 
@@ -236,11 +240,13 @@ describe('Leagues (e2e)', () => {
       leaguesService.createLeague.mockResolvedValue({
         ...leagueView,
         mode: 'scheduled',
+        modeKey: 'SCHEDULED',
         isPermanent: true,
         dateRangeEnabled: false,
         startDate: null,
         endDate: null,
         status: 'active',
+        statusKey: 'ACTIVE',
       });
 
       const res = await request(app.getHttpServer())
@@ -661,7 +667,10 @@ describe('Leagues (e2e)', () => {
         league: {
           id: LEAGUE_ID,
           name: 'Summer League',
+          mode: 'scheduled',
+          modeKey: 'SCHEDULED',
           status: 'upcoming',
+          statusKey: 'UPCOMING',
           startDate: '2025-06-01',
           endDate: '2025-06-30',
         },
@@ -673,6 +682,8 @@ describe('Leagues (e2e)', () => {
         .expect(200);
 
       expect(res.body.league.name).toBe('Summer League');
+      expect(res.body.league.modeKey).toBe('SCHEDULED');
+      expect(res.body.league.statusKey).toBe('UPCOMING');
     });
   });
 
@@ -863,8 +874,10 @@ describe('Leagues (e2e)', () => {
           id: expect.any(String),
           name: expect.any(String),
           mode: expect.any(String),
+          modeKey: expect.any(String),
           creatorId: expect.any(String),
           status: expect.any(String),
+          statusKey: expect.any(String),
           createdAt: expect.any(String),
           members: expect.any(Array),
         }),
@@ -1004,7 +1017,9 @@ describe('Leagues (e2e)', () => {
             id: LEAGUE_ID,
             name: 'Summer League',
             mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
             status: 'UPCOMING',
+            statusKey: 'UPCOMING',
             role: 'OWNER',
             membersCount: 8,
             cityName: 'Rosario',
@@ -1031,7 +1046,9 @@ describe('Leagues (e2e)', () => {
             id: LEAGUE_ID,
             name: 'Summer League',
             mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
             status: 'UPCOMING',
+            statusKey: 'UPCOMING',
             role: 'OWNER',
             membersCount: 8,
             cityName: 'Rosario',
@@ -1050,7 +1067,9 @@ describe('Leagues (e2e)', () => {
           id: expect.any(String),
           name: expect.any(String),
           mode: expect.any(String),
+          modeKey: expect.any(String),
           status: expect.any(String),
+          statusKey: expect.any(String),
           role: expect.any(String),
           membersCount: expect.any(Number),
           cityName: expect.any(String),

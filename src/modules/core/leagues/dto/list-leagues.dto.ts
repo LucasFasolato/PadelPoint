@@ -8,16 +8,32 @@ export class LeagueListItemDto {
   name: string;
 
   @ApiProperty({
-    description: 'League mode, normalized to uppercase',
+    description:
+      'Legacy mode field (kept for backward compatibility). Use modeKey.',
     enum: ['OPEN', 'SCHEDULED', 'MINI'],
+    deprecated: true,
   })
   mode: string;
 
   @ApiProperty({
-    description: 'League status for list rendering, normalized to uppercase',
+    description: 'Normalized league mode key',
+    enum: ['OPEN', 'SCHEDULED', 'MINI'],
+  })
+  modeKey: 'OPEN' | 'SCHEDULED' | 'MINI';
+
+  @ApiProperty({
+    description:
+      'Legacy status field (kept for backward compatibility). Use statusKey.',
     enum: ['UPCOMING', 'ACTIVE', 'FINISHED'],
+    deprecated: true,
   })
   status: string;
+
+  @ApiProperty({
+    description: 'Normalized league status key',
+    enum: ['UPCOMING', 'ACTIVE', 'FINISHED'],
+  })
+  statusKey: 'UPCOMING' | 'ACTIVE' | 'FINISHED';
 
   @ApiPropertyOptional({ enum: ['OWNER', 'ADMIN', 'MEMBER'] })
   role?: 'OWNER' | 'ADMIN' | 'MEMBER';

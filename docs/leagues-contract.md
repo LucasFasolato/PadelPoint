@@ -15,6 +15,7 @@ Scope:
 Constraints honored by this audit:
 - No underlying table changes
 - Existing API contracts remain backward compatible
+- Legacy `mode`/`status` fields remain; normalized `modeKey`/`statusKey` are additive
 
 ## 1) Domain inventory
 
@@ -76,9 +77,9 @@ League lifecycle (storage):
 - `draft -> active -> finished`
 
 League lifecycle (API mapping):
-- List API normalizes to uppercase: `UPCOMING | ACTIVE | FINISHED`
+- Legacy `status` field is preserved as-is per endpoint behavior (list/detail casing remains backward compatible)
+- New normalized `statusKey` is always `UPCOMING | ACTIVE | FINISHED`
 - `draft` maps to `UPCOMING`
-- Detail API returns lower-case: `upcoming | active | finished`
 
 Invite lifecycle:
 - `pending -> accepted`
@@ -104,6 +105,7 @@ League modes currently implemented:
 Behavior highlights:
 - `open` and `mini` are created active and effectively permanent (`isPermanent=true`)
 - `scheduled` supports date-range and permanent variants
+- New normalized `modeKey` is always `OPEN | SCHEDULED | MINI` (legacy `mode` kept)
 
 ## 2) API inventory and correctness
 
@@ -125,7 +127,9 @@ All endpoints below require JWT auth unless prefixed with `/public`.
       "id": "uuid",
       "name": "Summer League",
       "mode": "SCHEDULED",
+      "modeKey": "SCHEDULED",
       "status": "UPCOMING",
+      "statusKey": "UPCOMING",
       "role": "OWNER",
       "membersCount": 8,
       "cityName": "Rosario",
@@ -159,6 +163,7 @@ All endpoints below require JWT auth unless prefixed with `/public`.
   "id": "uuid",
   "name": "Summer League",
   "mode": "scheduled",
+  "modeKey": "SCHEDULED",
   "creatorId": "uuid",
   "isPermanent": false,
   "dateRangeEnabled": true,
@@ -167,6 +172,7 @@ All endpoints below require JWT auth unless prefixed with `/public`.
   "avatarUrl": null,
   "avatarMediaAssetId": null,
   "status": "upcoming",
+  "statusKey": "UPCOMING",
   "canRecordMatches": false,
   "reason": "League is not active",
   "settings": {
@@ -240,6 +246,7 @@ All endpoints below require JWT auth unless prefixed with `/public`.
 - Behavior:
   - Returns pending invite summary
   - Moves expired invites to `expired`
+  - League summary includes legacy `mode`/`status` plus normalized `modeKey`/`statusKey`
 
 3. `POST /leagues/invites/:inviteId/accept`
 - Behavior:
@@ -400,9 +407,9 @@ On match confirm/admin-confirm/resolve paths:
 Already in place:
 - List mapping (`GET /leagues`) is defensive for null/invalid raw fields
 - Public standings never leak emails and tolerate missing snapshots
+- Normalized keys (`modeKey`, `statusKey`) are present while legacy `mode`/`status` remain
 
 Audit risk:
-- Status/mode casing differs across endpoints (`UPPERCASE` list vs `lowercase` detail)
 - No dedicated members list endpoint despite product wording (`GET /leagues/:id/members`)
 
 ### 4.2 Permissions by role

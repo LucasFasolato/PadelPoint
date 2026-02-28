@@ -454,7 +454,9 @@ describe('LeaguesService', () => {
             id: 'league-1',
             name: 'Liga',
             mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
             status: 'UPCOMING',
+            statusKey: 'UPCOMING',
             cityName: null,
             provinceCode: null,
             lastActivityAt: null,
@@ -521,6 +523,8 @@ describe('LeaguesService', () => {
       const result = await service.getLeagueDetail(FAKE_USER_ID, 'league-1');
 
       expect(result.id).toBe('league-1');
+      expect(result.modeKey).toBe('SCHEDULED');
+      expect(result.statusKey).toBe('UPCOMING');
       expect(result.members).toHaveLength(1);
     });
 
