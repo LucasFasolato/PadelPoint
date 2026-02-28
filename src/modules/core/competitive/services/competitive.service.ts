@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -52,10 +53,15 @@ import {
 import { PlayerFavorite } from '../../players/entities/player-favorite.entity';
 import { Challenge } from '../../challenges/entities/challenge.entity';
 import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
+import { ChallengeType } from '../../challenges/enums/challenge-type.enum';
 import { User } from '../../users/entities/user.entity';
 import { City } from '../../geo/entities/city.entity';
 import { CITY_REQUIRED_ERROR } from '@common/guards/city-required.guard';
 import { MatchType } from '../../matches/enums/match-type.enum';
+import {
+  DiscoverMode,
+  DiscoverScope,
+} from '../dto/discover-candidates-query.dto';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -188,6 +194,30 @@ type RivalSuggestionScoredItem = RivalSuggestionItem & {
   _score: number;
 };
 
+type DiscoverCandidatesParams = {
+  mode?: DiscoverMode;
+  scope?: DiscoverScope;
+  limit?: number;
+};
+
+type DiscoverCandidateItem = {
+  userId: string;
+  displayName: string;
+  cityName?: string | null;
+  provinceCode?: string | null;
+  elo?: number | null;
+  matchesPlayed30d?: number | null;
+  lastActiveAt?: string | null;
+};
+
+type DiscoverMatchAggregateRow = {
+  teamA1Id: string;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+  playedAt: Date | string | null;
+};
+
 type CompetitiveChallengesView = 'inbox' | 'past';
 
 type ReasonBuilderInput = {
@@ -201,6 +231,8 @@ type ReasonBuilderInput = {
 
 @Injectable()
 export class CompetitiveService {
+  private readonly logger = new Logger(CompetitiveService.name);
+
   constructor(
     private readonly usersService: UsersService,
     @InjectRepository(CompetitiveProfile)
@@ -544,6 +576,101 @@ export class CompetitiveService {
     );
   }
 
+  async discoverCandidates(
+    userId: string,
+    params: DiscoverCandidatesParams = {},
+  ): Promise<{ items: DiscoverCandidateItem[] }> {
+    const mode = this.normalizeDiscoverMode(params.mode);
+    const scope = this.normalizeDiscoverScope(params.scope);
+    const limit = Math.max(1, Math.min(50, params.limit ?? 20));
+
+    try {
+      const me = await this.userRepo.findOne({
+        where: { id: userId },
+        relations: ['city', 'city.province'],
+      });
+      if (!me) return { items: [] };
+
+      const scopeCityId = me.cityId ?? null;
+      const scopeProvinceId = me.city?.provinceId ?? null;
+      if (scope === DiscoverScope.CITY && !scopeCityId) return { items: [] };
+      if (scope === DiscoverScope.PROVINCE && !scopeProvinceId) {
+        return { items: [] };
+      }
+
+      const myProfile = await this.profileRepo.findOne({ where: { userId } });
+      const myElo = typeof myProfile?.elo === 'number' ? myProfile.elo : null;
+
+      const candidateFetchLimit = Math.max(200, Math.min(1000, limit * 10));
+      const candidateQb = this.userRepo
+        .createQueryBuilder('u')
+        .leftJoinAndSelect('u.city', 'city')
+        .leftJoinAndSelect('city.province', 'province')
+        .leftJoinAndSelect('u.competitiveProfile', 'profile')
+        .where('u.id != :userId', { userId })
+        .andWhere('u.active = true');
+
+      if (scope === DiscoverScope.CITY && scopeCityId) {
+        candidateQb.andWhere('u."cityId" = :scopeCityId', { scopeCityId });
+      } else if (scope === DiscoverScope.PROVINCE && scopeProvinceId) {
+        candidateQb.andWhere('city."provinceId" = :scopeProvinceId', {
+          scopeProvinceId,
+        });
+      }
+
+      const rawCandidates = await candidateQb.take(candidateFetchLimit).getMany();
+      if (rawCandidates.length === 0) return { items: [] };
+
+      const candidateIds = rawCandidates.map((candidate) => candidate.id);
+      const blockedIds = await this.getDiscoverBlockedUserIds(
+        userId,
+        candidateIds,
+      );
+      const candidates = rawCandidates.filter(
+        (candidate) => !blockedIds.has(candidate.id),
+      );
+      if (candidates.length === 0) return { items: [] };
+
+      const candidateActivity = await this.getDiscoverActivityByUserIds(
+        candidates.map((candidate) => candidate.id),
+        mode,
+      );
+
+      const ranked = candidates
+        .map((candidate) => {
+          const activity = candidateActivity.get(candidate.id);
+          const lastActiveAt = activity?.lastActiveAt
+            ? activity.lastActiveAt.toISOString()
+            : null;
+          return {
+            userId: candidate.id,
+            displayName: this.getDiscoverDisplayName(
+              candidate.displayName,
+              candidate.email,
+            ),
+            cityName: candidate.city?.name ?? null,
+            provinceCode: candidate.city?.province?.code ?? null,
+            elo:
+              typeof candidate.competitiveProfile?.elo === 'number'
+                ? candidate.competitiveProfile.elo
+                : null,
+            matchesPlayed30d: activity?.matchesPlayed30d ?? 0,
+            lastActiveAt,
+          } satisfies DiscoverCandidateItem;
+        })
+        .sort((a, b) => this.compareDiscoverCandidates(a, b, myElo))
+        .slice(0, limit);
+
+      return { items: ranked };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'unknown_error';
+      this.logger.warn(
+        `discoverCandidates fallback applied: userId=${userId} reason=${reason}`,
+      );
+      return { items: [] };
+    }
+  }
+
   async listChallenges(
     userId: string,
     params: { view?: CompetitiveChallengesView } = {},
@@ -591,6 +718,167 @@ export class CompetitiveService {
           matchByChallengeId.get(challenge.id) ?? null,
         ),
       );
+  }
+
+  private normalizeDiscoverMode(mode?: DiscoverMode): DiscoverMode {
+    if (mode === DiscoverMode.FRIENDLY) return DiscoverMode.FRIENDLY;
+    return DiscoverMode.COMPETITIVE;
+  }
+
+  private normalizeDiscoverScope(scope?: DiscoverScope): DiscoverScope {
+    if (scope === DiscoverScope.PROVINCE) return DiscoverScope.PROVINCE;
+    return DiscoverScope.CITY;
+  }
+
+  private async getDiscoverBlockedUserIds(
+    userId: string,
+    candidateUserIds: string[],
+  ): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    if (candidateUserIds.length === 0) return blocked;
+
+    const rows = await this.challengeRepo
+      .createQueryBuilder('c')
+      .select('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."invitedOpponentId"', 'invitedOpponentId')
+      .where('c.type = :type', { type: ChallengeType.DIRECT })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: [...MATCHMAKING_ACTIVE_CHALLENGE_STATUSES],
+      })
+      .andWhere(
+        new Brackets((where) => {
+          where.where(
+            'c."teamA1Id" = :userId AND c."invitedOpponentId" IN (:...candidateUserIds)',
+            { userId, candidateUserIds },
+          );
+          where.orWhere(
+            'c."invitedOpponentId" = :userId AND c."teamA1Id" IN (:...candidateUserIds)',
+            { userId, candidateUserIds },
+          );
+        }),
+      )
+      .getRawMany<{ teamA1Id: string; invitedOpponentId: string | null }>();
+
+    for (const row of rows) {
+      if (row.teamA1Id && row.teamA1Id !== userId) {
+        blocked.add(row.teamA1Id);
+      }
+      if (row.invitedOpponentId && row.invitedOpponentId !== userId) {
+        blocked.add(row.invitedOpponentId);
+      }
+    }
+
+    return blocked;
+  }
+
+  private async getDiscoverActivityByUserIds(
+    userIds: string[],
+    mode: DiscoverMode,
+  ): Promise<Map<string, { matchesPlayed30d: number; lastActiveAt: Date | null }>> {
+    const map = new Map<
+      string,
+      { matchesPlayed30d: number; lastActiveAt: Date | null }
+    >();
+    if (userIds.length === 0) return map;
+
+    const cutoff = new Date(Date.now() - THIRTY_DAYS_MS);
+    const targetIds = new Set(userIds);
+
+    const rows = await this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin('m.challenge', 'c')
+      .select('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."teamA2Id"', 'teamA2Id')
+      .addSelect('c."teamB1Id"', 'teamB1Id')
+      .addSelect('c."teamB2Id"', 'teamB2Id')
+      .addSelect('m."playedAt"', 'playedAt')
+      .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
+      .andWhere('m."playedAt" IS NOT NULL')
+      .andWhere('m."matchType" = :mode', { mode })
+      .andWhere(
+        '(c."teamA1Id" IN (:...userIds) OR c."teamA2Id" IN (:...userIds) OR c."teamB1Id" IN (:...userIds) OR c."teamB2Id" IN (:...userIds))',
+        { userIds },
+      )
+      .getRawMany<DiscoverMatchAggregateRow>();
+
+    for (const row of rows) {
+      const playedAt = this.parseDateSafe(row.playedAt);
+      if (!playedAt) continue;
+
+      const participants = [
+        row.teamA1Id,
+        row.teamA2Id,
+        row.teamB1Id,
+        row.teamB2Id,
+      ];
+
+      for (const participantId of participants) {
+        if (!participantId || !targetIds.has(participantId)) continue;
+
+        const current = map.get(participantId) ?? {
+          matchesPlayed30d: 0,
+          lastActiveAt: null,
+        };
+        if (playedAt >= cutoff) {
+          current.matchesPlayed30d += 1;
+        }
+        if (!current.lastActiveAt || playedAt > current.lastActiveAt) {
+          current.lastActiveAt = playedAt;
+        }
+        map.set(participantId, current);
+      }
+    }
+
+    return map;
+  }
+
+  private parseDateSafe(value: Date | string | null): Date | null {
+    if (!value) return null;
+    const parsed = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private getDiscoverDisplayName(
+    displayName: string | null | undefined,
+    email: string | null | undefined,
+  ): string {
+    const normalizedDisplayName = (displayName ?? '').trim();
+    if (normalizedDisplayName.length > 0) return normalizedDisplayName;
+    const emailPrefix = (email ?? '').split('@')[0]?.trim() ?? '';
+    if (emailPrefix.length > 0) return emailPrefix;
+    return 'Jugador';
+  }
+
+  private compareDiscoverCandidates(
+    a: DiscoverCandidateItem,
+    b: DiscoverCandidateItem,
+    myElo: number | null,
+  ): number {
+    const aMatches = a.matchesPlayed30d ?? 0;
+    const bMatches = b.matchesPlayed30d ?? 0;
+    const aRecent = aMatches > 0 ? 1 : 0;
+    const bRecent = bMatches > 0 ? 1 : 0;
+
+    if (aRecent !== bRecent) return bRecent - aRecent;
+    if (aMatches !== bMatches) return bMatches - aMatches;
+
+    if (typeof myElo === 'number') {
+      const aDiff =
+        typeof a.elo === 'number'
+          ? Math.abs(a.elo - myElo)
+          : Number.POSITIVE_INFINITY;
+      const bDiff =
+        typeof b.elo === 'number'
+          ? Math.abs(b.elo - myElo)
+          : Number.POSITIVE_INFINITY;
+      if (aDiff !== bDiff) return aDiff - bDiff;
+    }
+
+    const aLast = this.parseDateSafe(a.lastActiveAt ?? null)?.getTime() ?? 0;
+    const bLast = this.parseDateSafe(b.lastActiveAt ?? null)?.getTime() ?? 0;
+    if (aLast !== bLast) return bLast - aLast;
+
+    return a.userId.localeCompare(b.userId);
   }
 
   private async findSuggestionsCore(

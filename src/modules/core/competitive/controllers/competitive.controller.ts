@@ -23,6 +23,8 @@ import { SkillRadarResponseDto } from '../dto/skill-radar-response.dto';
 import { MatchmakingRivalsQueryDto } from '../dto/matchmaking-rivals-query.dto';
 import { MatchmakingRivalsResponseDto } from '../dto/matchmaking-rivals-response.dto';
 import { CompetitiveChallengesQueryDto } from '../dto/competitive-challenges-query.dto';
+import { DiscoverCandidatesQueryDto } from '../dto/discover-candidates-query.dto';
+import { DiscoverCandidatesResponseDto } from '../dto/discover-candidates-response.dto';
 
 type AuthUser = {
   userId: string;
@@ -116,6 +118,21 @@ export class CompetitiveController {
     const user = req.user as AuthUser;
     return this.competitive.listChallenges(user.userId, {
       view: q.view ?? 'inbox',
+    });
+  }
+
+  @Get('discover/candidates')
+  @ApiOperation({ summary: 'Discover candidate opponents for current player' })
+  @ApiOkResponse({ type: DiscoverCandidatesResponseDto })
+  discoverCandidates(
+    @Req() req: Request,
+    @Query() q: DiscoverCandidatesQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.competitive.discoverCandidates(user.userId, {
+      mode: q.mode,
+      scope: q.scope,
+      limit: q.limit ?? 20,
     });
   }
 

@@ -30,6 +30,7 @@ describe('Competitive Matchmaking (e2e)', () => {
       getSkillRadar: jest.fn(),
       findRivalSuggestions: jest.fn(),
       findPartnerSuggestions: jest.fn(),
+      discoverCandidates: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -285,6 +286,52 @@ describe('Competitive Matchmaking (e2e)', () => {
 
       expect(res.body.items[0].userId).toBe(higherScore.userId);
       expect(res.body.items[1].userId).toBe(lowerScore.userId);
+    });
+  });
+
+  describe('GET /competitive/discover/candidates', () => {
+    it('returns candidates contract and forwards filters', async () => {
+      competitiveService.discoverCandidates.mockResolvedValue({
+        items: [
+          {
+            userId: '00000000-0000-0000-0000-000000000210',
+            displayName: 'Candidate',
+            cityName: 'Cordoba',
+            provinceCode: 'X',
+            elo: 1230,
+            matchesPlayed30d: 4,
+            lastActiveAt: '2026-02-27T10:00:00.000Z',
+          },
+        ],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/discover/candidates?mode=COMPETITIVE&scope=CITY&limit=20')
+        .expect(200);
+
+      expect(res.body).toEqual({
+        items: [
+          expect.objectContaining({
+            userId: expect.any(String),
+            displayName: expect.any(String),
+          }),
+        ],
+      });
+
+      expect(competitiveService.discoverCandidates).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+        expect.objectContaining({
+          mode: 'COMPETITIVE',
+          scope: 'CITY',
+          limit: 20,
+        }),
+      );
+    });
+
+    it('rejects invalid limit with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/competitive/discover/candidates?limit=51')
+        .expect(400);
     });
   });
 
