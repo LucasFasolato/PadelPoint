@@ -7,6 +7,8 @@ import { ChallengesService } from '../services/challenges.service';
 import { Challenge } from '../entities/challenge.entity';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import { ChallengeType } from '../enums/challenge-type.enum';
+import { MatchResult } from '../../matches/entities/match-result.entity';
+import { User } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
 import { CompetitiveService } from '../../competitive/services/competitive.service';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
@@ -49,12 +51,13 @@ function fakeChallenge(overrides: Partial<Challenge> = {}): Challenge {
     createdAt: new Date('2026-02-20T10:00:00.000Z'),
     updatedAt: new Date('2026-02-20T10:00:00.000Z'),
     ...overrides,
-  };
+  } as Challenge;
 }
 
 describe('ChallengesService', () => {
   let service: ChallengesService;
   let repo: MockRepo<Challenge>;
+  let matchRepo: MockRepo<MatchResult>;
   let userNotifications: { create: jest.Mock };
   let gateway: { emitToUser: jest.Mock };
   let dataSource: MockDataSource;
@@ -62,6 +65,7 @@ describe('ChallengesService', () => {
   beforeEach(async () => {
     dataSource = createMockDataSource();
     repo = createMockRepo<Challenge>();
+    matchRepo = createMockRepo<MatchResult>();
     const usersService = { findById: jest.fn() };
     const competitiveService = { getOrCreateProfile: jest.fn() };
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
@@ -76,6 +80,8 @@ describe('ChallengesService', () => {
         { provide: UserNotificationsService, useValue: userNotifications },
         { provide: NotificationsGateway, useValue: gateway },
         { provide: getRepositoryToken(Challenge), useValue: repo },
+        { provide: getRepositoryToken(User), useValue: createMockRepo<User>() },
+        { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
       ],
     }).compile();
 
@@ -164,6 +170,45 @@ describe('ChallengesService', () => {
         'challenge:updated',
         expect.objectContaining({ id: challenge.id, status: ChallengeStatus.ACCEPTED }),
       );
+    });
+
+    it('materializes a league-scoped scheduled match draft when accepted', async () => {
+      const leagueId = 'd4444444-4444-4444-8444-444444444444';
+      const challenge = fakeChallenge({
+        message: `Play this week [INTENT:LEAGUE=${leagueId}]`,
+      });
+      repo.findOne.mockResolvedValue(challenge);
+      repo.save.mockImplementation(async (c: Challenge) => c);
+      matchRepo.findOne.mockResolvedValue(null);
+      matchRepo.create.mockImplementation((input: any) => input);
+      matchRepo.save.mockImplementation(async (input: any) => input);
+
+      await service.acceptDirect(challenge.id, OPPONENT_ID);
+
+      expect(matchRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          challengeId: challenge.id,
+          leagueId,
+          status: 'scheduled',
+          reportedByUserId: OPPONENT_ID,
+        }),
+      );
+      expect(matchRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not create duplicate draft when challenge already has a match', async () => {
+      const leagueId = 'd4444444-4444-4444-8444-444444444444';
+      const challenge = fakeChallenge({
+        message: `[INTENT:LEAGUE=${leagueId}]`,
+      });
+      repo.findOne.mockResolvedValue(challenge);
+      repo.save.mockImplementation(async (c: Challenge) => c);
+      matchRepo.findOne.mockResolvedValue({ id: 'match-existing' } as MatchResult);
+
+      await service.acceptDirect(challenge.id, OPPONENT_ID);
+
+      expect(matchRepo.create).not.toHaveBeenCalled();
+      expect(matchRepo.save).not.toHaveBeenCalled();
     });
 
     it('is idempotent-ish when called twice after accepted', async () => {

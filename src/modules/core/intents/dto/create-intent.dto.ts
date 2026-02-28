@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MatchType } from '@core/matches/enums/match-type.enum';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateDirectIntentDto {
   @ApiProperty()
@@ -17,6 +17,11 @@ export class CreateDirectIntentDto {
   @IsOptional()
   @IsString()
   message?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  leagueId?: string;
 }
 
 export class CreateOpenIntentDto {
@@ -34,6 +39,11 @@ export class CreateOpenIntentDto {
   @Type(() => Number)
   @IsNumber()
   expiresInHours?: number;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  leagueId?: string;
 }
 
 export class CreateFindPartnerIntentDto {
@@ -51,4 +61,9 @@ export class CreateFindPartnerIntentDto {
   @Type(() => Number)
   @IsNumber()
   expiresInHours?: number;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  leagueId?: string;
 }

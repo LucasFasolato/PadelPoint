@@ -648,22 +648,11 @@ export class MatchesService {
         'match',
       );
 
-      let leagueId: string | null = null;
-      const resolvedLeagueId = dto.leagueId ?? null;
-      if (resolvedLeagueId) {
-        // League match requires a reservation-backed challenge
-        if (!challenge.reservationId) {
-          throw new BadRequestException({
-            statusCode: 400,
-            code: 'LEAGUE_MATCH_NO_RESERVATION',
-            message:
-              'League matches must be linked to a reservation-backed challenge',
-          });
-        }
-
+      const requestedLeagueId = dto.leagueId ?? null;
+      if (requestedLeagueId) {
         await this.assertLeagueReadyForMatchUsage(
           manager,
-          resolvedLeagueId,
+          requestedLeagueId,
           true,
         );
 
@@ -671,7 +660,7 @@ export class MatchesService {
         const memberCount = await manager
           .getRepository(LeagueMember)
           .createQueryBuilder('m')
-          .where('m."leagueId" = :leagueId', { leagueId: resolvedLeagueId })
+          .where('m."leagueId" = :leagueId', { leagueId: requestedLeagueId })
           .andWhere('m."userId" IN (:...playerIds)', {
             playerIds: participants.all,
           })
@@ -684,8 +673,6 @@ export class MatchesService {
             message: 'All 4 match participants must be members of the league',
           });
         }
-
-        leagueId = resolvedLeagueId;
       }
 
       // race-safe: check existing match for this challenge
@@ -694,12 +681,6 @@ export class MatchesService {
         .setLock('pessimistic_read')
         .where('m.challengeId = :cid', { cid: dto.challengeId })
         .getOne();
-
-      if (existing) {
-        throw new ConflictException(
-          'Match result already exists for this challenge',
-        );
-      }
 
       const { winnerTeam } = this.validateSets(dto.sets);
 
@@ -711,10 +692,78 @@ export class MatchesService {
 
       const [s1, s2, s3] = dto.sets;
 
+      if (existing) {
+        const effectiveLeagueId = existing.leagueId ?? requestedLeagueId ?? null;
+        if (
+          requestedLeagueId &&
+          existing.leagueId &&
+          requestedLeagueId !== existing.leagueId
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'LEAGUE_MATCH_CHALLENGE_MISMATCH',
+            message: 'challenge leagueId does not match request leagueId',
+          });
+        }
+
+        if (effectiveLeagueId && !requestedLeagueId) {
+          await this.assertLeagueReadyForMatchUsage(
+            manager,
+            effectiveLeagueId,
+            true,
+          );
+          const memberCount = await manager
+            .getRepository(LeagueMember)
+            .createQueryBuilder('m')
+            .where('m."leagueId" = :leagueId', { leagueId: effectiveLeagueId })
+            .andWhere('m."userId" IN (:...playerIds)', {
+              playerIds: participants.all,
+            })
+            .getCount();
+
+          if (memberCount !== 4) {
+            throw new BadRequestException({
+              statusCode: 400,
+              code: 'LEAGUE_MEMBERS_MISSING',
+              message: 'All 4 match participants must be members of the league',
+            });
+          }
+        }
+
+        if (existing.status === MatchResultStatus.SCHEDULED) {
+          existing.leagueId = effectiveLeagueId;
+          existing.playedAt = playedAt.toJSDate();
+          existing.teamASet1 = s1.a;
+          existing.teamBSet1 = s1.b;
+          existing.teamASet2 = s2.a;
+          existing.teamBSet2 = s2.b;
+          existing.teamASet3 = s3 ? s3.a : null;
+          existing.teamBSet3 = s3 ? s3.b : null;
+          existing.winnerTeam = winnerTeam;
+          existing.status = MatchResultStatus.PENDING_CONFIRM;
+          existing.matchType = this.normalizeMatchType(challenge.matchType);
+          existing.impactRanking = this.impactRankingForMatchType(
+            challenge.matchType,
+          );
+          existing.source = challenge.reservationId
+            ? MatchSource.RESERVATION
+            : MatchSource.MANUAL;
+          existing.reportedByUserId = userId;
+          existing.confirmedByUserId = null;
+          existing.rejectionReason = null;
+          existing.eloApplied = false;
+          return matchRepo.save(existing);
+        }
+
+        throw new ConflictException(
+          'Match result already exists for this challenge',
+        );
+      }
+
       const ent = matchRepo.create({
         challengeId: dto.challengeId,
         challenge,
-        leagueId,
+        leagueId: requestedLeagueId,
         matchType: this.normalizeMatchType(challenge.matchType),
         impactRanking: this.impactRankingForMatchType(challenge.matchType),
         playedAt: playedAt.toJSDate(),

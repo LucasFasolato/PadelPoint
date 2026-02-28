@@ -67,7 +67,8 @@ Creates a direct intent against a concrete opponent.
 {
   "opponentUserId": "uuid",
   "mode": "COMPETITIVE",
-  "message": "Jugamos?"
+  "message": "Jugamos?",
+  "leagueId": "uuid (optional)"
 }
 ```
 
@@ -97,7 +98,8 @@ Creates an open intent to find opponents.
 {
   "mode": "FRIENDLY",
   "category": "7ma",
-  "expiresInHours": 72
+  "expiresInHours": 72,
+  "leagueId": "uuid (optional)"
 }
 ```
 
@@ -130,7 +132,8 @@ Creates a find-partner intent.
 {
   "mode": "COMPETITIVE",
   "message": "Busco companero para jugar esta semana",
-  "expiresInHours": 48
+  "expiresInHours": 48,
+  "leagueId": "uuid (optional)"
 }
 ```
 
@@ -164,3 +167,4 @@ Creates a find-partner intent.
 - `OPPONENT_REQUIRED` (`400`): direct creation without `opponentUserId`.
 - `INVALID_MODE` (`400`): mode must be `COMPETITIVE|FRIENDLY`.
 - `ALREADY_ACTIVE` (`409`): duplicate active intent for same type+mode (and same opponent for direct).
+- `LEAGUE_FORBIDDEN` (`403`): provided `leagueId` exists but caller is not a member.

@@ -17,11 +17,14 @@ import { Challenge } from '../entities/challenge.entity';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import { ChallengeType } from '../enums/challenge-type.enum';
 import { User } from '../../users/entities/user.entity';
+import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
 import { MatchType } from '../../matches/enums/match-type.enum';
+import { MatchSource } from '../../matches/enums/match-source.enum';
 import {
   ChallengeInvite,
   ChallengeInviteStatus,
 } from '../entities/challenge-invite.entity';
+import { extractLeagueIntentContextLeagueId } from '../utils/league-intent-context.util';
 
 @Injectable()
 export class ChallengesService {
@@ -37,6 +40,8 @@ export class ChallengesService {
     private readonly repo: Repository<Challenge>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(MatchResult)
+    private readonly matchRepo: Repository<MatchResult>,
   ) {}
 
   // ------------------------
@@ -309,6 +314,7 @@ export class ChallengesService {
       ch.status === ChallengeStatus.ACCEPTED ||
       ch.status === ChallengeStatus.READY
     ) {
+      await this.materializeLeagueMatchDraftIfNeeded(ch, meUserId);
       return this.toView(ch);
     }
     if (ch.status !== ChallengeStatus.PENDING) {
@@ -320,6 +326,7 @@ export class ChallengesService {
 
     ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
     const saved = await this.repo.save(ch);
+    await this.materializeLeagueMatchDraftIfNeeded(saved, meUserId);
 
     // Notify creator (fire-and-forget)
     const acceptorName = ch.invitedOpponent?.displayName ?? 'Your opponent';
@@ -512,6 +519,11 @@ export class ChallengesService {
       ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
 
       await repo.save(ch);
+      await this.materializeLeagueMatchDraftIfNeeded(
+        ch,
+        meUserId,
+        trx.getRepository(MatchResult),
+      );
 
       // Re-load con relations (SIN lock) para toView()
       const full = await repo.findOne({
@@ -778,5 +790,70 @@ export class ChallengesService {
     if (value instanceof Date) return value.toISOString();
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  private async materializeLeagueMatchDraftIfNeeded(
+    challenge: Pick<
+      Challenge,
+      | 'id'
+      | 'message'
+      | 'matchType'
+      | 'reservationId'
+      | 'teamB1Id'
+      | 'teamB2Id'
+      | 'teamA1Id'
+      | 'teamA2Id'
+    >,
+    actorUserId: string,
+    matchRepo: Repository<MatchResult> = this.matchRepo,
+  ): Promise<void> {
+    const challengeId = (challenge.id ?? '').trim();
+    if (!challengeId) return;
+
+    const leagueId = extractLeagueIntentContextLeagueId(challenge.message);
+    if (!leagueId) return;
+
+    // League match only materializes once opponent side exists.
+    if (!challenge.teamB1Id) return;
+
+    const existing = await matchRepo.findOne({
+      where: { challengeId },
+      select: ['id'],
+    });
+    if (existing) return;
+
+    const matchType = challenge.matchType ?? MatchType.COMPETITIVE;
+    const draft = matchRepo.create({
+      challengeId,
+      leagueId,
+      scheduledAt: null,
+      playedAt: null,
+      teamASet1: null,
+      teamBSet1: null,
+      teamASet2: null,
+      teamBSet2: null,
+      teamASet3: null,
+      teamBSet3: null,
+      winnerTeam: null,
+      status: MatchResultStatus.SCHEDULED,
+      matchType,
+      impactRanking: matchType === MatchType.COMPETITIVE,
+      reportedByUserId: actorUserId,
+      confirmedByUserId: null,
+      rejectionReason: null,
+      source: challenge.reservationId
+        ? MatchSource.RESERVATION
+        : MatchSource.MANUAL,
+      eloApplied: false,
+    });
+
+    try {
+      await matchRepo.save(draft);
+    } catch (err: any) {
+      if (String(err?.code) === '23505') {
+        return;
+      }
+      throw err;
+    }
   }
 }

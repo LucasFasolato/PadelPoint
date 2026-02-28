@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { ChallengeType } from '@core/challenges/enums/challenge-type.enum';
 import { ChallengesService } from '@core/challenges/services/challenges.service';
 import { CompetitiveService } from '@core/competitive/services/competitive.service';
 import { normalizeCategoryFilter } from '@core/rankings/utils/ranking-computation.util';
+import { LeagueMember } from '@core/leagues/entities/league-member.entity';
+import { attachLeagueIntentContext } from '@core/challenges/utils/league-intent-context.util';
 import {
   FIND_PARTNER_MESSAGE_MARKER,
   MatchIntentItem,
@@ -57,6 +60,8 @@ export class MatchIntentsService {
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(ChallengeInvite)
     private readonly challengeInviteRepo: Repository<ChallengeInvite>,
+    @InjectRepository(LeagueMember)
+    private readonly leagueMemberRepo: Repository<LeagueMember>,
   ) {}
 
   async createDirectIntent(
@@ -73,6 +78,10 @@ export class MatchIntentsService {
     }
 
     const mode = this.normalizeModeOrThrow(dto.mode);
+    const leagueId = await this.assertLeagueMembershipOrThrow(
+      userId,
+      dto.leagueId,
+    );
     const exists = await this.hasActiveDirectIntent(userId, opponentUserId, mode);
     if (exists) {
       this.throwAlreadyActive('An active direct intent already exists');
@@ -81,7 +90,7 @@ export class MatchIntentsService {
     const created = await this.challengesService.createDirect({
       meUserId: userId,
       opponentUserId,
-      message: dto.message ?? null,
+      message: attachLeagueIntentContext(dto.message ?? null, leagueId),
       matchType: mode,
     });
     const item = await this.loadChallengeIntentById(
@@ -97,6 +106,10 @@ export class MatchIntentsService {
     dto: CreateOpenIntentDto,
   ): Promise<MatchIntentItemResponse> {
     const mode = this.normalizeModeOrThrow(dto.mode);
+    const leagueId = await this.assertLeagueMembershipOrThrow(
+      userId,
+      dto.leagueId,
+    );
     const expiresInHours = this.clampExpiresHours(dto.expiresInHours);
     const exists = await this.hasActiveOpenIntent(userId, mode);
     if (exists) {
@@ -111,6 +124,7 @@ export class MatchIntentsService {
       meUserId: userId,
       targetCategory,
       matchType: mode,
+      message: attachLeagueIntentContext(null, leagueId),
     });
     const item = await this.loadChallengeIntentById(
       created.id,
@@ -126,6 +140,10 @@ export class MatchIntentsService {
     dto: CreateFindPartnerIntentDto,
   ): Promise<MatchIntentItemResponse> {
     const mode = this.normalizeModeOrThrow(dto.mode);
+    const leagueId = await this.assertLeagueMembershipOrThrow(
+      userId,
+      dto.leagueId,
+    );
     const expiresInHours = this.clampExpiresHours(dto.expiresInHours);
     const exists = await this.hasActiveFindPartnerIntent(userId, mode);
     if (exists) {
@@ -137,7 +155,10 @@ export class MatchIntentsService {
       meUserId: userId,
       targetCategory,
       matchType: mode,
-      message: this.buildFindPartnerMessage(dto.message),
+      message: attachLeagueIntentContext(
+        this.buildFindPartnerMessage(dto.message),
+        leagueId,
+      ),
     });
     const item = await this.loadChallengeIntentById(
       created.id,
@@ -626,6 +647,30 @@ export class MatchIntentsService {
     const userMessage = (message ?? '').trim();
     if (!userMessage) return FIND_PARTNER_MESSAGE_MARKER;
     return `${FIND_PARTNER_MESSAGE_MARKER} ${userMessage}`;
+  }
+
+  private async assertLeagueMembershipOrThrow(
+    userId: string,
+    leagueId: string | null | undefined,
+  ): Promise<string | null> {
+    const normalized =
+      typeof leagueId === 'string' ? leagueId.trim() : String(leagueId ?? '');
+    if (!normalized) return null;
+
+    const membership = await this.leagueMemberRepo.findOne({
+      where: { leagueId: normalized, userId },
+      select: ['id'],
+    });
+
+    if (!membership) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      });
+    }
+
+    return normalized;
   }
 
   private throwAlreadyActive(message: string): never {

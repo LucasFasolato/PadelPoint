@@ -11,10 +11,11 @@ import { CompetitiveModule } from '../competitive/competitive.module';
 import { NotificationsModule } from '@/modules/core/notifications/notifications.module';
 import { User } from '../users/entities/user.entity';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
+import { MatchResult } from '../matches/entities/match-result.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Challenge, ChallengeInvite, User]),
+    TypeOrmModule.forFeature([Challenge, ChallengeInvite, User, MatchResult]),
     UsersModule,
     CompetitiveModule,
     NotificationsModule,

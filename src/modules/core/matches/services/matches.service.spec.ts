@@ -98,6 +98,7 @@ describe('MatchesService', () => {
   let reservationRepo: MockRepo<Reservation>;
   let userNotifications: { create: jest.Mock };
   let leagueStandingsService: { recomputeForMatch: jest.Mock };
+  let leagueActivityService: { create: jest.Mock };
 
   // Mock repos returned inside transactions
   let txMatchRepo: MockRepo<MatchResult>;
@@ -118,6 +119,7 @@ describe('MatchesService', () => {
     reservationRepo = createMockRepo<Reservation>();
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
     leagueStandingsService = { recomputeForMatch: jest.fn() };
+    leagueActivityService = { create: jest.fn().mockResolvedValue({}) };
 
     // Transaction mock repos
     txMatchRepo = createMockRepo<MatchResult>();
@@ -171,7 +173,7 @@ describe('MatchesService', () => {
         { provide: getRepositoryToken(Reservation), useValue: reservationRepo },
         { provide: EloService, useValue: { applyForMatchTx: jest.fn() } },
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
-        { provide: LeagueActivityService, useValue: { create: jest.fn() } },
+        { provide: LeagueActivityService, useValue: leagueActivityService },
         { provide: UserNotificationsService, useValue: userNotifications },
         {
           provide: ConfigService,
@@ -862,6 +864,7 @@ describe('MatchesService', () => {
       eloService = { applyForMatchTx: jest.fn().mockResolvedValue({ ok: true }) };
       leagueStandingsService = { recomputeForMatch: jest.fn().mockResolvedValue(undefined) };
       userNotifications = { create: jest.fn().mockResolvedValue({}) };
+      leagueActivityService = { create: jest.fn().mockResolvedValue({}) };
 
       dataSource.transaction.mockImplementation(async (cb: any) => {
         const manager = {
@@ -893,7 +896,7 @@ describe('MatchesService', () => {
           { provide: getRepositoryToken(Reservation), useValue: reservationRepo },
           { provide: EloService, useValue: eloService },
           { provide: LeagueStandingsService, useValue: leagueStandingsService },
-          { provide: LeagueActivityService, useValue: { create: jest.fn() } },
+          { provide: LeagueActivityService, useValue: leagueActivityService },
           { provide: UserNotificationsService, useValue: userNotifications },
           {
             provide: ConfigService,
@@ -931,6 +934,59 @@ describe('MatchesService', () => {
       expect(result.status).toBe(MatchResultStatus.PENDING_CONFIRM);
       expect(eloService.applyForMatchTx).not.toHaveBeenCalled();
       expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
+    });
+
+    it('should update existing scheduled draft (league-scoped) instead of throwing duplicate', async () => {
+      const readyChallenge = {
+        ...fakeChallenge(),
+        status: ChallengeStatus.READY,
+        reservationId: null,
+      };
+      const scheduledDraft = fakeMatch({
+        id: 'match-draft-1',
+        challengeId: 'challenge-1',
+        leagueId: LEAGUE_ID,
+        status: MatchResultStatus.SCHEDULED,
+        playedAt: null,
+        winnerTeam: null,
+        confirmedByUserId: null,
+      });
+
+      txChallengeRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(readyChallenge),
+      });
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(scheduledDraft),
+      });
+      txLeagueRepo.findOne.mockResolvedValue({
+        id: LEAGUE_ID,
+        status: LeagueStatus.ACTIVE,
+      });
+      txMemberRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(4),
+      });
+      txMatchRepo.save.mockImplementation(async (input: any) => input);
+
+      const result = await service.reportMatch(USER_A1, {
+        challengeId: 'challenge-1',
+        sets: [
+          { a: 6, b: 3 },
+          { a: 6, b: 4 },
+        ],
+      });
+
+      expect(result.id).toBe('match-draft-1');
+      expect(result.leagueId).toBe(LEAGUE_ID);
+      expect(result.status).toBe(MatchResultStatus.PENDING_CONFIRM);
+      expect(result.teamASet1).toBe(6);
+      expect(result.teamBSet1).toBe(3);
+      expect(txMatchRepo.create).not.toHaveBeenCalled();
     });
 
     it('should not read leagueId from generic Challenge metadata', async () => {
@@ -1030,6 +1086,13 @@ describe('MatchesService', () => {
       expect(leagueStandingsService.recomputeForMatch).toHaveBeenCalledWith(
         expect.any(Object),
         'match-1',
+      );
+      expect(leagueActivityService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          leagueId: LEAGUE_ID,
+          type: 'match_confirmed',
+          entityId: 'match-1',
+        }),
       );
     });
 

@@ -1,4 +1,9 @@
-import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -11,6 +16,8 @@ const FAKE_USER = {
   email: 'user@test.com',
   role: 'player',
 };
+
+const LEAGUE_ID = 'd4444444-4444-4444-8444-444444444444';
 
 function fakeGuard() {
   return {
@@ -114,7 +121,12 @@ describe('Me Intents (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .post('/me/intents/direct')
-      .send({ opponentUserId: 'opp-1', mode: 'COMPETITIVE', message: 'Vamos?' })
+      .send({
+        opponentUserId: 'opp-1',
+        mode: 'COMPETITIVE',
+        message: 'Vamos?',
+        leagueId: LEAGUE_ID,
+      })
       .expect(201);
 
     expect(res.body).toEqual({
@@ -128,6 +140,7 @@ describe('Me Intents (e2e)', () => {
       expect.objectContaining({
         opponentUserId: 'opp-1',
         mode: 'COMPETITIVE',
+        leagueId: LEAGUE_ID,
       }),
     );
   });
@@ -147,7 +160,12 @@ describe('Me Intents (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .post('/me/intents/open')
-      .send({ mode: 'FRIENDLY', category: '7ma', expiresInHours: 72 })
+      .send({
+        mode: 'FRIENDLY',
+        category: '7ma',
+        expiresInHours: 72,
+        leagueId: LEAGUE_ID,
+      })
       .expect(201);
 
     expect(res.body).toEqual({
@@ -156,6 +174,13 @@ describe('Me Intents (e2e)', () => {
         intentType: 'FIND_OPPONENT',
       }),
     });
+    expect(intentsService.createOpenIntent).toHaveBeenCalledWith(
+      FAKE_USER.userId,
+      expect.objectContaining({
+        mode: 'FRIENDLY',
+        leagueId: LEAGUE_ID,
+      }),
+    );
   });
 
   it('POST /me/intents/find-partner creates find-partner intent', async () => {
@@ -173,7 +198,12 @@ describe('Me Intents (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .post('/me/intents/find-partner')
-      .send({ mode: 'COMPETITIVE', message: 'Busco companero', expiresInHours: 48 })
+      .send({
+        mode: 'COMPETITIVE',
+        message: 'Busco companero',
+        expiresInHours: 48,
+        leagueId: LEAGUE_ID,
+      })
       .expect(201);
 
     expect(res.body).toEqual({
@@ -182,6 +212,13 @@ describe('Me Intents (e2e)', () => {
         intentType: 'FIND_PARTNER',
       }),
     });
+    expect(intentsService.createFindPartnerIntent).toHaveBeenCalledWith(
+      FAKE_USER.userId,
+      expect.objectContaining({
+        mode: 'COMPETITIVE',
+        leagueId: LEAGUE_ID,
+      }),
+    );
   });
 
   it('returns 409 ALREADY_ACTIVE when duplicate intent is detected', async () => {
@@ -202,6 +239,32 @@ describe('Me Intents (e2e)', () => {
       expect.objectContaining({
         statusCode: 409,
         code: 'ALREADY_ACTIVE',
+      }),
+    );
+  });
+
+  it('returns 403 LEAGUE_FORBIDDEN when requester is not member of leagueId', async () => {
+    intentsService.createDirectIntent?.mockRejectedValue(
+      new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You are not a member of this league',
+      }),
+    );
+
+    const res = await request(app.getHttpServer())
+      .post('/me/intents/direct')
+      .send({
+        opponentUserId: 'opp-1',
+        mode: 'COMPETITIVE',
+        leagueId: LEAGUE_ID,
+      })
+      .expect(403);
+
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
       }),
     );
   });
