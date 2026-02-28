@@ -484,6 +484,50 @@ describe('LeaguesService', () => {
         },
       });
     });
+
+    it('should handle malformed raw rows without throwing', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          null,
+          {
+            id: '  league-weird  ',
+            name: 123,
+            mode: true,
+            status: false,
+            role: { value: 'owner' },
+            membersCount: 'not-a-number',
+            cityName: 999,
+            provinceCode: { code: 'AR-S' },
+            lastActivityAt: 'not-a-date',
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'league-weird',
+            name: 'Liga',
+            mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
+            status: 'UPCOMING',
+            statusKey: 'UPCOMING',
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ],
+      });
+    });
   });
 
   // -- getLeagueDetail -------------------------------------------

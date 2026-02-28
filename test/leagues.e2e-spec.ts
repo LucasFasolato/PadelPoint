@@ -1087,6 +1087,9 @@ describe('Leagues (e2e)', () => {
         .expect(200);
 
       expect(res.body).toEqual({ items: [] });
+      expect(leaguesService.listMyLeagues).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+      );
     });
   });
 

@@ -80,15 +80,15 @@ type LeagueListItemView = {
 };
 
 type LeagueListRawRow = {
-  id: string | null;
-  name: string | null;
-  mode: string | null;
-  status: string | null;
-  role: string | null;
-  membersCount: number | string | null;
-  cityName: string | null;
-  provinceCode: string | null;
-  lastActivityAt: Date | string | null;
+  id: unknown;
+  name: unknown;
+  mode: unknown;
+  status: unknown;
+  role: unknown;
+  membersCount: unknown;
+  cityName: unknown;
+  provinceCode: unknown;
+  lastActivityAt: unknown;
 };
 
 @Injectable()
@@ -339,9 +339,49 @@ export class LeaguesService {
         .addOrderBy('l.id', 'DESC')
         .getRawMany<LeagueListRawRow>();
 
-      const items = Array.isArray(rows)
-        ? rows.map((row) => this.toLeagueListItemView(row))
-        : [];
+      if (!Array.isArray(rows)) {
+        throw new Error('Invalid list query result shape');
+      }
+
+      const items: LeagueListItemView[] = [];
+      let skippedRows = 0;
+      const mappingErrorId = crypto.randomUUID();
+
+      for (let i = 0; i < rows.length; i += 1) {
+        try {
+          const item = this.toLeagueListItemView(rows[i]);
+          if (!item) {
+            skippedRows += 1;
+            continue;
+          }
+          items.push(item);
+        } catch (mapErr) {
+          skippedRows += 1;
+          const reason =
+            mapErr instanceof Error ? mapErr.message : 'unknown_map_error';
+          this.logger.warn(
+            JSON.stringify({
+              event: 'leagues.list.row.mapping_failed',
+              errorId: mappingErrorId,
+              userId,
+              rowIndex: i,
+              reason,
+            }),
+          );
+        }
+      }
+
+      if (skippedRows > 0) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'leagues.list.row.mapping_skipped',
+            errorId: mappingErrorId,
+            userId,
+            skippedRows,
+            totalRows: rows.length,
+          }),
+        );
+      }
 
       return { items };
     } catch (err) {
@@ -1444,16 +1484,21 @@ export class LeaguesService {
     }
   }
 
-  private toLeagueListItemView(row: LeagueListRawRow): LeagueListItemView {
-    const id = typeof row.id === 'string' && row.id.length > 0 ? row.id : '';
-    const rawName = (row.name ?? '').trim();
+  private toLeagueListItemView(
+    row: LeagueListRawRow | null | undefined,
+  ): LeagueListItemView | null {
+    if (!row || typeof row !== 'object') {
+      return null;
+    }
+    const id = this.toNonEmptyTrimmedString((row as LeagueListRawRow).id) ?? '';
+    const rawName = this.toNonEmptyTrimmedString((row as LeagueListRawRow).name);
     const parsedMembersCount = this.toSafeInteger(row.membersCount);
     const role = this.toLeagueListRole(row.role);
     const lastActivityAt = this.toNullableIsoString(row.lastActivityAt);
 
     const item: LeagueListItemView = {
       id,
-      name: rawName.length > 0 ? rawName : 'Liga',
+      name: rawName ?? 'Liga',
       mode: this.toLeagueListMode(row.mode),
       status: this.toLeagueListStatus(row.status),
       modeKey: this.toLeagueModeKey(row.mode),
@@ -1463,22 +1508,22 @@ export class LeaguesService {
     if (role) item.role = role;
     if (parsedMembersCount !== undefined)
       item.membersCount = parsedMembersCount;
-    item.cityName = row.cityName ?? null;
-    item.provinceCode = row.provinceCode ?? null;
+    item.cityName = this.toNullableTrimmedString(row.cityName);
+    item.provinceCode = this.toNullableTrimmedString(row.provinceCode);
     item.lastActivityAt = lastActivityAt;
 
     return item;
   }
 
-  private toLeagueListMode(mode: string | null | undefined): LeagueListMode {
-    const normalized = (mode ?? '').trim().toLowerCase();
+  private toLeagueListMode(mode: unknown): LeagueListMode {
+    const normalized = this.toNormalizedString(mode, 'lower');
     if (normalized === 'open') return 'OPEN';
     if (normalized === 'scheduled') return 'SCHEDULED';
     if (normalized === 'mini') return 'MINI';
     return normalized.length > 0 ? normalized.toUpperCase() : 'SCHEDULED';
   }
 
-  private toLeagueModeKey(mode: string | null | undefined): LeagueModeKey {
+  private toLeagueModeKey(mode: unknown): LeagueModeKey {
     const normalized = this.toLeagueListMode(mode);
     if (normalized === 'OPEN') return 'OPEN';
     if (normalized === 'SCHEDULED') return 'SCHEDULED';
@@ -1486,19 +1531,15 @@ export class LeaguesService {
     return 'SCHEDULED';
   }
 
-  private toLeagueListStatus(
-    status: string | null | undefined,
-  ): LeagueListStatus {
-    const normalized = (status ?? '').trim().toLowerCase();
+  private toLeagueListStatus(status: unknown): LeagueListStatus {
+    const normalized = this.toNormalizedString(status, 'lower');
     if (normalized === 'draft' || normalized === 'upcoming') return 'UPCOMING';
     if (normalized === 'active') return 'ACTIVE';
     if (normalized === 'finished') return 'FINISHED';
     return normalized.length > 0 ? normalized.toUpperCase() : 'UPCOMING';
   }
 
-  private toLeagueStatusKey(
-    status: string | null | undefined,
-  ): LeagueStatusKey {
+  private toLeagueStatusKey(status: unknown): LeagueStatusKey {
     const normalized = this.toLeagueListStatus(status);
     if (normalized === 'UPCOMING') return 'UPCOMING';
     if (normalized === 'ACTIVE') return 'ACTIVE';
@@ -1506,19 +1547,15 @@ export class LeaguesService {
     return 'UPCOMING';
   }
 
-  private toLeagueListRole(
-    role: string | null | undefined,
-  ): LeagueListRole | undefined {
-    const normalized = (role ?? '').trim().toUpperCase();
+  private toLeagueListRole(role: unknown): LeagueListRole | undefined {
+    const normalized = this.toNormalizedString(role, 'upper');
     if (normalized === 'OWNER') return 'OWNER';
     if (normalized === 'ADMIN') return 'ADMIN';
     if (normalized === 'MEMBER') return 'MEMBER';
     return undefined;
   }
 
-  private toSafeInteger(
-    value: number | string | null | undefined,
-  ): number | undefined {
+  private toSafeInteger(value: unknown): number | undefined {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return Math.max(0, Math.trunc(value));
     }
@@ -1530,14 +1567,39 @@ export class LeaguesService {
   }
 
   private toNullableIsoString(
-    value: Date | string | null | undefined,
+    value: unknown,
   ): string | null {
     if (!value) return null;
     if (value instanceof Date) {
       return Number.isNaN(value.getTime()) ? null : value.toISOString();
     }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+    if (typeof value !== 'string') return null;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  private toNormalizedString(
+    value: unknown,
+    casing: 'lower' | 'upper',
+  ): string {
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return casing === 'lower' ? trimmed.toLowerCase() : trimmed.toUpperCase();
+  }
+
+  private toNonEmptyTrimmedString(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private toNullableTrimmedString(value: unknown): string | null {
+    return this.toNonEmptyTrimmedString(value);
   }
 
   private toLeagueView(league: League, members: LeagueMember[]) {
