@@ -23,6 +23,7 @@ import { LeaguesModule } from './modules/core/leagues/leagues.module';
 import { PlayersModule } from './modules/core/players/players.module';
 import { RankingsModule } from './modules/core/rankings/rankings.module';
 import { IntentsModule } from './modules/core/intents/intents.module';
+import { InsightsModule } from './modules/core/insights/insights.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { IntentsModule } from './modules/core/intents/intents.module';
     PlayersModule,
     RankingsModule,
     IntentsModule,
+    InsightsModule,
   ],
 })
 export class AppModule {}
