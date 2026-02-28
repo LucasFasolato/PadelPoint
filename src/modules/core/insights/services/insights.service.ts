@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -37,13 +38,17 @@ type OpponentCounter = {
 @Injectable()
 export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
+  private readonly rankingMinMatches: number;
 
   constructor(
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(EloHistory)
     private readonly eloHistoryRepo: Repository<EloHistory>,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.rankingMinMatches = this.resolveMinMatches();
+  }
 
   async getMyInsights(params: {
     userId: string;
@@ -60,9 +65,10 @@ export class InsightsService {
       window.end,
       mode,
     );
+    const neededForRanking = this.resolveNeededForRanking(matches.length);
 
     if (matches.length === 0) {
-      return this.emptyResponse(timeframe, mode);
+      return this.emptyResponse(timeframe, mode, neededForRanking);
     }
 
     const sorted = [...matches].sort((a, b) => {
@@ -129,7 +135,7 @@ export class InsightsService {
       bestStreak,
       lastPlayedAt,
       mostPlayedOpponent,
-      neededForRanking: null,
+      neededForRanking,
     };
   }
 
@@ -160,7 +166,7 @@ export class InsightsService {
     if (mode === InsightsMode.COMPETITIVE) {
       qb.andWhere('m."matchType" = :matchType', {
         matchType: MatchType.COMPETITIVE,
-      });
+      }).andWhere('m."impactRanking" = true');
     } else if (mode === InsightsMode.FRIENDLY) {
       qb.andWhere('m."matchType" = :matchType', {
         matchType: MatchType.FRIENDLY,
@@ -297,6 +303,7 @@ export class InsightsService {
   private emptyResponse(
     timeframe: InsightsTimeframe,
     mode: InsightsMode,
+    neededForRanking: { required: number; current: number; remaining: number } | null,
   ): InsightsResponse {
     return {
       timeframe,
@@ -310,7 +317,28 @@ export class InsightsService {
       bestStreak: 0,
       lastPlayedAt: null,
       mostPlayedOpponent: null,
-      neededForRanking: null,
+      neededForRanking,
     };
+  }
+
+  private resolveNeededForRanking(matchesPlayed: number): {
+    required: number;
+    current: number;
+    remaining: number;
+  } | null {
+    const remaining = Math.max(0, this.rankingMinMatches - matchesPlayed);
+    if (remaining === 0) return null;
+    return {
+      required: this.rankingMinMatches,
+      current: matchesPlayed,
+      remaining,
+    };
+  }
+
+  private resolveMinMatches(): number {
+    const configured = this.config.get<number>('ranking.minMatches', 4);
+    const numeric = Number(configured);
+    if (!Number.isFinite(numeric)) return 4;
+    return Math.max(1, Math.trunc(numeric));
   }
 }

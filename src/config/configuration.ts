@@ -39,5 +39,8 @@ export default () => {
     app: {
       publicUrl: env.APP_PUBLIC_URL ?? env.APP_URL,
     },
+    ranking: {
+      minMatches: env.RANKING_MIN_MATCHES,
+    },
   };
 };

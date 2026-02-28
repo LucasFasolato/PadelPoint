@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MatchResult, WinnerTeam } from '@core/matches/entities/match-result.entity';
 import { EloHistory } from '@core/competitive/entities/elo-history.entity';
@@ -13,16 +14,24 @@ describe('InsightsService', () => {
   let service: InsightsService;
   let matchRepo: MockRepo<MatchResult>;
   let eloRepo: MockRepo<EloHistory>;
+  let configService: { get: jest.Mock };
 
   beforeEach(async () => {
     matchRepo = createMockRepo<MatchResult>();
     eloRepo = createMockRepo<EloHistory>();
+    configService = {
+      get: jest.fn().mockImplementation((key: string, fallback?: unknown) => {
+        if (key === 'ranking.minMatches') return 4;
+        return fallback;
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InsightsService,
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
         { provide: getRepositoryToken(EloHistory), useValue: eloRepo },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -102,7 +111,11 @@ describe('InsightsService', () => {
         name: 'Opponent 1',
         matches: 2,
       },
-      neededForRanking: null,
+      neededForRanking: {
+        required: 4,
+        current: 2,
+        remaining: 2,
+      },
     });
   });
 
@@ -134,8 +147,13 @@ describe('InsightsService', () => {
       bestStreak: 0,
       lastPlayedAt: null,
       mostPlayedOpponent: null,
-      neededForRanking: null,
+      neededForRanking: {
+        required: 4,
+        current: 0,
+        remaining: 4,
+      },
     });
+    expect(matchQb.andWhere).toHaveBeenCalledWith('m."impactRanking" = true');
     expect(eloRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 

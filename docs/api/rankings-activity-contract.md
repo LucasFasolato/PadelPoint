@@ -1,6 +1,6 @@
 # Rankings + Activity API Contract (v1)
 
-Last updated: 2026-02-27
+Last updated: 2026-02-28
 
 This document defines the current HTTP contract for:
 
@@ -90,7 +90,11 @@ All endpoints require JWT auth.
     "draws": 0,
     "points": 36,
     "setsDiff": 10,
-    "gamesDiff": 22
+    "gamesDiff": 22,
+    "eligible": true,
+    "required": 4,
+    "current": 19,
+    "remaining": 0
   }
 }
 ```
@@ -98,7 +102,12 @@ All endpoints require JWT auth.
 ### Meaning of `my` and movement fields
 
 - `my`: current authenticated user snapshot inside the same leaderboard filters.
-  - `null` means user is not ranked in that current filtered scope/bucket.
+  - If the user is below the minimum required matches (`RANKING_MIN_MATCHES`, default `4`), `my` is returned as:
+    - `{ position: null, eligible: false, required, current, remaining }`
+  - If the user is eligible and present in leaderboard rows, `my.position` is numeric and `eligible=true`.
+  - `null` means no row can be resolved for the user in current filters.
+- Eligibility is evaluated against the same confirmed match set used to compute ranking rows (same `scope`, `category`, `timeframe`, and `mode` filters).
+- Leaderboard `items` include only eligible users (`matchesPlayed >= RANKING_MIN_MATCHES`).
 - `deltaPositions`:
   - positive => user moved up (`oldPosition - newPosition > 0`)
   - negative => user moved down
@@ -165,7 +174,7 @@ All endpoints require JWT auth.
 }
 ```
 
-### Example 2: city leaderboard with no `my` entry
+### Example 2: city leaderboard with ineligible `my`
 
 ```json
 {
@@ -184,7 +193,13 @@ All endpoints require JWT auth.
     "asOfDate": "2026-02-27",
     "computedAt": "2026-02-27T09:02:40.555Z"
   },
-  "my": null
+  "my": {
+    "position": null,
+    "eligible": false,
+    "required": 4,
+    "current": 1,
+    "remaining": 3
+  }
 }
 ```
 
@@ -423,4 +438,3 @@ Compact user activity feed (user + global cards), ordered newest first.
 
 - `400` invalid cursor/limit query format
 - `401` unauthorized
-

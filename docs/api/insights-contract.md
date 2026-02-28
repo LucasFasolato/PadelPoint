@@ -35,13 +35,21 @@ Returns a compact summary for the authenticated user based on confirmed matches 
     "name": "Jugador",
     "matches": 3
   },
-  "neededForRanking": null
+  "neededForRanking": {
+    "required": 4,
+    "current": 2,
+    "remaining": 2
+  }
 }
 ```
 
 ### Rules
 
 - Uses only `CONFIRMED` matches.
+- For `mode=COMPETITIVE`, uses the same competitive ranking criteria (`matchType=COMPETITIVE` and `impactRanking=true`).
 - Empty datasets return `200` with zeroed counters and nullable optional fields.
 - If ELO history is unavailable or absent, `eloDelta` is `0`.
-- `neededForRanking` is `null` unless explicit ranking entry requirements are defined.
+- Minimum matches requirement comes from `RANKING_MIN_MATCHES` (default `4`).
+- `neededForRanking` is:
+  - `{ required, current, remaining }` when `remaining > 0`
+  - `null` when `remaining = 0`.

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { categoryFromElo } from '../../competitive/utils/competitive.constants';
@@ -133,6 +134,7 @@ export class RankingsService {
   private readonly snapshotFreshMs = 60 * 1000;
   private readonly snapshotsToKeep = 120;
   private readonly snapshotInsertRetries = 3;
+  private readonly rankingMinMatches: number;
 
   constructor(
     @InjectRepository(GlobalRankingSnapshot)
@@ -147,7 +149,10 @@ export class RankingsService {
     private readonly provinceRepo: Repository<Province>,
     @InjectRepository(UserNotification)
     private readonly userNotificationRepo: Repository<UserNotification>,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.rankingMinMatches = this.resolveMinMatches();
+  }
 
   async getLeaderboard(params: LeaderboardParams) {
     const scope = this.normalizeScope(params.scope);
@@ -191,10 +196,17 @@ export class RankingsService {
           });
 
     const rows = snapshot.rows ?? [];
-    const total = rows.length;
+    const visibleRows = rows
+      .filter((row) => row.matchesPlayed >= this.rankingMinMatches)
+      .map((row, index) => ({
+        ...row,
+        position: index + 1,
+      }));
+
+    const total = visibleRows.length;
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
     const start = (page - 1) * limit;
-    const items = rows.slice(start, start + limit).map((row) => ({
+    const items = visibleRows.slice(start, start + limit).map((row) => ({
       position: row.position,
       userId: row.userId,
       displayName: row.displayName,
@@ -215,25 +227,42 @@ export class RankingsService {
       opponentAvgElo: row.opponentAvgElo,
     }));
 
-    const myRow = rows.find((row) => row.userId === params.userId);
-    const my = myRow
+    const mySnapshotRow = rows.find((row) => row.userId === params.userId);
+    const myCurrent = mySnapshotRow?.matchesPlayed ?? 0;
+    const myRemaining = Math.max(0, this.rankingMinMatches - myCurrent);
+    const myEligible = myRemaining === 0;
+    const myVisibleRow = visibleRows.find((row) => row.userId === params.userId);
+
+    const my = !myEligible
       ? {
-          position: myRow.position,
-          deltaPositions: myRow.delta ?? null,
-          movementType: myRow.movementType ?? 'NEW',
-          rating: myRow.rating,
-          elo: myRow.elo,
-          category: myRow.category,
-          categoryKey: myRow.categoryKey,
-          matchesPlayed: myRow.matchesPlayed,
-          wins: myRow.wins,
-          losses: myRow.losses,
-          draws: myRow.draws,
-          points: myRow.points,
-          setsDiff: myRow.setsDiff,
-          gamesDiff: myRow.gamesDiff,
+          position: null,
+          eligible: false,
+          required: this.rankingMinMatches,
+          current: myCurrent,
+          remaining: myRemaining,
         }
-      : null;
+      : myVisibleRow
+        ? {
+            position: myVisibleRow.position,
+            deltaPositions: myVisibleRow.delta ?? null,
+            movementType: myVisibleRow.movementType ?? 'NEW',
+            rating: myVisibleRow.rating,
+            elo: myVisibleRow.elo,
+            category: myVisibleRow.category,
+            categoryKey: myVisibleRow.categoryKey,
+            matchesPlayed: myVisibleRow.matchesPlayed,
+            wins: myVisibleRow.wins,
+            losses: myVisibleRow.losses,
+            draws: myVisibleRow.draws,
+            points: myVisibleRow.points,
+            setsDiff: myVisibleRow.setsDiff,
+            gamesDiff: myVisibleRow.gamesDiff,
+            eligible: true,
+            required: this.rankingMinMatches,
+            current: myCurrent,
+            remaining: 0,
+          }
+        : null;
 
     return {
       items,
@@ -805,6 +834,13 @@ export class RankingsService {
     if (value === RankingScope.PROVINCE) return RankingScope.PROVINCE;
     if (value === RankingScope.CITY) return RankingScope.CITY;
     throw new BadRequestException(INVALID_SCOPE_ERROR);
+  }
+
+  private resolveMinMatches(): number {
+    const configured = this.config.get<number>('ranking.minMatches', 4);
+    const numeric = Number(configured);
+    if (!Number.isFinite(numeric)) return 4;
+    return Math.max(1, Math.trunc(numeric));
   }
 
   private normalizeTimeframe(timeframe?: string): RankingTimeframe {

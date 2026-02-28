@@ -52,6 +52,11 @@ export const envSchema = z.object({
     .preprocess((val) => Number(val), z.number())
     .default(48),
 
+  // Rankings
+  RANKING_MIN_MATCHES: z
+    .preprocess((val) => Number(val), z.number().int().min(1))
+    .default(4),
+
   // Application environment (for multi-env routing)
   APP_ENV: z.enum(['staging', 'production']).default('staging'),
 

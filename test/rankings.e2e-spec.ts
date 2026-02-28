@@ -159,6 +159,47 @@ describe('Rankings (e2e)', () => {
     );
   });
 
+  it('GET /rankings returns my eligibility block when below minimum matches', async () => {
+    rankingsService.getLeaderboard!.mockResolvedValue({
+      items: [],
+      meta: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        totalPages: 0,
+        scope: 'COUNTRY',
+        provinceCode: null,
+        cityId: null,
+        category: 'all',
+        timeframe: 'CURRENT_SEASON',
+        mode: 'COMPETITIVE',
+        asOfDate: '2026-02-28',
+        computedAt: '2026-02-28T10:00:00.000Z',
+      },
+      my: {
+        position: null,
+        eligible: false,
+        required: 4,
+        current: 2,
+        remaining: 2,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/rankings?scope=COUNTRY&mode=COMPETITIVE')
+      .expect(200);
+
+    expect(res.body.my).toEqual(
+      expect.objectContaining({
+        position: null,
+        eligible: false,
+        required: 4,
+        current: 2,
+        remaining: 2,
+      }),
+    );
+  });
+
   it('GET /rankings/scopes returns scope contract keys', async () => {
     rankingsService.getAvailableScopes!.mockResolvedValue({
       items: [

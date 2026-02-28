@@ -89,4 +89,37 @@ describe('Me Insights (e2e)', () => {
       }),
     );
   });
+
+  it('GET /me/insights returns neededForRanking when below minimum matches', async () => {
+    insightsService.getMyInsights?.mockResolvedValue({
+      timeframe: 'CURRENT_SEASON',
+      mode: 'COMPETITIVE',
+      matchesPlayed: 2,
+      wins: 1,
+      losses: 1,
+      winRate: 0.5,
+      eloDelta: 10,
+      currentStreak: 1,
+      bestStreak: 1,
+      lastPlayedAt: '2026-02-27T10:00:00.000Z',
+      mostPlayedOpponent: { name: 'Rival', matches: 1 },
+      neededForRanking: {
+        required: 4,
+        current: 2,
+        remaining: 2,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/me/insights?timeframe=CURRENT_SEASON&mode=COMPETITIVE')
+      .expect(200);
+
+    expect(res.body.neededForRanking).toEqual(
+      expect.objectContaining({
+        required: 4,
+        current: 2,
+        remaining: 2,
+      }),
+    );
+  });
 });
