@@ -29,7 +29,8 @@ All endpoints require JWT auth.
 
 - `scope` (optional): `COUNTRY` | `PROVINCE` | `CITY` (default: `COUNTRY`)
 - `provinceCode` (required when `scope=PROVINCE`): `AR-S`, `S`, etc.
-- `cityId` (required when `scope=CITY`): UUID
+- `cityId` (preferred when `scope=CITY`): UUID
+- `cityName` (fallback when `scope=CITY` and `cityId` missing): text city name; matched case-insensitively after trim + space collapse, together with `provinceCode`
 - `category` (optional): `7ma`, `6ta`, `all`, etc. (default: `all`)
 - `timeframe` (optional): `CURRENT_SEASON` | `LAST_90D` (default: `CURRENT_SEASON`)
 - `mode` (optional): `COMPETITIVE` | `FRIENDLY` | `ALL` (default: `COMPETITIVE`)
@@ -251,7 +252,7 @@ All endpoints require JWT auth.
 
 - `INVALID_SCOPE`: `scope` is not `COUNTRY|PROVINCE|CITY`.
 - `PROVINCE_REQUIRED`: `scope=PROVINCE` with missing/invalid `provinceCode`.
-- `CITY_REQUIRED`: `scope=CITY` with missing/invalid `cityId`.
+- `CITY_REQUIRED`: `scope=CITY` with missing/invalid location filter (`cityId` or `cityName + provinceCode`).
 - `INVALID_TIMEFRAME`: timeframe outside `CURRENT_SEASON|LAST_90D`.
 - `INVALID_MODE`: mode outside `COMPETITIVE|FRIENDLY|ALL`.
 

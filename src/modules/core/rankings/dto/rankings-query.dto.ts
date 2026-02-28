@@ -35,6 +35,14 @@ export class RankingsQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(120)
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  cityName?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(24)
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
@@ -75,4 +83,3 @@ export class RankingsQueryDto {
   @Max(200)
   limit?: number;
 }
-

@@ -12,6 +12,7 @@ import { MatchType } from '../../matches/enums/match-type.enum';
 import { City } from '../../geo/entities/city.entity';
 import { Province } from '../../geo/entities/province.entity';
 import { User } from '../../users/entities/user.entity';
+import { PlayerProfile } from '../../players/entities/player-profile.entity';
 import { UserNotification } from '../../notifications/entities/user-notification.entity';
 import { UserNotificationType } from '../../notifications/enums/user-notification-type.enum';
 import {
@@ -36,7 +37,7 @@ const PROVINCE_REQUIRED_ERROR = {
 const CITY_REQUIRED_ERROR = {
   statusCode: 400,
   code: 'CITY_REQUIRED',
-  message: 'cityId is required for CITY scope',
+  message: 'cityId or cityName + provinceCode is required for CITY scope',
 };
 
 const INVALID_SCOPE_ERROR = {
@@ -50,6 +51,7 @@ type ScopeResolution = {
   provinceCode: string | null;
   provinceCodeIso: string | null;
   cityId: string | null;
+  cityNameNormalized: string | null;
   dimensionKey: string;
 };
 
@@ -58,6 +60,7 @@ type LeaderboardParams = {
   scope?: string;
   provinceCode?: string;
   cityId?: string;
+  cityName?: string;
   category?: string;
   timeframe?: string;
   mode?: string;
@@ -104,6 +107,7 @@ type ParticipantContext = {
   userId: string;
   displayName: string;
   cityId: string | null;
+  cityNameNormalized: string | null;
   provinceCode: string | null;
   elo: number | null;
   category: number | null;
@@ -143,6 +147,8 @@ export class RankingsService {
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(PlayerProfile)
+    private readonly playerProfileRepo: Repository<PlayerProfile>,
     @InjectRepository(City)
     private readonly cityRepo: Repository<City>,
     @InjectRepository(Province)
@@ -160,6 +166,7 @@ export class RankingsService {
       scope,
       provinceCode: params.provinceCode,
       cityId: params.cityId,
+      cityName: params.cityName,
     });
 
     const { categoryKey, categoryNumber } = normalizeCategoryFilter(
@@ -547,6 +554,20 @@ export class RankingsService {
       where: { id: In([...participantIds]) },
       relations: ['city', 'city.province', 'competitiveProfile'],
     });
+    const playerProfiles = await this.playerProfileRepo.find({
+      where: { userId: In([...participantIds]) },
+      select: ['userId', 'location'],
+    });
+    const profileLocationByUserId = new Map<
+      string,
+      { cityNameNormalized: string | null; provinceCode: string | null }
+    >();
+    for (const profile of playerProfiles) {
+      profileLocationByUserId.set(
+        profile.userId,
+        this.normalizePlayerProfileLocation(profile.location),
+      );
+    }
 
     const participantByUserId = new Map<string, ParticipantContext>();
     for (const user of users) {
@@ -555,12 +576,19 @@ export class RankingsService {
           ? user.competitiveProfile.elo
           : null;
       const category = typeof elo === 'number' ? categoryFromElo(elo) : null;
+      const profileLocation = profileLocationByUserId.get(user.id);
+      const provinceCodeFromCity = this.normalizeProvinceCode(
+        user.city?.province?.code ?? null,
+      );
+      const cityNameFromCity = this.normalizeCityName(user.city?.name ?? null);
 
       participantByUserId.set(user.id, {
         userId: user.id,
         displayName: user.displayName ?? user.email.split('@')[0],
         cityId: user.cityId ?? null,
-        provinceCode: this.normalizeProvinceCode(user.city?.province?.code ?? null),
+        cityNameNormalized:
+          cityNameFromCity ?? profileLocation?.cityNameNormalized ?? null,
+        provinceCode: provinceCodeFromCity ?? profileLocation?.provinceCode ?? null,
         elo,
         category,
       });
@@ -735,10 +763,20 @@ export class RankingsService {
         user.provinceCode === resolution.provinceCode
       );
     }
+    if (resolution.cityId) {
+      return (
+        typeof user.cityId === 'string' &&
+        typeof resolution.cityId === 'string' &&
+        user.cityId === resolution.cityId
+      );
+    }
     return (
-      typeof user.cityId === 'string' &&
-      typeof resolution.cityId === 'string' &&
-      user.cityId === resolution.cityId
+      typeof user.provinceCode === 'string' &&
+      typeof resolution.provinceCode === 'string' &&
+      user.provinceCode === resolution.provinceCode &&
+      typeof user.cityNameNormalized === 'string' &&
+      typeof resolution.cityNameNormalized === 'string' &&
+      user.cityNameNormalized === resolution.cityNameNormalized
     );
   }
 
@@ -761,6 +799,7 @@ export class RankingsService {
     scope: RankingScope;
     provinceCode?: string;
     cityId?: string;
+    cityName?: string;
   }): Promise<ScopeResolution> {
     if (params.scope === RankingScope.COUNTRY) {
       return {
@@ -768,6 +807,7 @@ export class RankingsService {
         provinceCode: null,
         provinceCodeIso: null,
         cityId: null,
+        cityNameNormalized: null,
         dimensionKey: 'COUNTRY',
       };
     }
@@ -797,34 +837,63 @@ export class RankingsService {
         provinceCode: normalizedProvinceCode,
         provinceCodeIso: this.toIsoProvinceCode(normalizedProvinceCode),
         cityId: null,
+        cityNameNormalized: null,
         dimensionKey: `PROVINCE|${normalizedProvinceCode}`,
       };
     }
 
     const cityId = (params.cityId ?? '').trim();
-    if (!cityId) {
+    if (cityId) {
+      const city = await this.cityRepo.findOne({
+        where: { id: cityId },
+        relations: ['province'],
+      });
+
+      if (!city) {
+        throw new BadRequestException({
+          ...CITY_REQUIRED_ERROR,
+          message: 'cityId is invalid',
+        });
+      }
+
+      const provinceCode = this.normalizeProvinceCode(city.province?.code ?? null);
+      return {
+        scope: RankingScope.CITY,
+        provinceCode,
+        provinceCodeIso: provinceCode ? this.toIsoProvinceCode(provinceCode) : null,
+        cityId: city.id,
+        cityNameNormalized: this.normalizeCityName(city.name),
+        dimensionKey: `CITY|${city.id}`,
+      };
+    }
+
+    const cityNameNormalized = this.normalizeCityName(params.cityName);
+    const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
+    if (!cityNameNormalized || !normalizedProvinceCode) {
       throw new BadRequestException(CITY_REQUIRED_ERROR);
     }
 
-    const city = await this.cityRepo.findOne({
-      where: { id: cityId },
-      relations: ['province'],
-    });
+    const province = await this.provinceRepo
+      .createQueryBuilder('province')
+      .where('UPPER(TRIM(province.code)) = :code', {
+        code: normalizedProvinceCode,
+      })
+      .getOne();
 
-    if (!city) {
+    if (!province) {
       throw new BadRequestException({
         ...CITY_REQUIRED_ERROR,
-        message: 'cityId is invalid',
+        message: 'provinceCode is invalid for cityName fallback',
       });
     }
 
-    const provinceCode = this.normalizeProvinceCode(city.province?.code ?? null);
     return {
       scope: RankingScope.CITY,
-      provinceCode,
-      provinceCodeIso: provinceCode ? this.toIsoProvinceCode(provinceCode) : null,
-      cityId: city.id,
-      dimensionKey: `CITY|${city.id}`,
+      provinceCode: normalizedProvinceCode,
+      provinceCodeIso: this.toIsoProvinceCode(normalizedProvinceCode),
+      cityId: null,
+      cityNameNormalized,
+      dimensionKey: `CITY_NAME|${normalizedProvinceCode}|${cityNameNormalized}`,
     };
   }
 
@@ -877,6 +946,32 @@ export class RankingsService {
     const trimmed = code.trim().toUpperCase();
     if (!trimmed) return null;
     return trimmed.startsWith('AR-') ? trimmed.slice(3) : trimmed;
+  }
+
+  private normalizeCityName(value: string | null | undefined): string | null {
+    if (typeof value !== 'string') return null;
+    const collapsed = value.trim().replace(/\s+/g, ' ');
+    if (!collapsed) return null;
+    return collapsed.toLowerCase();
+  }
+
+  private normalizePlayerProfileLocation(location: unknown): {
+    cityNameNormalized: string | null;
+    provinceCode: string | null;
+  } {
+    if (!location || typeof location !== 'object') {
+      return { cityNameNormalized: null, provinceCode: null };
+    }
+
+    const candidate = location as {
+      city?: string | null;
+      province?: string | null;
+    };
+
+    return {
+      cityNameNormalized: this.normalizeCityName(candidate.city ?? null),
+      provinceCode: this.normalizeProvinceCode(candidate.province ?? null),
+    };
   }
 
   private toIsoProvinceCode(code: string): string {

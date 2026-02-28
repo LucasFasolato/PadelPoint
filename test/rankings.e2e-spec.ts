@@ -200,6 +200,42 @@ describe('Rankings (e2e)', () => {
     );
   });
 
+  it('GET /rankings accepts CITY scope with cityName + provinceCode fallback', async () => {
+    rankingsService.getLeaderboard!.mockResolvedValue({
+      items: [],
+      meta: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        totalPages: 0,
+        scope: 'CITY',
+        provinceCode: 'AR-S',
+        cityId: null,
+        category: 'all',
+        timeframe: 'CURRENT_SEASON',
+        mode: 'COMPETITIVE',
+        asOfDate: '2026-02-28',
+        computedAt: '2026-02-28T10:00:00.000Z',
+      },
+      my: null,
+    });
+
+    await request(app.getHttpServer())
+      .get(
+        '/rankings?scope=CITY&provinceCode=AR-S&cityName=%20Rosario%20%20Centro%20&mode=COMPETITIVE',
+      )
+      .expect(200);
+
+    expect(rankingsService.getLeaderboard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: FAKE_USER.userId,
+        scope: 'CITY',
+        provinceCode: 'AR-S',
+        cityName: 'Rosario  Centro',
+      }),
+    );
+  });
+
   it('GET /rankings/scopes returns scope contract keys', async () => {
     rankingsService.getAvailableScopes!.mockResolvedValue({
       items: [

@@ -44,6 +44,7 @@ export class RankingsController {
       scope: q.scope,
       provinceCode: q.provinceCode,
       cityId: q.cityId,
+      cityName: q.cityName,
       category: q.category,
       timeframe: q.timeframe,
       mode: q.mode,

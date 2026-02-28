@@ -31,6 +31,7 @@ describe('RankingsService', () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();
     const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
     const cityRepo = createRepoMock();
     const provinceRepo = createRepoMock();
     const userNotificationRepo = createRepoMock();
@@ -68,6 +69,7 @@ describe('RankingsService', () => {
       snapshotRepo,
       matchRepo,
       userRepo,
+      playerProfileRepo,
       cityRepo,
       provinceRepo,
       userNotificationRepo,
@@ -81,6 +83,7 @@ describe('RankingsService', () => {
         provinceCode: null,
         provinceCodeIso: null,
         cityId: null,
+        cityNameNormalized: null,
         dimensionKey: 'COUNTRY',
       });
     jest
@@ -130,6 +133,7 @@ describe('RankingsService', () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();
     const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
     const cityRepo = createRepoMock();
     const provinceRepo = createRepoMock();
     const userNotificationRepo = createRepoMock();
@@ -139,6 +143,7 @@ describe('RankingsService', () => {
       snapshotRepo,
       matchRepo,
       userRepo,
+      playerProfileRepo,
       cityRepo,
       provinceRepo,
       userNotificationRepo,
@@ -199,6 +204,7 @@ describe('RankingsService', () => {
         provinceCode: null,
         provinceCodeIso: null,
         cityId: null,
+        cityNameNormalized: null,
         dimensionKey: 'COUNTRY',
       });
     jest
@@ -224,5 +230,159 @@ describe('RankingsService', () => {
       current: 3,
       remaining: 1,
     });
+  });
+
+  it('resolves CITY scope via cityName + provinceCode fallback when cityId is missing', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: '  Rosario   Centro  ',
+      provinceCode: ' ar-s ',
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'S',
+      provinceCodeIso: 'AR-S',
+      cityId: null,
+      cityNameNormalized: 'rosario centro',
+      dimensionKey: 'CITY_NAME|S|rosario centro',
+    });
+    expect(cityRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it('prefers cityId over cityName fallback for CITY scope', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    cityRepo.findOne.mockResolvedValue({
+      id: 'city-1',
+      name: 'Rosario',
+      province: { code: 'S' },
+    });
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityId: 'city-1',
+      cityName: 'Ignored',
+      provinceCode: 'AR-X',
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'S',
+      provinceCodeIso: 'AR-S',
+      cityId: 'city-1',
+      cityNameNormalized: 'rosario',
+      dimensionKey: 'CITY|city-1',
+    });
+    expect(provinceRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('matches CITY scope fallback by normalized cityName + provinceCode', () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const belongs = (service as any).belongsToScope(
+      {
+        userId: 'u-1',
+        displayName: 'Player',
+        cityId: null,
+        cityNameNormalized: 'rosario centro',
+        provinceCode: 'S',
+        elo: null,
+        category: null,
+      },
+      {
+        scope: RankingScope.CITY,
+        provinceCode: 'S',
+        provinceCodeIso: 'AR-S',
+        cityId: null,
+        cityNameNormalized: 'rosario centro',
+        dimensionKey: 'CITY_NAME|S|rosario centro',
+      },
+    );
+
+    const notBelongs = (service as any).belongsToScope(
+      {
+        userId: 'u-1',
+        displayName: 'Player',
+        cityId: null,
+        cityNameNormalized: 'rosario centro',
+        provinceCode: 'X',
+        elo: null,
+        category: null,
+      },
+      {
+        scope: RankingScope.CITY,
+        provinceCode: 'S',
+        provinceCodeIso: 'AR-S',
+        cityId: null,
+        cityNameNormalized: 'rosario centro',
+        dimensionKey: 'CITY_NAME|S|rosario centro',
+      },
+    );
+
+    expect(belongs).toBe(true);
+    expect(notBelongs).toBe(false);
   });
 });

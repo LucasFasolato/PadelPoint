@@ -10,6 +10,7 @@ import { RankingsController } from './controllers/rankings.controller';
 import { RankingsService } from './services/rankings.service';
 import { RankingsSnapshotSchedulerService } from './services/rankings-snapshot-scheduler.service';
 import { UserNotification } from '../notifications/entities/user-notification.entity';
+import { PlayerProfile } from '../players/entities/player-profile.entity';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UserNotification } from '../notifications/entities/user-notification.en
       GlobalRankingSnapshot,
       MatchResult,
       User,
+      PlayerProfile,
       City,
       Province,
       UserNotification,
