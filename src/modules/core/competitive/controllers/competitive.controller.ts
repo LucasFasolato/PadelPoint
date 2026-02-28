@@ -133,6 +133,8 @@ export class CompetitiveController {
       mode: q.mode,
       scope: q.scope,
       limit: q.limit ?? 20,
+      category: q.category,
+      order: q.order,
     });
   }
 

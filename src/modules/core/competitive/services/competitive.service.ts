@@ -60,8 +60,10 @@ import { CITY_REQUIRED_ERROR } from '@common/guards/city-required.guard';
 import { MatchType } from '../../matches/enums/match-type.enum';
 import {
   DiscoverMode,
+  DiscoverOrder,
   DiscoverScope,
 } from '../dto/discover-candidates-query.dto';
+import { normalizeCategoryFilter } from '../../rankings/utils/ranking-computation.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -198,6 +200,8 @@ type DiscoverCandidatesParams = {
   mode?: DiscoverMode;
   scope?: DiscoverScope;
   limit?: number;
+  category?: string;
+  order?: DiscoverOrder;
 };
 
 type DiscoverCandidateItem = {
@@ -206,6 +210,7 @@ type DiscoverCandidateItem = {
   cityName?: string | null;
   provinceCode?: string | null;
   elo?: number | null;
+  categoryKey?: string | null;
   matchesPlayed30d?: number | null;
   lastActiveAt?: string | null;
 };
@@ -582,6 +587,8 @@ export class CompetitiveService {
   ): Promise<{ items: DiscoverCandidateItem[] }> {
     const mode = this.normalizeDiscoverMode(params.mode);
     const scope = this.normalizeDiscoverScope(params.scope);
+    const order = this.normalizeDiscoverOrder(params.order);
+    const category = this.normalizeDiscoverCategory(params.category);
     const limit = Math.max(1, Math.min(50, params.limit ?? 20));
 
     try {
@@ -617,6 +624,17 @@ export class CompetitiveService {
           scopeProvinceId,
         });
       }
+      if (typeof category === 'number') {
+        const { minInclusive, maxExclusive } = getEloRangeForCategory(category);
+        candidateQb.andWhere('profile.elo >= :categoryMinElo', {
+          categoryMinElo: minInclusive,
+        });
+        if (maxExclusive != null) {
+          candidateQb.andWhere('profile.elo < :categoryMaxElo', {
+            categoryMaxElo: maxExclusive,
+          });
+        }
+      }
 
       const rawCandidates = await candidateQb.take(candidateFetchLimit).getMany();
       if (rawCandidates.length === 0) return { items: [] };
@@ -642,6 +660,14 @@ export class CompetitiveService {
           const lastActiveAt = activity?.lastActiveAt
             ? activity.lastActiveAt.toISOString()
             : null;
+          const elo =
+            typeof candidate.competitiveProfile?.elo === 'number'
+              ? candidate.competitiveProfile.elo
+              : null;
+          const categoryKey =
+            typeof elo === 'number'
+              ? this.toDiscoverCategoryKey(categoryFromElo(elo))
+              : null;
           return {
             userId: candidate.id,
             displayName: this.getDiscoverDisplayName(
@@ -650,15 +676,15 @@ export class CompetitiveService {
             ),
             cityName: candidate.city?.name ?? null,
             provinceCode: candidate.city?.province?.code ?? null,
-            elo:
-              typeof candidate.competitiveProfile?.elo === 'number'
-                ? candidate.competitiveProfile.elo
-                : null,
+            elo,
+            categoryKey,
             matchesPlayed30d: activity?.matchesPlayed30d ?? 0,
             lastActiveAt,
           } satisfies DiscoverCandidateItem;
         })
-        .sort((a, b) => this.compareDiscoverCandidates(a, b, myElo))
+        .sort((a, b) =>
+          this.compareDiscoverCandidates(a, b, { myElo, order }),
+        )
         .slice(0, limit);
 
       return { items: ranked };
@@ -728,6 +754,26 @@ export class CompetitiveService {
   private normalizeDiscoverScope(scope?: DiscoverScope): DiscoverScope {
     if (scope === DiscoverScope.PROVINCE) return DiscoverScope.PROVINCE;
     return DiscoverScope.CITY;
+  }
+
+  private normalizeDiscoverOrder(order?: DiscoverOrder): DiscoverOrder {
+    if (order === DiscoverOrder.ELO_CLOSEST) return DiscoverOrder.ELO_CLOSEST;
+    return DiscoverOrder.MOST_ACTIVE;
+  }
+
+  private normalizeDiscoverCategory(categoryRaw?: string): number | null {
+    if (typeof categoryRaw !== 'string' || categoryRaw.trim().length === 0) {
+      return null;
+    }
+    const parsed = normalizeCategoryFilter(categoryRaw);
+    if (parsed.categoryKey === 'all') return null;
+    if (typeof parsed.categoryNumber === 'number') return parsed.categoryNumber;
+
+    const fallback = Number(categoryRaw);
+    if (Number.isInteger(fallback) && fallback >= 1 && fallback <= 8) {
+      return fallback;
+    }
+    return null;
   }
 
   private async getDiscoverBlockedUserIds(
@@ -852,26 +898,37 @@ export class CompetitiveService {
   private compareDiscoverCandidates(
     a: DiscoverCandidateItem,
     b: DiscoverCandidateItem,
-    myElo: number | null,
+    options: { myElo: number | null; order: DiscoverOrder },
   ): number {
     const aMatches = a.matchesPlayed30d ?? 0;
     const bMatches = b.matchesPlayed30d ?? 0;
-    const aRecent = aMatches > 0 ? 1 : 0;
-    const bRecent = bMatches > 0 ? 1 : 0;
 
-    if (aRecent !== bRecent) return bRecent - aRecent;
-    if (aMatches !== bMatches) return bMatches - aMatches;
-
-    if (typeof myElo === 'number') {
-      const aDiff =
-        typeof a.elo === 'number'
-          ? Math.abs(a.elo - myElo)
-          : Number.POSITIVE_INFINITY;
-      const bDiff =
-        typeof b.elo === 'number'
-          ? Math.abs(b.elo - myElo)
-          : Number.POSITIVE_INFINITY;
-      if (aDiff !== bDiff) return aDiff - bDiff;
+    if (options.order === DiscoverOrder.ELO_CLOSEST) {
+      if (typeof options.myElo === 'number') {
+        const aDiff =
+          typeof a.elo === 'number'
+            ? Math.abs(a.elo - options.myElo)
+            : Number.POSITIVE_INFINITY;
+        const bDiff =
+          typeof b.elo === 'number'
+            ? Math.abs(b.elo - options.myElo)
+            : Number.POSITIVE_INFINITY;
+        if (aDiff !== bDiff) return aDiff - bDiff;
+      }
+      if (aMatches !== bMatches) return bMatches - aMatches;
+    } else {
+      if (aMatches !== bMatches) return bMatches - aMatches;
+      if (typeof options.myElo === 'number') {
+        const aDiff =
+          typeof a.elo === 'number'
+            ? Math.abs(a.elo - options.myElo)
+            : Number.POSITIVE_INFINITY;
+        const bDiff =
+          typeof b.elo === 'number'
+            ? Math.abs(b.elo - options.myElo)
+            : Number.POSITIVE_INFINITY;
+        if (aDiff !== bDiff) return aDiff - bDiff;
+      }
     }
 
     const aLast = this.parseDateSafe(a.lastActiveAt ?? null)?.getTime() ?? 0;
@@ -879,6 +936,17 @@ export class CompetitiveService {
     if (aLast !== bLast) return bLast - aLast;
 
     return a.userId.localeCompare(b.userId);
+  }
+
+  private toDiscoverCategoryKey(category: number): string {
+    if (category === 1) return '1ra';
+    if (category === 2) return '2da';
+    if (category === 3) return '3ra';
+    if (category === 4) return '4ta';
+    if (category === 5) return '5ta';
+    if (category === 6) return '6ta';
+    if (category === 7) return '7ma';
+    return '8va';
   }
 
   private async findSuggestionsCore(

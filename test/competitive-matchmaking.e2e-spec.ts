@@ -299,6 +299,7 @@ describe('Competitive Matchmaking (e2e)', () => {
             cityName: 'Cordoba',
             provinceCode: 'X',
             elo: 1230,
+            categoryKey: '7ma',
             matchesPlayed30d: 4,
             lastActiveAt: '2026-02-27T10:00:00.000Z',
           },
@@ -306,7 +307,9 @@ describe('Competitive Matchmaking (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer())
-        .get('/competitive/discover/candidates?mode=COMPETITIVE&scope=CITY&limit=20')
+        .get(
+          '/competitive/discover/candidates?mode=COMPETITIVE&scope=CITY&limit=20&category=7ma&order=MOST_ACTIVE',
+        )
         .expect(200);
 
       expect(res.body).toEqual({
@@ -324,6 +327,8 @@ describe('Competitive Matchmaking (e2e)', () => {
           mode: 'COMPETITIVE',
           scope: 'CITY',
           limit: 20,
+          category: '7ma',
+          order: 'MOST_ACTIVE',
         }),
       );
     });
@@ -331,6 +336,12 @@ describe('Competitive Matchmaking (e2e)', () => {
     it('rejects invalid limit with 400', async () => {
       await request(app.getHttpServer())
         .get('/competitive/discover/candidates?limit=51')
+        .expect(400);
+    });
+
+    it('rejects invalid order with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/competitive/discover/candidates?order=RANDOM')
         .expect(400);
     });
   });

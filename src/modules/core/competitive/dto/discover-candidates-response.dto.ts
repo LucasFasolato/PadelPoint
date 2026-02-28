@@ -17,6 +17,9 @@ export class DiscoverCandidateItemDto {
   elo?: number | null;
 
   @ApiPropertyOptional({ nullable: true })
+  categoryKey?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   matchesPlayed30d?: number | null;
 
   @ApiPropertyOptional({ nullable: true })

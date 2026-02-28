@@ -12,6 +12,11 @@ export enum DiscoverScope {
   PROVINCE = 'PROVINCE',
 }
 
+export enum DiscoverOrder {
+  ELO_CLOSEST = 'ELO_CLOSEST',
+  MOST_ACTIVE = 'MOST_ACTIVE',
+}
+
 export class DiscoverCandidatesQueryDto {
   @ApiPropertyOptional({
     enum: DiscoverMode,
@@ -42,4 +47,24 @@ export class DiscoverCandidatesQueryDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional category filter (examples: 7, 7ma, 6ta)',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  category?: string;
+
+  @ApiPropertyOptional({
+    enum: DiscoverOrder,
+    default: DiscoverOrder.MOST_ACTIVE,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsEnum(DiscoverOrder)
+  order?: DiscoverOrder;
 }
