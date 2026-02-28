@@ -26,7 +26,12 @@ Returns a compact summary for the authenticated user based on confirmed matches 
   "matchesPlayed": 8,
   "wins": 5,
   "losses": 3,
+  "draws": 0,
   "winRate": 0.625,
+  "streak": {
+    "type": "WIN",
+    "count": 2
+  },
   "eloDelta": 24,
   "currentStreak": 2,
   "bestStreak": 4,
@@ -46,9 +51,11 @@ Returns a compact summary for the authenticated user based on confirmed matches 
 ### Rules
 
 - Uses only `CONFIRMED` matches.
+- `CURRENT_SEASON` is deterministic: current calendar year-to-date in UTC (`YYYY-01-01T00:00:00.000Z` through now end-of-day UTC).
 - For `mode=COMPETITIVE`, uses the same competitive ranking criteria (`matchType=COMPETITIVE` and `impactRanking=true`).
 - Empty datasets return `200` with zeroed counters and nullable optional fields.
 - If ELO history is unavailable or absent, `eloDelta` is `0`.
+- Malformed rows (`null`/invalid `playedAt`, missing ids, inconsistent participants) are ignored safely.
 - Minimum matches requirement comes from `RANKING_MIN_MATCHES` (default `4`).
 - `neededForRanking` is:
   - `{ required, current, remaining }` when `remaining > 0`

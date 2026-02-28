@@ -62,7 +62,9 @@ describe('Me Insights (e2e)', () => {
       matchesPlayed: 4,
       wins: 3,
       losses: 1,
+      draws: 0,
       winRate: 0.75,
+      streak: { type: 'WIN', count: 2 },
       eloDelta: 25,
       currentStreak: 2,
       bestStreak: 3,
@@ -82,7 +84,9 @@ describe('Me Insights (e2e)', () => {
         matchesPlayed: expect.any(Number),
         wins: expect.any(Number),
         losses: expect.any(Number),
+        draws: expect.any(Number),
         winRate: expect.any(Number),
+        streak: expect.anything(),
         eloDelta: expect.any(Number),
         currentStreak: expect.any(Number),
         bestStreak: expect.any(Number),
@@ -97,7 +101,9 @@ describe('Me Insights (e2e)', () => {
       matchesPlayed: 2,
       wins: 1,
       losses: 1,
+      draws: 0,
       winRate: 0.5,
+      streak: { type: 'WIN', count: 1 },
       eloDelta: 10,
       currentStreak: 1,
       bestStreak: 1,
@@ -121,5 +127,53 @@ describe('Me Insights (e2e)', () => {
         remaining: 2,
       }),
     );
+  });
+
+  it('GET /me/insights CURRENT_SEASON returns safe empty payload for user with no data', async () => {
+    insightsService.getMyInsights?.mockResolvedValue({
+      timeframe: 'CURRENT_SEASON',
+      mode: 'ALL',
+      matchesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      winRate: 0,
+      streak: null,
+      eloDelta: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      lastPlayedAt: null,
+      mostPlayedOpponent: null,
+      neededForRanking: {
+        required: 4,
+        current: 0,
+        remaining: 4,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/me/insights?timeframe=CURRENT_SEASON&mode=ALL')
+      .expect(200);
+
+    expect(res.body).toEqual({
+      timeframe: 'CURRENT_SEASON',
+      mode: 'ALL',
+      matchesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      winRate: 0,
+      streak: null,
+      eloDelta: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      lastPlayedAt: null,
+      mostPlayedOpponent: null,
+      neededForRanking: {
+        required: 4,
+        current: 0,
+        remaining: 4,
+      },
+    });
   });
 });

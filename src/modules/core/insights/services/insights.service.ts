@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import {
   MatchResult,
@@ -14,13 +15,20 @@ import {
 } from '@core/competitive/entities/elo-history.entity';
 import { InsightsMode, InsightsTimeframe } from '../dto/insights-query.dto';
 
+type InsightsStreak = {
+  type: 'WIN' | 'LOSS' | 'DRAW';
+  count: number;
+};
+
 type InsightsResponse = {
   timeframe: string;
   mode: string;
   matchesPlayed: number;
   wins: number;
   losses: number;
+  draws: number;
   winRate: number;
+  streak: InsightsStreak | null;
   eloDelta: number;
   currentStreak: number;
   bestStreak: number;
@@ -33,6 +41,12 @@ type OpponentCounter = {
   id: string;
   name: string;
   matches: number;
+};
+
+type ProcessableMatch = {
+  id: string;
+  playedAt: Date;
+  match: MatchResult;
 };
 
 @Injectable()
@@ -57,86 +71,122 @@ export class InsightsService {
   }): Promise<InsightsResponse> {
     const timeframe = params.timeframe ?? InsightsTimeframe.CURRENT_SEASON;
     const mode = params.mode ?? InsightsMode.ALL;
-    const window = this.resolveTimeframeWindow(timeframe, new Date());
-
-    const matches = await this.loadConfirmedMatches(
-      params.userId,
-      window.start,
-      window.end,
-      mode,
-    );
-    const neededForRanking = this.resolveNeededForRanking(matches.length);
-
-    if (matches.length === 0) {
-      return this.emptyResponse(timeframe, mode, neededForRanking);
-    }
-
-    const sorted = [...matches].sort((a, b) => {
-      const aPlayed = this.toTimestamp(a.playedAt);
-      const bPlayed = this.toTimestamp(b.playedAt);
-      if (aPlayed !== bPlayed) return aPlayed - bPlayed;
-      return a.id.localeCompare(b.id);
-    });
-
-    let wins = 0;
-    let losses = 0;
-    let runningWinStreak = 0;
-    let bestStreak = 0;
-
-    const opponentCounters = new Map<string, OpponentCounter>();
-
-    for (const match of sorted) {
-      const outcome = this.resolveOutcome(match, params.userId);
-      if (outcome === 'WIN') {
-        wins += 1;
-        runningWinStreak += 1;
-        if (runningWinStreak > bestStreak) {
-          bestStreak = runningWinStreak;
-        }
-      } else if (outcome === 'LOSS') {
-        losses += 1;
-        runningWinStreak = 0;
-      }
-
-      const opponents = this.resolveOpponents(match, params.userId);
-      for (const opponent of opponents) {
-        if (!opponent.id) continue;
-        const current = opponentCounters.get(opponent.id);
-        if (current) {
-          current.matches += 1;
-          continue;
-        }
-        opponentCounters.set(opponent.id, {
-          id: opponent.id,
-          name: this.resolveDisplayName(opponent.displayName, opponent.email),
-          matches: 1,
-        });
-      }
-    }
-
-    const matchesPlayed = sorted.length;
-    const winRate = matchesPlayed > 0 ? wins / matchesPlayed : 0;
-    const lastPlayedAt = sorted[sorted.length - 1]?.playedAt?.toISOString() ?? null;
-    const mostPlayedOpponent = this.resolveMostPlayedOpponent(opponentCounters);
-    const eloDelta = await this.loadEloDelta(
-      params.userId,
-      sorted.map((match) => match.id),
-    );
-
-    return {
+    const fallbackResponse = this.emptyResponse(
       timeframe,
       mode,
-      matchesPlayed,
-      wins,
-      losses,
-      winRate,
-      eloDelta,
-      currentStreak: runningWinStreak,
-      bestStreak,
-      lastPlayedAt,
-      mostPlayedOpponent,
-      neededForRanking,
-    };
+      this.resolveNeededForRanking(0),
+    );
+
+    try {
+      const window = this.resolveTimeframeWindow(timeframe, new Date());
+      const matches = await this.loadConfirmedMatches(
+        params.userId,
+        window.start,
+        window.end,
+        mode,
+      );
+      const processableMatches = this.toProcessableMatches(matches, params.userId);
+      const neededForRanking = this.resolveNeededForRanking(
+        processableMatches.length,
+      );
+
+      if (processableMatches.length === 0) {
+        return this.emptyResponse(timeframe, mode, neededForRanking);
+      }
+
+      const sorted = [...processableMatches].sort((a, b) => {
+        const aPlayed = this.toTimestamp(a.playedAt);
+        const bPlayed = this.toTimestamp(b.playedAt);
+        if (aPlayed !== bPlayed) return aPlayed - bPlayed;
+        return a.id.localeCompare(b.id);
+      });
+
+      let wins = 0;
+      let losses = 0;
+      let draws = 0;
+      let runningWinStreak = 0;
+      let bestStreak = 0;
+      let streakType: InsightsStreak['type'] | null = null;
+      let streakCount = 0;
+
+      const opponentCounters = new Map<string, OpponentCounter>();
+
+      for (const row of sorted) {
+        const outcome = this.resolveOutcome(row.match, params.userId) ?? 'DRAW';
+        if (outcome === 'WIN') {
+          wins += 1;
+          runningWinStreak += 1;
+          if (runningWinStreak > bestStreak) {
+            bestStreak = runningWinStreak;
+          }
+        } else if (outcome === 'LOSS') {
+          losses += 1;
+          runningWinStreak = 0;
+        } else {
+          draws += 1;
+          runningWinStreak = 0;
+        }
+
+        if (streakType === outcome) {
+          streakCount += 1;
+        } else {
+          streakType = outcome;
+          streakCount = 1;
+        }
+
+        const opponents = this.resolveOpponents(row.match, params.userId);
+        for (const opponent of opponents) {
+          if (!opponent.id) continue;
+          const current = opponentCounters.get(opponent.id);
+          if (current) {
+            current.matches += 1;
+            continue;
+          }
+          opponentCounters.set(opponent.id, {
+            id: opponent.id,
+            name: this.resolveDisplayName(opponent.displayName, opponent.email),
+            matches: 1,
+          });
+        }
+      }
+
+      const matchesPlayed = sorted.length;
+      const winRate = matchesPlayed > 0 ? wins / matchesPlayed : 0;
+      const lastPlayedAt = sorted[sorted.length - 1]?.playedAt?.toISOString() ?? null;
+      const mostPlayedOpponent = this.resolveMostPlayedOpponent(opponentCounters);
+      const eloDelta = await this.loadEloDelta(
+        params.userId,
+        sorted.map((match) => match.id),
+      );
+
+      return {
+        timeframe,
+        mode,
+        matchesPlayed,
+        wins,
+        losses,
+        draws,
+        winRate,
+        streak:
+          streakType && streakCount > 0
+            ? { type: streakType, count: streakCount }
+            : null,
+        eloDelta,
+        currentStreak: runningWinStreak,
+        bestStreak,
+        lastPlayedAt,
+        mostPlayedOpponent,
+        neededForRanking,
+      };
+    } catch (err) {
+      const errorId = randomUUID();
+      const reason = err instanceof Error ? err.message : 'unknown_error';
+      this.logger.error(
+        `getMyInsights failed errorId=${errorId} userId=${params.userId} timeframe=${timeframe} mode=${mode} reason=${reason}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      return fallbackResponse;
+    }
   }
 
   private async loadConfirmedMatches(
@@ -204,7 +254,7 @@ export class InsightsService {
   private resolveOutcome(
     match: MatchResult,
     userId: string,
-  ): 'WIN' | 'LOSS' | null {
+  ): 'WIN' | 'LOSS' | 'DRAW' | null {
     const challenge = match.challenge;
     if (!challenge) return null;
     const inTeamA =
@@ -219,7 +269,7 @@ export class InsightsService {
     if (match.winnerTeam === WinnerTeam.B) {
       return inTeamB ? 'WIN' : 'LOSS';
     }
-    return null;
+    return 'DRAW';
   }
 
   private resolveOpponents(
@@ -290,14 +340,75 @@ export class InsightsService {
       return { start, end };
     }
 
+    // CURRENT_SEASON is defined as current calendar year-to-date (UTC).
     const start = new Date(Date.UTC(end.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
     return { start, end };
   }
 
-  private toTimestamp(date: Date | null): number {
-    if (!date) return 0;
+  private toTimestamp(date: Date): number {
     const value = date.getTime();
     return Number.isNaN(value) ? 0 : value;
+  }
+
+  private toProcessableMatches(
+    matches: MatchResult[],
+    userId: string,
+  ): ProcessableMatch[] {
+    if (!Array.isArray(matches)) return [];
+
+    const processable: ProcessableMatch[] = [];
+    let skippedMalformed = 0;
+
+    for (const match of matches) {
+      const id = this.resolveNonEmptyString(match?.id);
+      const playedAt = this.resolveDate(match?.playedAt);
+      const hasUserInChallenge = this.isUserInChallenge(match?.challenge, userId);
+
+      if (!id || !playedAt || !hasUserInChallenge) {
+        skippedMalformed += 1;
+        continue;
+      }
+
+      processable.push({ id, playedAt, match });
+    }
+
+    if (skippedMalformed > 0) {
+      this.logger.warn(
+        `Skipping malformed insights rows: userId=${userId} skipped=${skippedMalformed}`,
+      );
+    }
+
+    return processable;
+  }
+
+  private resolveNonEmptyString(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private resolveDate(value: unknown): Date | null {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  }
+
+  private isUserInChallenge(
+    challenge: MatchResult['challenge'] | null | undefined,
+    userId: string,
+  ): boolean {
+    if (!challenge) return false;
+    return (
+      challenge.teamA1Id === userId ||
+      challenge.teamA2Id === userId ||
+      challenge.teamB1Id === userId ||
+      challenge.teamB2Id === userId
+    );
   }
 
   private emptyResponse(
@@ -311,7 +422,9 @@ export class InsightsService {
       matchesPlayed: 0,
       wins: 0,
       losses: 0,
+      draws: 0,
       winRate: 0,
+      streak: null,
       eloDelta: 0,
       currentStreak: 0,
       bestStreak: 0,

@@ -102,7 +102,9 @@ describe('InsightsService', () => {
       matchesPlayed: 2,
       wins: 1,
       losses: 1,
+      draws: 0,
       winRate: 0.5,
+      streak: { type: 'LOSS', count: 1 },
       eloDelta: 18,
       currentStreak: 0,
       bestStreak: 1,
@@ -141,7 +143,9 @@ describe('InsightsService', () => {
       matchesPlayed: 0,
       wins: 0,
       losses: 0,
+      draws: 0,
       winRate: 0,
+      streak: null,
       eloDelta: 0,
       currentStreak: 0,
       bestStreak: 0,
@@ -200,5 +204,109 @@ describe('InsightsService', () => {
     });
 
     expect(result.eloDelta).toBe(0);
+  });
+
+  it('returns safe zeroed payload when aggregation query fails', async () => {
+    const matchQb = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockRejectedValue(new Error('db offline')),
+    };
+    matchRepo.createQueryBuilder.mockReturnValue(matchQb as any);
+
+    const result = await service.getMyInsights({
+      userId: USER_ID,
+      timeframe: InsightsTimeframe.CURRENT_SEASON,
+      mode: InsightsMode.ALL,
+    });
+
+    expect(result).toEqual({
+      timeframe: 'CURRENT_SEASON',
+      mode: 'ALL',
+      matchesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      winRate: 0,
+      streak: null,
+      eloDelta: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      lastPlayedAt: null,
+      mostPlayedOpponent: null,
+      neededForRanking: {
+        required: 4,
+        current: 0,
+        remaining: 4,
+      },
+    });
+  });
+
+  it('skips malformed rows and still returns 200-safe empty summary', async () => {
+    const matchQb = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([
+        {
+          id: 'm-1',
+          playedAt: null,
+          winnerTeam: WinnerTeam.A,
+          challenge: {
+            teamA1Id: USER_ID,
+            teamA2Id: null,
+            teamB1Id: 'opp-1',
+            teamB2Id: null,
+          },
+        },
+        {
+          id: '',
+          playedAt: new Date('2026-01-05T12:00:00.000Z'),
+          winnerTeam: WinnerTeam.B,
+          challenge: {
+            teamA1Id: USER_ID,
+            teamA2Id: null,
+            teamB1Id: 'opp-1',
+            teamB2Id: null,
+          },
+        },
+      ]),
+    };
+    matchRepo.createQueryBuilder.mockReturnValue(matchQb as any);
+
+    const result = await service.getMyInsights({
+      userId: USER_ID,
+      timeframe: InsightsTimeframe.CURRENT_SEASON,
+      mode: InsightsMode.ALL,
+    });
+
+    expect(result.matchesPlayed).toBe(0);
+    expect(result.draws).toBe(0);
+    expect(result.streak).toBeNull();
+  });
+
+  it('defines CURRENT_SEASON as calendar year-to-date in UTC', () => {
+    const now = new Date('2026-08-15T10:20:30.456Z');
+    const window = (service as any).resolveTimeframeWindow(
+      InsightsTimeframe.CURRENT_SEASON,
+      now,
+    );
+
+    expect(window.start.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(window.end.toISOString()).toBe('2026-08-15T23:59:59.999Z');
+  });
+
+  it('calculates LAST_30D window as inclusive trailing 30 days in UTC', () => {
+    const now = new Date('2026-08-15T10:20:30.456Z');
+    const window = (service as any).resolveTimeframeWindow(
+      InsightsTimeframe.LAST_30D,
+      now,
+    );
+
+    expect(window.start.toISOString()).toBe('2026-07-17T00:00:00.000Z');
+    expect(window.end.toISOString()).toBe('2026-08-15T23:59:59.999Z');
   });
 });
