@@ -8,9 +8,14 @@ export class HealthController {
   @Get()
   health() {
     const email = this.notificationService.getEmailStatus();
+    const sha =
+      process.env.GIT_SHA ?? process.env.COMMIT_SHA ?? 'unknown';
+    const env = process.env.NODE_ENV ?? 'development';
 
     return {
       status: 'ok',
+      sha,
+      env,
       timestamp: new Date().toISOString(),
       services: {
         email: {

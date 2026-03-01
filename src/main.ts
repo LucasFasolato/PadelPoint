@@ -1,15 +1,22 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { setupOpenApi } from '@/openapi/openapi';
 import { OriginCsrfGuard } from '@/common/guards/origin-csrf.guard';
 
+const bootLogger = new Logger('Bootstrap');
+
 function normalizeOrigin(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
 async function bootstrap() {
+  const gitSha =
+    process.env.GIT_SHA ?? process.env.COMMIT_SHA ?? 'unknown';
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  bootLogger.log(`Starting PadelPoint backend sha=${gitSha} env=${nodeEnv}`);
+
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());

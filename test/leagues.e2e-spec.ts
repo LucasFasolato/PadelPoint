@@ -7,6 +7,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { LeaguesController } from '@core/leagues/controllers/leagues.controller';
@@ -1089,6 +1090,30 @@ describe('Leagues (e2e)', () => {
       expect(res.body).toEqual({ items: [] });
       expect(leaguesService.listMyLeagues).toHaveBeenCalledWith(
         FAKE_CREATOR.userId,
+      );
+    });
+
+    it('should return LEAGUES_UNAVAILABLE code (never raw 500) when service fails', async () => {
+      const testErrorId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      leaguesService.listMyLeagues.mockRejectedValue(
+        new InternalServerErrorException({
+          statusCode: 500,
+          code: 'LEAGUES_UNAVAILABLE',
+          message: 'Unable to load leagues at the moment. Please try again.',
+          errorId: testErrorId,
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues')
+        .expect(500);
+
+      // NestJS default filter serialises HttpException body directly onto res.body
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          code: 'LEAGUES_UNAVAILABLE',
+          errorId: testErrorId,
+        }),
       );
     });
   });
