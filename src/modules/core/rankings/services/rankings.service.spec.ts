@@ -276,6 +276,56 @@ describe('RankingsService', () => {
     expect(cityRepo.findOne).not.toHaveBeenCalled();
   });
 
+  it('accepts lowercase city scope with cityName + provinceCode fallback', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    jest.spyOn(service as any, 'getLatestSnapshot').mockResolvedValue({
+      asOfDate: '2026-03-02',
+      computedAt: new Date(),
+      rows: [],
+    });
+
+    const result = await service.getLeaderboard({
+      userId: 'u-1',
+      scope: 'city',
+      cityName: '  Rosario   Centro  ',
+      provinceCode: ' ar-s ',
+      timeframe: 'CURRENT_SEASON',
+      mode: 'COMPETITIVE',
+      page: 1,
+      limit: 50,
+    });
+
+    expect(result.meta.scope).toBe(RankingScope.CITY);
+    expect(result.meta.provinceCode).toBe('AR-S');
+    expect(result.meta.cityId).toBeNull();
+    expect(cityRepo.findOne).not.toHaveBeenCalled();
+  });
+
   it('prefers cityId over cityName fallback for CITY scope', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();

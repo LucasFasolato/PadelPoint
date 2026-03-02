@@ -869,7 +869,12 @@ export class RankingsService {
 
     const cityNameNormalized = this.normalizeCityName(params.cityName);
     const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
-    if (!cityNameNormalized || !normalizedProvinceCode) {
+    const missingCityName = !cityNameNormalized;
+    const missingProvinceCode = !normalizedProvinceCode;
+    if (missingCityName || missingProvinceCode) {
+      this.logger.debug(
+        `CITY_REQUIRED for CITY scope fallback: missingCityId=true missingCityName=${missingCityName} missingProvinceCode=${missingProvinceCode}`,
+      );
       throw new BadRequestException(CITY_REQUIRED_ERROR);
     }
 

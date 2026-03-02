@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -12,33 +13,24 @@ export class RankingsQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(24)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
+  @Transform(({ value }) => value?.toString().trim().toUpperCase())
   scope?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(16)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
+  @Transform(({ value }) => value?.toString().trim().toUpperCase())
   provinceCode?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @IsUUID()
+  @Transform(({ value }) => value?.toString().trim())
   cityId?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(120)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => value?.toString().trim())
   cityName?: string;
 
   @IsOptional()
