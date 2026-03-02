@@ -295,53 +295,35 @@ export class LeaguesService {
   // -- list ---------------------------------------------------------
 
   async listMyLeagues(userId: string) {
+    const route = 'GET /leagues';
+    let rowsSampleForLogs: Array<Record<string, unknown>> | undefined;
+
     try {
-      const rows = await this.leagueRepo
-        .createQueryBuilder('l')
-        .innerJoin(
-          LeagueMember,
-          'myMember',
-          'myMember."leagueId" = l.id AND myMember."userId" = :userId',
-          { userId },
-        )
-        .leftJoin(User, 'creator', 'creator.id = l."creatorId"')
-        .leftJoin(City, 'city', 'city.id = creator."cityId"')
-        .leftJoin(Province, 'province', 'province.id = city."provinceId"')
-        .select([
-          'l.id AS id',
-          'l.name AS name',
-          'l.mode AS mode',
-          'l.status AS status',
-          'myMember.role AS role',
-          'city.name AS "cityName"',
-          'province.code AS "provinceCode"',
-        ])
-        .addSelect(
-          (subQuery) =>
-            subQuery
-              .select('COUNT(1)')
-              .from(LeagueMember, 'lm')
-              .where('lm."leagueId" = l.id'),
-          'membersCount',
-        )
-        .addSelect(
-          (subQuery) =>
-            subQuery
-              .select('MAX(la."createdAt")')
-              .from(LeagueActivity, 'la')
-              .where('la."leagueId" = l.id'),
-          'lastActivityAt',
-        )
-        .orderBy(
-          'COALESCE((SELECT MAX(la."createdAt") FROM "league_activity" la WHERE la."leagueId" = l.id), l."createdAt")',
-          'DESC',
-        )
-        .addOrderBy('l.id', 'DESC')
-        .getRawMany<LeagueListRawRow>();
+      let rows: LeagueListRawRow[];
+      try {
+        rows = await this.buildMyLeaguesListQuery(userId, true).getRawMany();
+      } catch (err) {
+        if (!this.isLeagueActivityRelationMissing(err)) {
+          throw err;
+        }
+        const activityFallbackErrorId = crypto.randomUUID();
+        this.logger.warn(
+          JSON.stringify({
+            event: 'leagues.list.activity_fallback',
+            errorId: activityFallbackErrorId,
+            userId,
+            route,
+            reason: this.getErrorReason(err),
+            stack: this.getErrorStack(err),
+          }),
+        );
+        rows = await this.buildMyLeaguesListQuery(userId, false).getRawMany();
+      }
 
       if (!Array.isArray(rows)) {
         throw new Error('Invalid list query result shape');
       }
+      rowsSampleForLogs = this.toLeagueListRowsSample(rows);
 
       const items: LeagueListItemView[] = [];
       let skippedRows = 0;
@@ -364,8 +346,10 @@ export class LeaguesService {
               event: 'leagues.list.row.mapping_failed',
               errorId: mappingErrorId,
               userId,
+              route,
               rowIndex: i,
               reason,
+              rowSample: this.toLeagueListLogRow(rows[i]),
             }),
           );
         }
@@ -377,8 +361,10 @@ export class LeaguesService {
             event: 'leagues.list.row.mapping_skipped',
             errorId: mappingErrorId,
             userId,
+            route,
             skippedRows,
             totalRows: rows.length,
+            rowsSample: rowsSampleForLogs,
           }),
         );
       }
@@ -386,19 +372,18 @@ export class LeaguesService {
       return { items };
     } catch (err) {
       const errorId = crypto.randomUUID();
-      const reason = err instanceof Error ? err.message : 'unknown_error';
+      const reason = this.getErrorReason(err);
       this.logger.error(
         JSON.stringify({
           event: 'leagues.list.failed',
           errorId,
           userId,
-          context: {
-            endpoint: 'GET /leagues',
-            query: 'my-leagues-list-v2',
-          },
+          route,
+          query: 'my-leagues-list-v2',
           reason,
+          stack: this.getErrorStack(err),
+          rowsSample: rowsSampleForLogs ?? null,
         }),
-        err instanceof Error ? err.stack : undefined,
       );
       throw new InternalServerErrorException({
         statusCode: 500,
@@ -407,6 +392,107 @@ export class LeaguesService {
         errorId,
       });
     }
+  }
+
+  private buildMyLeaguesListQuery(userId: string, includeActivity: boolean) {
+    const qb = this.leagueRepo
+      .createQueryBuilder('l')
+      .innerJoin(
+        LeagueMember,
+        'myMember',
+        'myMember."leagueId" = l.id AND myMember."userId" = :userId',
+        { userId },
+      )
+      .leftJoin(User, 'creator', 'creator.id = l."creatorId"')
+      .leftJoin(City, 'city', 'city.id = creator."cityId"')
+      .leftJoin(Province, 'province', 'province.id = city."provinceId"')
+      .select([
+        'l.id AS id',
+        'l.name AS name',
+        'l.mode AS mode',
+        'l.status AS status',
+        'myMember.role AS role',
+        'city.name AS "cityName"',
+        'province.code AS "provinceCode"',
+      ])
+      .addSelect(
+        (subQuery) =>
+          subQuery
+            .select('COUNT(1)')
+            .from(LeagueMember, 'lm')
+            .where('lm."leagueId" = l.id'),
+        'membersCount',
+      );
+
+    if (includeActivity) {
+      qb.addSelect(
+        (subQuery) =>
+          subQuery
+            .select('MAX(la."createdAt")')
+            .from(LeagueActivity, 'la')
+            .where('la."leagueId" = l.id'),
+        'lastActivityAt',
+      ).orderBy(
+        'COALESCE((SELECT MAX(la."createdAt") FROM "league_activity" la WHERE la."leagueId" = l.id), l."createdAt")',
+        'DESC',
+      );
+    } else {
+      qb.addSelect('NULL', 'lastActivityAt').orderBy('l."createdAt"', 'DESC');
+    }
+
+    return qb.addOrderBy('l.id', 'DESC');
+  }
+
+  private isLeagueActivityRelationMissing(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const message = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    return code === '42P01' && message.includes('league_activity');
+  }
+
+  private getErrorReason(err: unknown): string {
+    return err instanceof Error ? err.message : 'unknown_error';
+  }
+
+  private getErrorStack(err: unknown): string | undefined {
+    return err instanceof Error ? err.stack : undefined;
+  }
+
+  private toLeagueListRowsSample(
+    rows: LeagueListRawRow[],
+    maxRows = 3,
+  ): Array<Record<string, unknown>> {
+    return rows.slice(0, maxRows).map((row) => this.toLeagueListLogRow(row));
+  }
+
+  private toLeagueListLogRow(
+    row: LeagueListRawRow | null | undefined,
+  ): Record<string, unknown> {
+    if (!row || typeof row !== 'object') {
+      return {
+        rowType: row === null ? 'null' : typeof row,
+      };
+    }
+
+    const safeRole = this.toLeagueListRole(row.role);
+    return {
+      id: this.toNonEmptyTrimmedString(row.id),
+      mode: this.toLeagueListMode(row.mode),
+      status: this.toLeagueListStatus(row.status),
+      role: safeRole ?? null,
+      membersCount: this.toSafeInteger(row.membersCount) ?? null,
+      cityName: this.toNullableTrimmedString(row.cityName),
+      provinceCode: this.toNullableTrimmedString(row.provinceCode),
+      lastActivityAt: this.toNullableIsoString(row.lastActivityAt),
+      rawLastActivityAtType:
+        row.lastActivityAt === null ? 'null' : typeof row.lastActivityAt,
+    };
   }
 
   // -- detail -------------------------------------------------------
@@ -1556,6 +1642,11 @@ export class LeaguesService {
   }
 
   private toSafeInteger(value: unknown): number | undefined {
+    if (typeof value === 'bigint') {
+      if (value <= 0n) return 0;
+      const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+      return Number(value > maxSafe ? maxSafe : value);
+    }
     if (typeof value === 'number' && Number.isFinite(value)) {
       return Math.max(0, Math.trunc(value));
     }

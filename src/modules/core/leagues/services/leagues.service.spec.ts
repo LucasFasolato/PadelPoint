@@ -479,10 +479,71 @@ describe('LeaguesService', () => {
 
       await expect(service.listMyLeagues(FAKE_USER_ID)).rejects.toMatchObject({
         response: {
+          statusCode: 500,
           code: 'LEAGUES_UNAVAILABLE',
           errorId: expect.any(String),
         },
       });
+    });
+
+    it('should fallback without league_activity when relation is missing', async () => {
+      const primaryQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockRejectedValue({
+          code: '42P01',
+          message: 'relation "league_activity" does not exist',
+        }),
+      };
+      const fallbackQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-1',
+            name: 'Liga sin actividad',
+            mode: 'scheduled',
+            status: 'draft',
+            role: 'owner',
+            membersCount: '2',
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder
+        .mockReturnValueOnce(primaryQb as any)
+        .mockReturnValueOnce(fallbackQb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'league-1',
+            name: 'Liga sin actividad',
+            mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
+            status: 'UPCOMING',
+            statusKey: 'UPCOMING',
+            role: 'OWNER',
+            membersCount: 2,
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ],
+      });
+      expect(leagueRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
     });
 
     it('should handle malformed raw rows without throwing', async () => {

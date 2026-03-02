@@ -117,6 +117,8 @@ All endpoints below require JWT auth unless prefixed with `/public`.
 - Behavior:
   - Returns caller leagues list
   - Uses safe normalization (mode/status/role), null-safe city/province/activity fields
+  - On unexpected failures returns typed `500` with `code=LEAGUES_UNAVAILABLE` and `errorId`
+  - If `league_activity` relation is temporarily unavailable, degrades `lastActivityAt` to `null` instead of failing the list
   - Sets `Cache-Control: no-store`
 - Response shape:
 
@@ -406,6 +408,7 @@ On match confirm/admin-confirm/resolve paths:
 
 Already in place:
 - List mapping (`GET /leagues`) is defensive for null/invalid raw fields
+- `GET /leagues` logs include `errorId`, `userId`, `route`, `stack`, and sanitized row samples (no PII)
 - Public standings never leak emails and tolerate missing snapshots
 - Normalized keys (`modeKey`, `statusKey`) are present while legacy `mode`/`status` remain
 
@@ -462,6 +465,7 @@ Representative typed errors currently emitted by league APIs:
 | `POST /leagues` | 400 | `LEAGUE_NAME_REQUIRED` |
 | `POST /leagues` | 400 | `LEAGUE_DATES_REQUIRED` |
 | `POST /leagues` | 400 | `LEAGUE_INVALID_DATES` |
+| `GET /leagues` | 500 | `LEAGUES_UNAVAILABLE` |
 | `GET/PATCH/DELETE /leagues/:id` and most league scoped routes | 404 | `LEAGUE_NOT_FOUND` |
 | Member-protected league routes | 403 | `LEAGUE_FORBIDDEN` |
 | `GET /leagues/invites/:token` | 404 | `INVITE_INVALID` |

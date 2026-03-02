@@ -1111,6 +1111,7 @@ describe('Leagues (e2e)', () => {
       // NestJS default filter serialises HttpException body directly onto res.body
       expect(res.body).toEqual(
         expect.objectContaining({
+          statusCode: 500,
           code: 'LEAGUES_UNAVAILABLE',
           errorId: testErrorId,
         }),
