@@ -1,8 +1,10 @@
 import { RankingsService } from './rankings.service';
 import { ConfigService } from '@nestjs/config';
+import { ValidationPipe } from '@nestjs/common';
 import { RankingScope } from '../enums/ranking-scope.enum';
 import { RankingTimeframe } from '../enums/ranking-timeframe.enum';
 import { RankingMode } from '../enums/ranking-mode.enum';
+import { RankingsQueryDto } from '../dto/rankings-query.dto';
 
 function createRepoMock() {
   return {
@@ -27,6 +29,31 @@ function createConfigMock(minMatches = 4): ConfigService {
 }
 
 describe('RankingsService', () => {
+  it('keeps cityName/provinceCode through ValidationPipe whitelist transforms', async () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: false },
+    });
+
+    const dto = (await pipe.transform(
+      {
+        scope: 'city',
+        cityName: '  Rosario  ',
+        provinceCode: ' ar-s ',
+      },
+      {
+        type: 'query',
+        metatype: RankingsQueryDto,
+        data: undefined,
+      },
+    )) as RankingsQueryDto;
+
+    expect(dto.scope).toBe(RankingScope.CITY);
+    expect(dto.cityName).toBe('Rosario');
+    expect(dto.provinceCode).toBe('AR-S');
+  });
+
   it('is idempotent for the same snapshot bucket', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();

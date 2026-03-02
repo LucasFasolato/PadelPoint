@@ -66,6 +66,9 @@ type LeaderboardParams = {
   mode?: string;
   page?: number;
   limit?: number;
+  context?: {
+    requestId?: string;
+  };
 };
 
 export type CreateGlobalRankingSnapshotArgs = {
@@ -167,6 +170,7 @@ export class RankingsService {
       provinceCode: params.provinceCode,
       cityId: params.cityId,
       cityName: params.cityName,
+      context: params.context,
     });
 
     const { categoryKey, categoryNumber } = normalizeCategoryFilter(
@@ -800,6 +804,9 @@ export class RankingsService {
     provinceCode?: string;
     cityId?: string;
     cityName?: string;
+    context?: {
+      requestId?: string;
+    };
   }): Promise<ScopeResolution> {
     if (params.scope === RankingScope.COUNTRY) {
       return {
@@ -869,11 +876,18 @@ export class RankingsService {
 
     const cityNameNormalized = this.normalizeCityName(params.cityName);
     const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
-    const missingCityName = !cityNameNormalized;
-    const missingProvinceCode = !normalizedProvinceCode;
-    if (missingCityName || missingProvinceCode) {
+    const hasCityId = Boolean(cityId);
+    const hasCityName = Boolean(cityNameNormalized);
+    const hasProvinceCode = Boolean(normalizedProvinceCode);
+    if (!hasCityName || !hasProvinceCode) {
       this.logger.debug(
-        `CITY_REQUIRED for CITY scope fallback: missingCityId=true missingCityName=${missingCityName} missingProvinceCode=${missingProvinceCode}`,
+        JSON.stringify({
+          event: 'rankings.city_required',
+          requestId: params.context?.requestId ?? null,
+          hasCityId,
+          hasCityName,
+          hasProvinceCode,
+        }),
       );
       throw new BadRequestException(CITY_REQUIRED_ERROR);
     }

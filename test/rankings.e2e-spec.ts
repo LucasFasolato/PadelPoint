@@ -237,6 +237,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings accepts lower-case city scope with cityName + provinceCode fallback', async () => {
+    const requestId = 'req-rankings-city-123';
     rankingsService.getLeaderboard!.mockResolvedValue({
       items: [],
       meta: {
@@ -258,6 +259,7 @@ describe('Rankings (e2e)', () => {
 
     await request(app.getHttpServer())
       .get('/rankings?scope=city&provinceCode=ar-s&cityName=%20Rosario%20&mode=COMPETITIVE')
+      .set('x-railway-request-id', requestId)
       .expect(200);
 
     expect(rankingsService.getLeaderboard).toHaveBeenCalledWith(
@@ -266,6 +268,9 @@ describe('Rankings (e2e)', () => {
         scope: 'CITY',
         provinceCode: 'AR-S',
         cityName: 'Rosario',
+        context: expect.objectContaining({
+          requestId,
+        }),
       }),
     );
   });

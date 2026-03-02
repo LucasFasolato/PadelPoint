@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Header,
+  Logger,
   Post,
   Query,
   Req,
@@ -29,6 +30,8 @@ type AuthUser = {
 @Controller('rankings')
 @UseGuards(JwtAuthGuard)
 export class RankingsController {
+  private readonly logger = new Logger(RankingsController.name);
+
   constructor(
     private readonly rankingsService: RankingsService,
     private readonly schedulerService: RankingsSnapshotSchedulerService,
@@ -37,19 +40,43 @@ export class RankingsController {
   @Get()
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
-  getLeaderboard(@Req() req: Request, @Query() q: RankingsQueryDto) {
+  getRankings(@Req() req: Request, @Query() query: RankingsQueryDto) {
     const user = req.user as AuthUser;
+    const headerValue = req.headers['x-railway-request-id'];
+    const requestId = Array.isArray(headerValue)
+      ? headerValue[0]
+      : headerValue ?? null;
+    const rawKeys =
+      req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
+
+    this.logger.debug(
+      JSON.stringify({
+        event: 'rankings.query',
+        requestId,
+        rawKeys,
+        dto: {
+          scope: query.scope ?? null,
+          cityId: Boolean(query.cityId),
+          cityName: Boolean(query.cityName),
+          provinceCode: Boolean(query.provinceCode),
+        },
+      }),
+    );
+
     return this.rankingsService.getLeaderboard({
       userId: user.userId,
-      scope: q.scope,
-      provinceCode: q.provinceCode,
-      cityId: q.cityId,
-      cityName: q.cityName,
-      category: q.category,
-      timeframe: q.timeframe,
-      mode: q.mode,
-      page: q.page ?? 1,
-      limit: q.limit ?? 50,
+      scope: query.scope,
+      provinceCode: query.provinceCode,
+      cityId: query.cityId,
+      cityName: query.cityName,
+      category: query.category,
+      timeframe: query.timeframe,
+      mode: query.mode,
+      page: query.page ?? 1,
+      limit: query.limit ?? 50,
+      context: {
+        requestId: requestId ?? undefined,
+      },
     });
   }
 

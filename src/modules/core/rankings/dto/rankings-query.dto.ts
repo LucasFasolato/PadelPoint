@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -8,13 +9,14 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { RankingScope } from '../enums/ranking-scope.enum';
 
 export class RankingsQueryDto {
   @IsOptional()
-  @IsString()
+  @IsEnum(RankingScope)
   @MaxLength(24)
   @Transform(({ value }) => value?.toString().trim().toUpperCase())
-  scope?: string;
+  scope?: RankingScope;
 
   @IsOptional()
   @IsString()
