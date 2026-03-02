@@ -303,6 +303,103 @@ describe('RankingsService', () => {
     expect(cityRepo.findOne).not.toHaveBeenCalled();
   });
 
+  it('does not throw CITY_REQUIRED when cityName is present in CITY scope fallback', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+    const debugSpy = jest.spyOn((service as any).logger, 'debug');
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: 'Rosario',
+      provinceCode: 'AR-S',
+      context: { requestId: 'req-1' },
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'S',
+      provinceCodeIso: 'AR-S',
+      cityId: null,
+      cityNameNormalized: 'rosario',
+      dimensionKey: 'CITY_NAME|S|rosario',
+    });
+    expect(
+      debugSpy.mock.calls.some(
+        (call) =>
+          typeof call[0] === 'string' &&
+          call[0].includes('"event":"rankings.city_required"'),
+      ),
+    ).toBe(false);
+  });
+
+  it('normalizes whitespace cityName to Rosario and CITY fallback still works', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    expect((service as any).normalizeCityName('  Rosario   ')).toBe('Rosario');
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: '  Rosario   ',
+      provinceCode: 'AR-S',
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'S',
+      provinceCodeIso: 'AR-S',
+      cityId: null,
+      cityNameNormalized: 'rosario',
+      dimensionKey: 'CITY_NAME|S|rosario',
+    });
+  });
+
   it('accepts lowercase city scope with cityName + provinceCode fallback', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();

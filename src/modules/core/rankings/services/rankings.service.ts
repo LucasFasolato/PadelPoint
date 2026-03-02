@@ -584,14 +584,14 @@ export class RankingsService {
       const provinceCodeFromCity = this.normalizeProvinceCode(
         user.city?.province?.code ?? null,
       );
-      const cityNameFromCity = this.normalizeCityName(user.city?.name ?? null);
+      const cityNameFromCity = this.toCityNameKey(user.city?.name ?? null);
 
       participantByUserId.set(user.id, {
         userId: user.id,
         displayName: user.displayName ?? user.email.split('@')[0],
         cityId: user.cityId ?? null,
         cityNameNormalized:
-          cityNameFromCity ?? profileLocation?.cityNameNormalized ?? null,
+          cityNameFromCity || profileLocation?.cityNameNormalized || null,
         provinceCode: provinceCodeFromCity ?? profileLocation?.provinceCode ?? null,
         elo,
         category,
@@ -869,17 +869,18 @@ export class RankingsService {
         provinceCode,
         provinceCodeIso: provinceCode ? this.toIsoProvinceCode(provinceCode) : null,
         cityId: city.id,
-        cityNameNormalized: this.normalizeCityName(city.name),
+        cityNameNormalized: this.toCityNameKey(city.name) || null,
         dimensionKey: `CITY|${city.id}`,
       };
     }
 
-    const cityNameNormalized = this.normalizeCityName(params.cityName);
+    const normalizedCityName = this.normalizeCityName(params.cityName);
     const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
+    const cityNameNormalized = this.toCityNameKey(normalizedCityName);
     const hasCityId = Boolean(cityId);
-    const hasCityName = Boolean(cityNameNormalized);
+    const hasCityName = Boolean(normalizedCityName);
     const hasProvinceCode = Boolean(normalizedProvinceCode);
-    if (!hasCityName || !hasProvinceCode) {
+    if (!hasCityId && !(normalizedCityName && normalizedProvinceCode)) {
       this.logger.debug(
         JSON.stringify({
           event: 'rankings.city_required',
@@ -967,11 +968,15 @@ export class RankingsService {
     return trimmed.startsWith('AR-') ? trimmed.slice(3) : trimmed;
   }
 
-  private normalizeCityName(value: string | null | undefined): string | null {
-    if (typeof value !== 'string') return null;
+  private normalizeCityName(value: string | null | undefined): string {
+    if (typeof value !== 'string') return '';
     const collapsed = value.trim().replace(/\s+/g, ' ');
-    if (!collapsed) return null;
-    return collapsed.toLowerCase();
+    return collapsed;
+  }
+
+  private toCityNameKey(value: string | null | undefined): string {
+    const normalized = this.normalizeCityName(value);
+    return normalized ? normalized.toLowerCase() : '';
   }
 
   private normalizePlayerProfileLocation(location: unknown): {
@@ -988,7 +993,7 @@ export class RankingsService {
     };
 
     return {
-      cityNameNormalized: this.normalizeCityName(candidate.city ?? null),
+      cityNameNormalized: this.toCityNameKey(candidate.city ?? null) || null,
       provinceCode: this.normalizeProvinceCode(candidate.province ?? null),
     };
   }
