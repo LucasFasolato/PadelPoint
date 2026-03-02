@@ -299,25 +299,50 @@ export class LeaguesService {
     let rowsSampleForLogs: Array<Record<string, unknown>> | undefined;
 
     try {
-      let rows: LeagueListRawRow[];
-      try {
-        rows = await this.buildMyLeaguesListQuery(userId, true).getRawMany();
-      } catch (err) {
-        if (!this.isLeagueActivityRelationMissing(err)) {
-          throw err;
-        }
-        const activityFallbackErrorId = crypto.randomUUID();
-        this.logger.warn(
-          JSON.stringify({
-            event: 'leagues.list.activity_fallback',
-            errorId: activityFallbackErrorId,
+      let includeActivity = true;
+      let includeGeoProjection = true;
+      let rows: LeagueListRawRow[] | undefined;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          rows = await this.buildMyLeaguesListQuery(
             userId,
-            route,
-            reason: this.getErrorReason(err),
-            stack: this.getErrorStack(err),
-          }),
-        );
-        rows = await this.buildMyLeaguesListQuery(userId, false).getRawMany();
+            includeActivity,
+            includeGeoProjection,
+          ).getRawMany();
+          break;
+        } catch (err) {
+          const canFallbackActivity =
+            includeActivity && this.isLeagueActivityRelationMissing(err);
+          const canFallbackGeoProjection =
+            includeGeoProjection &&
+            this.isLeagueGeoProjectionUnsupported(err);
+
+          if (!canFallbackActivity && !canFallbackGeoProjection) {
+            throw err;
+          }
+
+          if (canFallbackActivity) includeActivity = false;
+          if (canFallbackGeoProjection) includeGeoProjection = false;
+
+          const queryFallbackErrorId = crypto.randomUUID();
+          this.logger.warn(
+            JSON.stringify({
+              event: 'leagues.list.query_fallback',
+              errorId: queryFallbackErrorId,
+              userId,
+              route,
+              reason: this.getErrorReason(err),
+              stack: this.getErrorStack(err),
+              includeActivity,
+              includeGeoProjection,
+            }),
+          );
+        }
+      }
+
+      if (!rows) {
+        throw new Error('Unable to build leagues list query result');
       }
 
       if (!Array.isArray(rows)) {
@@ -394,7 +419,11 @@ export class LeaguesService {
     }
   }
 
-  private buildMyLeaguesListQuery(userId: string, includeActivity: boolean) {
+  private buildMyLeaguesListQuery(
+    userId: string,
+    includeActivity: boolean,
+    includeGeoProjection: boolean,
+  ) {
     const qb = this.leagueRepo
       .createQueryBuilder('l')
       .innerJoin(
@@ -402,19 +431,30 @@ export class LeaguesService {
         'myMember',
         'myMember."leagueId" = l.id AND myMember."userId" = :userId',
         { userId },
-      )
-      .leftJoin(User, 'creator', 'creator.id = l."creatorId"')
-      .leftJoin(City, 'city', 'city.id = creator."cityId"')
-      .leftJoin(Province, 'province', 'province.id = city."provinceId"')
-      .select([
+      );
+
+    const selectColumns = [
         'l.id AS id',
         'l.name AS name',
         'l.mode AS mode',
         'l.status AS status',
         'myMember.role AS role',
+      ];
+
+    if (includeGeoProjection) {
+      qb.leftJoin(User, 'creator', 'creator.id = l."creatorId"')
+        .leftJoin(City, 'city', 'city.id = creator."cityId"')
+        .leftJoin(Province, 'province', 'province.id = city."provinceId"');
+
+      selectColumns.push(
         'city.name AS "cityName"',
         'province.code AS "provinceCode"',
-      ])
+      );
+    } else {
+      selectColumns.push('NULL AS "cityName"', 'NULL AS "provinceCode"');
+    }
+
+    qb.select(selectColumns)
       .addSelect(
         (subQuery) =>
           subQuery
@@ -453,7 +493,43 @@ export class LeaguesService {
     const message = String(
       anyErr?.driverError?.message ?? anyErr?.message ?? '',
     ).toLowerCase();
-    return code === '42P01' && message.includes('league_activity');
+    return (
+      (code === '42P01' || code === '42703' || code === '42501') &&
+      message.includes('league_activity')
+    );
+  }
+
+  private isLeagueGeoProjectionUnsupported(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    if (code === '42P01' || code === '42501') {
+      return (
+        normalizedMessage.includes(' cities ') ||
+        normalizedMessage.includes(' relation cities') ||
+        normalizedMessage.includes(' relation province') ||
+        normalizedMessage.includes(' relation provinces')
+      );
+    }
+
+    if (code === '42703') {
+      return (
+        normalizedMessage.includes('cityid') ||
+        normalizedMessage.includes('provinceid') ||
+        normalizedMessage.includes('city.name') ||
+        normalizedMessage.includes('province.code')
+      );
+    }
+
+    return false;
   }
 
   private getErrorReason(err: unknown): string {

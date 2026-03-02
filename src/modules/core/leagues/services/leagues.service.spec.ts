@@ -546,6 +546,66 @@ describe('LeaguesService', () => {
       expect(leagueRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
     });
 
+    it('should fallback without geo projection when city/province columns are unavailable', async () => {
+      const primaryQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockRejectedValue({
+          code: '42703',
+          message: 'column creator.cityId does not exist',
+        }),
+      };
+      const fallbackQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-1',
+            name: 'Liga fallback geo',
+            mode: 'scheduled',
+            status: 'draft',
+            role: 'owner',
+            membersCount: '3',
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: '2026-03-02T18:00:00.000Z',
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder
+        .mockReturnValueOnce(primaryQb as any)
+        .mockReturnValueOnce(fallbackQb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'league-1',
+            name: 'Liga fallback geo',
+            mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
+            status: 'UPCOMING',
+            statusKey: 'UPCOMING',
+            role: 'OWNER',
+            membersCount: 3,
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: '2026-03-02T18:00:00.000Z',
+          },
+        ],
+      });
+      expect(leagueRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
+    });
+
     it('should handle malformed raw rows without throwing', async () => {
       const qb = {
         innerJoin: jest.fn().mockReturnThis(),
@@ -587,6 +647,34 @@ describe('LeaguesService', () => {
             lastActivityAt: null,
           },
         ],
+      });
+    });
+
+    it('should map raw row safely when geo fields are missing from projection', () => {
+      const item = (service as any).toLeagueListItemView({
+        id: ' league-geo-missing ',
+        name: 'Geo Missing',
+        mode: 'scheduled',
+        status: 'draft',
+        role: 'member',
+        membersCount: '2',
+        cityName: undefined,
+        provinceCode: undefined,
+        lastActivityAt: undefined,
+      });
+
+      expect(item).toEqual({
+        id: 'league-geo-missing',
+        name: 'Geo Missing',
+        mode: 'SCHEDULED',
+        modeKey: 'SCHEDULED',
+        status: 'UPCOMING',
+        statusKey: 'UPCOMING',
+        role: 'MEMBER',
+        membersCount: 2,
+        cityName: null,
+        provinceCode: null,
+        lastActivityAt: null,
       });
     });
   });
