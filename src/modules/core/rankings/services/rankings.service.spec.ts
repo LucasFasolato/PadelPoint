@@ -657,6 +657,102 @@ describe('RankingsService', () => {
     expect(cityRepo.findOne).not.toHaveBeenCalled();
   });
 
+  it('reuses resolved CITY scope during snapshot build and avoids secondary resolveScope with missing cityName', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-a', code: 'A' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const snapshotVersionQb = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({ nextVersion: '1' }),
+    };
+    snapshotRepo.createQueryBuilder.mockReturnValue(snapshotVersionQb);
+    snapshotRepo.query.mockResolvedValue([{ id: 'snapshot-city-1' }]);
+    snapshotRepo.findOne.mockResolvedValue({
+      id: 'snapshot-city-1',
+      dimensionKey: 'CITY_NAME|A|salta',
+      scope: RankingScope.CITY,
+      provinceCode: 'A',
+      cityId: null,
+      categoryKey: 'all',
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      asOfDate: '2026-03-03',
+      version: 1,
+      computedAt: new Date('2026-03-03T15:00:00.000Z'),
+      rows: [],
+    });
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const resolveScopeSpy = jest.spyOn(service as any, 'resolveScope');
+    jest.spyOn(service as any, 'getLatestSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'computeRowsFromMatches').mockResolvedValue([]);
+    jest.spyOn(service as any, 'pruneSnapshots').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'emitRankingMovementEvents').mockResolvedValue(0);
+
+    const result = await service.getLeaderboard({
+      userId: 'u-1',
+      scope: 'city',
+      cityName: 'Salta',
+      provinceCode: 'AR-A',
+      timeframe: 'CURRENT_SEASON',
+      mode: 'COMPETITIVE',
+      page: 1,
+      limit: 50,
+      context: { requestId: 'req-city-1' },
+    });
+
+    expect(result.meta.scope).toBe(RankingScope.CITY);
+    expect(result.meta.provinceCode).toBe('AR-A');
+    expect(result.meta.cityId).toBeNull();
+    expect(resolveScopeSpy).toHaveBeenCalledTimes(1);
+    expect(resolveScopeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: RankingScope.CITY,
+        cityName: 'Salta',
+        provinceCode: 'AR-A',
+        context: { requestId: 'req-city-1' },
+      }),
+    );
+    expect(
+      resolveScopeSpy.mock.calls.some((call) => {
+        const arg = call[0] as {
+          scope?: RankingScope;
+          cityName?: unknown;
+          cityId?: unknown;
+        };
+        return (
+          arg.scope === RankingScope.CITY &&
+          arg.cityName === undefined &&
+          !arg.cityId
+        );
+      }),
+    ).toBe(false);
+  });
+
   it('prefers cityId over cityName fallback for CITY scope', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();

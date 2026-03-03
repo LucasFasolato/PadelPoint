@@ -183,7 +183,7 @@ export class RankingsService {
     );
 
     const scope = this.normalizeScope(params.scope);
-    const resolution = await this.resolveScope({
+    const scopeResolution = await this.resolveScope({
       scope,
       provinceCode: params.provinceCode,
       cityId: params.cityId,
@@ -201,7 +201,7 @@ export class RankingsService {
     const limit = Math.max(1, Math.min(200, Math.trunc(params.limit ?? 50)));
 
     const latest = await this.getLatestSnapshot({
-      resolution,
+      resolution: scopeResolution,
       categoryKey,
       timeframe,
       modeKey,
@@ -214,15 +214,20 @@ export class RankingsService {
     const snapshot =
       isFresh && latest
         ? latest
-        : await this.createGlobalRankingSnapshot({
-            scope: resolution.scope,
-            provinceCode: resolution.provinceCode,
-            cityId: resolution.cityId,
-            categoryKey,
-            categoryNumber,
-            timeframe,
-            modeKey,
-          });
+        : (
+            await this.createGlobalRankingSnapshotDetailedWithResolution(
+              {
+                scope: scopeResolution.scope,
+                provinceCode: scopeResolution.provinceCode,
+                cityId: scopeResolution.cityId,
+                categoryKey,
+                categoryNumber,
+                timeframe,
+                modeKey,
+              },
+              scopeResolution,
+            )
+          ).snapshot;
 
     const rows = snapshot.rows ?? [];
     const visibleRows = rows
@@ -300,9 +305,9 @@ export class RankingsService {
         limit,
         total,
         totalPages,
-        scope: resolution.scope,
-        provinceCode: resolution.provinceCodeIso,
-        cityId: resolution.cityId,
+        scope: scopeResolution.scope,
+        provinceCode: scopeResolution.provinceCodeIso,
+        cityId: scopeResolution.cityId,
         category: categoryKey,
         timeframe,
         mode: modeKey,
@@ -369,12 +374,19 @@ export class RankingsService {
   async createGlobalRankingSnapshotDetailed(
     args: CreateGlobalRankingSnapshotArgs,
   ): Promise<GlobalRankingSnapshotBuildResult> {
-    const startedAt = Date.now();
     const resolution = await this.resolveScope({
       scope: args.scope,
       provinceCode: args.provinceCode ?? undefined,
       cityId: args.cityId ?? undefined,
     });
+    return this.createGlobalRankingSnapshotDetailedWithResolution(args, resolution);
+  }
+
+  private async createGlobalRankingSnapshotDetailedWithResolution(
+    args: CreateGlobalRankingSnapshotArgs,
+    resolution: ScopeResolution,
+  ): Promise<GlobalRankingSnapshotBuildResult> {
+    const startedAt = Date.now();
 
     const asOfDate = args.asOfDate ?? new Date();
     const asOfDateKey = asOfDate.toISOString().slice(0, 10);
