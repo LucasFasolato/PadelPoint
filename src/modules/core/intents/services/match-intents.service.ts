@@ -296,7 +296,8 @@ export class MatchIntentsService {
         '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
         { userId },
       )
-      .orderBy('COALESCE(m."playedAt", m."createdAt")', 'DESC')
+      .addSelect('COALESCE(m."playedAt", m."createdAt")', 'sortPlayedAt')
+      .orderBy('sortPlayedAt', 'DESC')
       .addOrderBy('m.id', 'DESC')
       .take(300)
       .getMany();

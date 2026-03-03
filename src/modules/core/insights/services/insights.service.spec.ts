@@ -244,6 +244,47 @@ describe('InsightsService', () => {
     });
   });
 
+  it('returns safe payload when match_results.source column is missing (42703)', async () => {
+    const matchQb = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockRejectedValue({
+        code: '42703',
+        message: 'column m.source does not exist',
+      }),
+    };
+    matchRepo.createQueryBuilder.mockReturnValue(matchQb as any);
+
+    const result = await service.getMyInsights({
+      userId: USER_ID,
+      timeframe: InsightsTimeframe.CURRENT_SEASON,
+      mode: InsightsMode.ALL,
+    });
+
+    expect(result).toEqual({
+      timeframe: 'CURRENT_SEASON',
+      mode: 'ALL',
+      matchesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      winRate: 0,
+      streak: null,
+      eloDelta: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      lastPlayedAt: null,
+      mostPlayedOpponent: null,
+      neededForRanking: {
+        required: 4,
+        current: 0,
+        remaining: 4,
+      },
+    });
+  });
+
   it('skips malformed rows and still returns 200-safe empty summary', async () => {
     const matchQb = {
       innerJoinAndSelect: jest.fn().mockReturnThis(),

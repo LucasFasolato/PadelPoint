@@ -22,6 +22,7 @@ describe('MatchIntentsService', () => {
   let challengesService: { createDirect: jest.Mock };
   let challengeRepo: MockRepo<Challenge>;
   let matchRepo: MockRepo<MatchResult>;
+  let challengeInviteRepo: MockRepo<ChallengeInvite>;
   let leagueMemberRepo: MockRepo<LeagueMember>;
 
   beforeEach(async () => {
@@ -31,6 +32,7 @@ describe('MatchIntentsService', () => {
 
     challengeRepo = createMockRepo<Challenge>();
     matchRepo = createMockRepo<MatchResult>();
+    challengeInviteRepo = createMockRepo<ChallengeInvite>();
     leagueMemberRepo = createMockRepo<LeagueMember>();
 
     challengeRepo.createQueryBuilder.mockReturnValue({
@@ -76,7 +78,7 @@ describe('MatchIntentsService', () => {
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
         {
           provide: getRepositoryToken(ChallengeInvite),
-          useValue: createMockRepo<ChallengeInvite>(),
+          useValue: challengeInviteRepo,
         },
         {
           provide: getRepositoryToken(LeagueMember),
@@ -118,5 +120,54 @@ describe('MatchIntentsService', () => {
       }),
     );
   });
-});
 
+  it('uses stable sort alias for pending-confirmations query and returns response', async () => {
+    const pendingQb = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    matchRepo.createQueryBuilder.mockReturnValue(pendingQb as any);
+    challengeRepo.find.mockResolvedValue([]);
+    challengeInviteRepo.find.mockResolvedValue([]);
+
+    const result = await service.listForUser(USER_ID, {} as any);
+
+    expect(result).toEqual({ items: [] });
+    expect(pendingQb.addSelect).toHaveBeenCalledWith(
+      'COALESCE(m."playedAt", m."createdAt")',
+      'sortPlayedAt',
+    );
+    expect(pendingQb.orderBy).toHaveBeenCalledWith('sortPlayedAt', 'DESC');
+  });
+
+  it('skips find-partner source when ChallengeInvite.side column is missing and still returns response', async () => {
+    const pendingQb = {
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    matchRepo.createQueryBuilder.mockReturnValue(pendingQb as any);
+    challengeRepo.find.mockResolvedValue([]);
+    challengeInviteRepo.find.mockRejectedValue({
+      code: '42703',
+      message: 'column ChallengeInvite.side does not exist',
+    });
+
+    const result = await service.listForUser(USER_ID, {} as any);
+
+    expect(result).toEqual({ items: [] });
+  });
+});
