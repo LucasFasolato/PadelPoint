@@ -12,11 +12,13 @@ import { LeaguesService } from './leagues.service';
 import { League } from '../entities/league.entity';
 import { LeagueMember } from '../entities/league-member.entity';
 import { LeagueInvite } from '../entities/league-invite.entity';
+import { LeagueJoinRequest } from '../entities/league-join-request.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
 import { LeagueMode } from '../enums/league-mode.enum';
 import { LeagueRole } from '../enums/league-role.enum';
 import { DEFAULT_LEAGUE_SETTINGS } from '../types/league-settings.type';
 import { InviteStatus } from '../enums/invite-status.enum';
+import { LeagueJoinRequestStatus } from '../enums/league-join-request-status.enum';
 import { User } from '../../users/entities/user.entity';
 import { MediaAsset } from '@core/media/entities/media-asset.entity';
 import { MatchResult } from '../../matches/entities/match-result.entity';
@@ -87,11 +89,29 @@ function fakeInvite(overrides: Partial<LeagueInvite> = {}): LeagueInvite {
   } as LeagueInvite;
 }
 
+function fakeJoinRequest(
+  overrides: Partial<LeagueJoinRequest> = {},
+): LeagueJoinRequest {
+  return {
+    id: 'join-request-1',
+    leagueId: 'league-1',
+    userId: FAKE_USER_ID_2,
+    status: LeagueJoinRequestStatus.PENDING,
+    message: null,
+    createdAt: new Date('2025-01-01T12:00:00Z'),
+    updatedAt: new Date('2025-01-01T12:00:00Z'),
+    user: { displayName: 'Invitee Player' } as any,
+    league: fakeLeague(),
+    ...overrides,
+  } as LeagueJoinRequest;
+}
+
 describe('LeaguesService', () => {
   let service: LeaguesService;
   let leagueRepo: MockRepo<League>;
   let memberRepo: MockRepo<LeagueMember>;
   let inviteRepo: MockRepo<LeagueInvite>;
+  let joinRequestRepo: MockRepo<LeagueJoinRequest>;
   let userRepo: MockRepo<User>;
   let mediaAssetRepo: MockRepo<MediaAsset>;
   let matchResultRepo: MockRepo<MatchResult>;
@@ -112,12 +132,19 @@ describe('LeaguesService', () => {
     where: jest.Mock;
     getOne: jest.Mock;
   };
+  let joinRequestLockQb: {
+    setLock: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    getOne: jest.Mock;
+  };
   let configService: { get: jest.Mock };
 
   beforeEach(async () => {
     leagueRepo = createMockRepo<League>();
     memberRepo = createMockRepo<LeagueMember>();
     inviteRepo = createMockRepo<LeagueInvite>();
+    joinRequestRepo = createMockRepo<LeagueJoinRequest>();
     userRepo = createMockRepo<User>();
     mediaAssetRepo = createMockRepo<MediaAsset>();
     matchResultRepo = createMockRepo<MatchResult>();
@@ -168,6 +195,60 @@ describe('LeaguesService', () => {
       }),
     };
 
+    let lockedJoinRequestId: string | null = null;
+    let lockedJoinRequestLeagueId: string | null = null;
+    let lockedJoinRequestUserId: string | null = null;
+    joinRequestLockQb = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((_sql: string, params: any) => {
+        if (typeof params?.requestId === 'string') {
+          lockedJoinRequestId = params.requestId;
+        }
+        if (typeof params?.leagueId === 'string') {
+          lockedJoinRequestLeagueId = params.leagueId;
+        }
+        if (typeof params?.userId === 'string') {
+          lockedJoinRequestUserId = params.userId;
+        }
+        return joinRequestLockQb;
+      }),
+      andWhere: jest.fn().mockImplementation((_sql: string, params: any) => {
+        if (typeof params?.requestId === 'string') {
+          lockedJoinRequestId = params.requestId;
+        }
+        if (typeof params?.leagueId === 'string') {
+          lockedJoinRequestLeagueId = params.leagueId;
+        }
+        if (typeof params?.userId === 'string') {
+          lockedJoinRequestUserId = params.userId;
+        }
+        return joinRequestLockQb;
+      }),
+      getOne: jest.fn().mockImplementation(async () => {
+        if (lockedJoinRequestId) {
+          return joinRequestRepo.findOne({
+            where: {
+              id: lockedJoinRequestId,
+              leagueId: lockedJoinRequestLeagueId ?? undefined,
+            },
+            relations: ['user'],
+          } as any);
+        }
+
+        if (lockedJoinRequestLeagueId && lockedJoinRequestUserId) {
+          return joinRequestRepo.findOne({
+            where: {
+              leagueId: lockedJoinRequestLeagueId,
+              userId: lockedJoinRequestUserId,
+            },
+            relations: ['user'],
+          } as any);
+        }
+
+        return null;
+      }),
+    };
+
     const txManager = {
       save: jest.fn().mockImplementation(async (entity: any) => entity),
       getRepository: jest
@@ -188,6 +269,15 @@ describe('LeaguesService', () => {
                 create: memberRepo.create,
                 save: memberRepo.save,
                 findOne: memberRepo.findOne,
+              };
+            case 'LeagueJoinRequest':
+              return {
+                create: joinRequestRepo.create,
+                save: joinRequestRepo.save,
+                findOne: joinRequestRepo.findOne,
+                createQueryBuilder: jest
+                  .fn()
+                  .mockReturnValue(joinRequestLockQb),
               };
             case 'LeagueActivity':
               return {
@@ -220,6 +310,10 @@ describe('LeaguesService', () => {
     });
     userRepo.find.mockResolvedValue([]);
     leagueRepo.findOne.mockResolvedValue(fakeLeague());
+    joinRequestRepo.find.mockResolvedValue([]);
+    joinRequestRepo.findOne.mockResolvedValue(null);
+    joinRequestRepo.create.mockImplementation((input: any) => input);
+    joinRequestRepo.save.mockImplementation(async (input: any) => input);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -227,6 +321,10 @@ describe('LeaguesService', () => {
         { provide: getRepositoryToken(League), useValue: leagueRepo },
         { provide: getRepositoryToken(LeagueMember), useValue: memberRepo },
         { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
+        {
+          provide: getRepositoryToken(LeagueJoinRequest),
+          useValue: joinRequestRepo,
+        },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(MediaAsset), useValue: mediaAssetRepo },
         { provide: getRepositoryToken(MatchResult), useValue: matchResultRepo },
@@ -2029,6 +2127,224 @@ describe('LeaguesService', () => {
 
       expect(result.alreadyMember).toBe(false);
       expect(result.member.userId).toBe(FAKE_USER_ID_2);
+    });
+  });
+
+  // -- discover leagues -------------------------------------------
+
+  describe('discoverLeagues', () => {
+    it('returns public leagues filtered by q', async () => {
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-2',
+            name: 'Open Discover',
+            mode: 'open',
+            status: 'active',
+            cityName: 'Rosario',
+            provinceCode: 'AR-S',
+            membersCount: '8',
+            lastActivityAt: '2026-03-01T10:00:00.000Z',
+            sortAt: '2026-03-01T10:00:00.000Z',
+            isPublic: true,
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.discoverLeagues(FAKE_USER_ID, {
+        q: 'Discover',
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          id: 'league-2',
+          name: 'Open Discover',
+          mode: LeagueMode.OPEN,
+          status: LeagueStatus.ACTIVE,
+          isPublic: true,
+        }),
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith('l.name ILIKE :q', {
+        q: '%Discover%',
+      });
+    });
+
+    it('adds NOT EXISTS filter so member leagues are excluded', async () => {
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      await service.discoverLeagues(FAKE_USER_ID, {});
+
+      expect(qb.where).toHaveBeenCalledWith(
+        expect.stringContaining('NOT EXISTS'),
+        { userId: FAKE_USER_ID },
+      );
+    });
+  });
+
+  // -- join requests ----------------------------------------------
+
+  describe('join requests', () => {
+    it('createJoinRequest creates a pending request', async () => {
+      const created = fakeJoinRequest({
+        id: 'join-request-1',
+        message: 'Quiero entrar',
+      });
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(null);
+      joinRequestRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(
+        created,
+      );
+      joinRequestRepo.create.mockReturnValue(created);
+      joinRequestRepo.save.mockResolvedValue(created);
+
+      const result = await service.createJoinRequest(FAKE_USER_ID_2, 'league-1', {
+        message: 'Quiero entrar',
+      });
+
+      expect(result.status).toBe(LeagueJoinRequestStatus.PENDING);
+      expect(result.message).toBe('Quiero entrar');
+    });
+
+    it('createJoinRequest throws 409 when user is already member', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(fakeMember({ userId: FAKE_USER_ID_2 }));
+
+      await expect(
+        service.createJoinRequest(FAKE_USER_ID_2, 'league-1', {}),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          statusCode: 409,
+          code: 'LEAGUE_MEMBER_EXISTS',
+        }),
+      });
+    });
+
+    it('approveJoinRequest marks approved and creates league member', async () => {
+      const pendingRequest = fakeJoinRequest({
+        id: 'join-request-2',
+        status: LeagueJoinRequestStatus.PENDING,
+      });
+      const approvedRequest = fakeJoinRequest({
+        id: 'join-request-2',
+        status: LeagueJoinRequestStatus.APPROVED,
+      });
+      const ownerMember = fakeMember({
+        userId: FAKE_USER_ID,
+        role: LeagueRole.OWNER,
+      });
+      const createdMember = fakeMember({
+        userId: FAKE_USER_ID_2,
+        role: LeagueRole.MEMBER,
+        user: { displayName: 'Joiner' } as any,
+      });
+
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne
+        .mockResolvedValueOnce(ownerMember)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(createdMember);
+      memberRepo.create.mockReturnValue(createdMember);
+      memberRepo.save.mockResolvedValue(createdMember);
+      joinRequestRepo.findOne
+        .mockResolvedValueOnce(pendingRequest)
+        .mockResolvedValueOnce(approvedRequest);
+      joinRequestRepo.save.mockResolvedValue(approvedRequest);
+
+      const result = await service.approveJoinRequest(
+        FAKE_USER_ID,
+        'league-1',
+        'join-request-2',
+      );
+
+      expect(result.request.status).toBe(LeagueJoinRequestStatus.APPROVED);
+      expect(result.member.userId).toBe(FAKE_USER_ID_2);
+      expect(memberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          leagueId: 'league-1',
+          userId: FAKE_USER_ID_2,
+        }),
+      );
+    });
+
+    it('rejectJoinRequest sets status rejected', async () => {
+      const ownerMember = fakeMember({
+        userId: FAKE_USER_ID,
+        role: LeagueRole.OWNER,
+      });
+      const pendingRequest = fakeJoinRequest({
+        id: 'join-request-3',
+        status: LeagueJoinRequestStatus.PENDING,
+      });
+      const rejectedRequest = fakeJoinRequest({
+        id: 'join-request-3',
+        status: LeagueJoinRequestStatus.REJECTED,
+      });
+
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(ownerMember);
+      joinRequestRepo.findOne.mockResolvedValue(pendingRequest);
+      joinRequestRepo.save.mockResolvedValue(rejectedRequest);
+
+      const result = await service.rejectJoinRequest(
+        FAKE_USER_ID,
+        'league-1',
+        'join-request-3',
+      );
+
+      expect(result.status).toBe(LeagueJoinRequestStatus.REJECTED);
+    });
+
+    it('member cannot list join requests', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ userId: FAKE_USER_ID, role: LeagueRole.MEMBER }),
+      );
+
+      await expect(
+        service.listJoinRequests(FAKE_USER_ID, 'league-1'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+        }),
+      });
+    });
+
+    it('member cannot approve join requests', async () => {
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ userId: FAKE_USER_ID, role: LeagueRole.MEMBER }),
+      );
+
+      await expect(
+        service.approveJoinRequest(FAKE_USER_ID, 'league-1', 'join-request-4'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+        }),
+      });
     });
   });
 });

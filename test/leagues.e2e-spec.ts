@@ -104,12 +104,18 @@ describe('Leagues (e2e)', () => {
     leaguesService = {
       createLeague: jest.fn(),
       listMyLeagues: jest.fn(),
+      discoverLeagues: jest.fn(),
       getLeagueDetail: jest.fn(),
       updateMemberRole: jest.fn(),
       createInvites: jest.fn(),
       getInviteByToken: jest.fn(),
       acceptInvite: jest.fn(),
       declineInvite: jest.fn(),
+      createJoinRequest: jest.fn(),
+      listJoinRequests: jest.fn(),
+      approveJoinRequest: jest.fn(),
+      rejectJoinRequest: jest.fn(),
+      cancelJoinRequest: jest.fn(),
       enableShare: jest.fn(),
       getShareStatus: jest.fn(),
       disableShare: jest.fn(),
@@ -1120,6 +1126,70 @@ describe('Leagues (e2e)', () => {
   });
 
   // ── Cache-Control headers ────────────────────────────────────
+
+  describe('GET /leagues/discover', () => {
+    it('should call discover service with query filters', async () => {
+      leaguesService.discoverLeagues?.mockResolvedValue({
+        items: [
+          {
+            id: LEAGUE_ID,
+            name: 'Discover League',
+            mode: 'scheduled',
+            status: 'active',
+            cityName: 'Rosario',
+            provinceCode: 'AR-S',
+            membersCount: 12,
+            lastActivityAt: '2026-03-01T10:00:00.000Z',
+            isPublic: true,
+          },
+        ],
+        nextCursor: null,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/leagues/discover?q=discover&limit=10')
+        .expect(200);
+
+      expect(res.body.items).toHaveLength(1);
+      expect(leaguesService.discoverLeagues).toHaveBeenCalledWith(
+        FAKE_CREATOR.userId,
+        expect.objectContaining({
+          q: 'discover',
+          limit: 10,
+        }),
+      );
+    });
+  });
+
+  describe('POST /leagues/:id/join-requests', () => {
+    it('should create a join request', async () => {
+      leaguesService.createJoinRequest?.mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        leagueId: LEAGUE_ID,
+        userId: FAKE_INVITEE.userId,
+        status: 'pending',
+        message: 'Quiero sumarme',
+        userDisplayName: 'Invitee Player',
+        createdAt: '2026-03-01T10:00:00.000Z',
+        updatedAt: '2026-03-01T10:00:00.000Z',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/join-requests`)
+        .set('x-test-user', 'invitee')
+        .send({ message: 'Quiero sumarme' })
+        .expect(201);
+
+      expect(res.body.status).toBe('pending');
+      expect(leaguesService.createJoinRequest).toHaveBeenCalledWith(
+        FAKE_INVITEE.userId,
+        LEAGUE_ID,
+        expect.objectContaining({
+          message: 'Quiero sumarme',
+        }),
+      );
+    });
+  });
 
   describe('Cache-Control headers', () => {
     it('GET /leagues should include no-cache headers', async () => {

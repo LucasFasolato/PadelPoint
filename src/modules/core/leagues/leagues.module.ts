@@ -6,6 +6,7 @@ import { LeagueInvite } from './entities/league-invite.entity';
 import { LeagueActivity } from './entities/league-activity.entity';
 import { LeagueStandingsSnapshot } from './entities/league-standings-snapshot.entity';
 import { LeagueChallenge } from './entities/league-challenge.entity';
+import { LeagueJoinRequest } from './entities/league-join-request.entity';
 import { MatchResult } from '../matches/entities/match-result.entity';
 import { User } from '../users/entities/user.entity';
 import { MediaAsset } from '@core/media/entities/media-asset.entity';
@@ -28,6 +29,7 @@ import { NotificationsModule } from '@/modules/core/notifications/notifications.
       LeagueActivity,
       LeagueStandingsSnapshot,
       LeagueChallenge,
+      LeagueJoinRequest,
       MatchResult,
       User,
       MediaAsset,

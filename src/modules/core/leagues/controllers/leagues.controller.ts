@@ -38,6 +38,15 @@ import { LeagueStandingsHistoryQueryDto } from '../dto/league-standings-history-
 import { StandingsWithMovementDto } from '../dto/standings-row.dto';
 import { ActivityListResponseDto } from '../dto/activity-view.dto';
 import { ListLeaguesResponseDto } from '../dto/list-leagues.dto';
+import { DiscoverLeaguesQueryDto } from '../dto/discover-leagues-query.dto';
+import { DiscoverLeaguesResponseDto } from '../dto/discover-leagues.dto';
+import { CreateLeagueJoinRequestDto } from '../dto/create-league-join-request.dto';
+import { ListLeagueJoinRequestsQueryDto } from '../dto/list-league-join-requests-query.dto';
+import {
+  LeagueJoinRequestApproveResponseDto,
+  LeagueJoinRequestItemDto,
+  LeagueJoinRequestListResponseDto,
+} from '../dto/league-join-request.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -71,6 +80,15 @@ export class LeaguesController {
     return this.leaguesService.listMyLeagues(user.userId);
   }
 
+  @Get('discover')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: DiscoverLeaguesResponseDto })
+  discover(@Req() req: Request, @Query() query: DiscoverLeaguesQueryDto) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.discoverLeagues(user.userId, query);
+  }
+
   // Invite routes BEFORE :id to avoid NestJS matching "invites" as :id
   @Get('invites/:token')
   getInvite(@Param('token') token: string) {
@@ -95,6 +113,64 @@ export class LeaguesController {
   ) {
     const user = req.user as AuthUser;
     return this.leaguesService.declineInvite(user.userId, inviteId);
+  }
+
+  @Post(':id/join-requests')
+  @ApiOkResponse({ type: LeagueJoinRequestItemDto })
+  createJoinRequest(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Body() dto: CreateLeagueJoinRequestDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.createJoinRequest(user.userId, id, dto);
+  }
+
+  @Get(':id/join-requests')
+  @ApiOkResponse({ type: LeagueJoinRequestListResponseDto })
+  listJoinRequests(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Query() query: ListLeagueJoinRequestsQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.listJoinRequests(user.userId, id, query.status);
+  }
+
+  @Post(':id/join-requests/:requestId/approve')
+  @ApiOkResponse({ type: LeagueJoinRequestApproveResponseDto })
+  approveJoinRequest(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('requestId', new ParseRequiredUuidPipe('requestId'))
+    requestId: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.approveJoinRequest(user.userId, id, requestId);
+  }
+
+  @Post(':id/join-requests/:requestId/reject')
+  @ApiOkResponse({ type: LeagueJoinRequestItemDto })
+  rejectJoinRequest(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('requestId', new ParseRequiredUuidPipe('requestId'))
+    requestId: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.rejectJoinRequest(user.userId, id, requestId);
+  }
+
+  @Delete(':id/join-requests/:requestId')
+  @ApiOkResponse({ type: LeagueJoinRequestItemDto })
+  cancelJoinRequest(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('requestId', new ParseRequiredUuidPipe('requestId'))
+    requestId: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.leaguesService.cancelJoinRequest(user.userId, id, requestId);
   }
 
   @Get(':id')

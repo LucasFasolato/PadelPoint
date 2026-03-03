@@ -15,12 +15,15 @@ import * as crypto from 'crypto';
 import { League } from '../entities/league.entity';
 import { LeagueMember } from '../entities/league-member.entity';
 import { LeagueInvite } from '../entities/league-invite.entity';
+import { LeagueJoinRequest } from '../entities/league-join-request.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
 import { LeagueMode } from '../enums/league-mode.enum';
 import { InviteStatus } from '../enums/invite-status.enum';
+import { LeagueJoinRequestStatus } from '../enums/league-join-request-status.enum';
 import { CreateLeagueDto } from '../dto/create-league.dto';
 import { CreateMiniLeagueDto } from '../dto/create-mini-league.dto';
 import { CreateInvitesDto } from '../dto/create-invites.dto';
+import { CreateLeagueJoinRequestDto } from '../dto/create-league-join-request.dto';
 import { UpdateLeagueSettingsDto } from '../dto/update-league-settings.dto';
 import { UpdateLeagueProfileDto } from '../dto/update-league-profile.dto';
 import { SetLeagueAvatarDto } from '../dto/set-league-avatar.dto';
@@ -45,6 +48,9 @@ const MINI_MAX_PLAYERS = 6;
 const MINI_MAX_INVITE_EMAILS = 10;
 const LEAGUE_SHARE_TOKEN_BYTES = 32;
 const LEAGUE_SHARE_TOKEN_GENERATE_RETRIES = 5;
+const LEAGUES_DISCOVER_DEFAULT_LIMIT = 20;
+const LEAGUES_DISCOVER_MAX_LIMIT = 50;
+const LEAGUE_JOIN_REQUEST_MAX_MESSAGE_LENGTH = 1000;
 const MINI_LEAGUE_SETTINGS = {
   ...DEFAULT_LEAGUE_SETTINGS,
   maxPlayers: MINI_MAX_PLAYERS,
@@ -91,6 +97,36 @@ type LeagueListRawRow = {
   lastActivityAt: unknown;
 };
 
+type DiscoverLeagueRow = {
+  id: unknown;
+  name: unknown;
+  mode: unknown;
+  status: unknown;
+  cityName: unknown;
+  provinceCode: unknown;
+  membersCount: unknown;
+  lastActivityAt: unknown;
+  sortAt: unknown;
+  isPublic: unknown;
+};
+
+type DiscoverLeagueItem = {
+  id: string;
+  name: string;
+  mode: LeagueMode;
+  status: LeagueStatus;
+  cityName: string | null;
+  provinceCode: string | null;
+  membersCount: number;
+  lastActivityAt: string | null;
+  isPublic?: boolean;
+};
+
+type DiscoverLeagueCursor = {
+  sortAt: string;
+  id: string;
+};
+
 @Injectable()
 export class LeaguesService {
   private readonly logger = new Logger(LeaguesService.name);
@@ -103,6 +139,8 @@ export class LeaguesService {
     private readonly memberRepo: Repository<LeagueMember>,
     @InjectRepository(LeagueInvite)
     private readonly inviteRepo: Repository<LeagueInvite>,
+    @InjectRepository(LeagueJoinRequest)
+    private readonly joinRequestRepo: Repository<LeagueJoinRequest>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(MediaAsset)
@@ -429,6 +467,232 @@ export class LeaguesService {
     }
   }
 
+  async discoverLeagues(
+    userId: string,
+    opts: {
+      q?: string;
+      cityId?: string;
+      mode?: LeagueMode;
+      status?: LeagueStatus;
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ) {
+    const route = 'GET /leagues/discover';
+    const limit = this.normalizeDiscoverLimit(opts.limit);
+    const parsedCursor = this.parseDiscoverCursor(opts.cursor);
+    const q = typeof opts.q === 'string' ? opts.q.trim() : '';
+    let includeActivity = true;
+    let includeGeoProjection = true;
+    let includeIsPublicFilter = true;
+    let rows: DiscoverLeagueRow[] | null = null;
+
+    try {
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+          rows = await this.buildDiscoverLeaguesQuery({
+            userId,
+            q: q.length > 0 ? q : undefined,
+            cityId: opts.cityId,
+            mode: opts.mode,
+            status: opts.status,
+            limit,
+            cursor: parsedCursor,
+            includeActivity,
+            includeGeoProjection,
+            includeIsPublicFilter,
+          }).getRawMany<DiscoverLeagueRow>();
+          break;
+        } catch (err) {
+          const canFallbackActivity =
+            includeActivity && this.isLeagueActivityRelationMissing(err);
+          const canFallbackGeoProjection =
+            includeGeoProjection &&
+            this.isLeagueGeoProjectionUnsupported(err);
+          const canFallbackPublicFilter =
+            includeIsPublicFilter && this.isLeaguePublicColumnMissing(err);
+
+          if (
+            !canFallbackActivity &&
+            !canFallbackGeoProjection &&
+            !canFallbackPublicFilter
+          ) {
+            throw err;
+          }
+
+          if (canFallbackActivity) includeActivity = false;
+          if (canFallbackGeoProjection) includeGeoProjection = false;
+          if (canFallbackPublicFilter) includeIsPublicFilter = false;
+
+          this.logger.warn(
+            JSON.stringify({
+              event: 'leagues.discover.query_fallback',
+              userId,
+              route,
+              reason: this.getErrorReason(err),
+              includeActivity,
+              includeGeoProjection,
+              includeIsPublicFilter,
+            }),
+          );
+        }
+      }
+
+      if (!rows) {
+        throw new Error('Unable to build discover leagues query result');
+      }
+
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const items = pageRows
+        .map((row) => this.toDiscoverLeagueItem(row, includeIsPublicFilter))
+        .filter((item): item is DiscoverLeagueItem => item !== null);
+
+      const nextCursor = hasMore
+        ? this.buildDiscoverNextCursor(pageRows[pageRows.length - 1])
+        : null;
+
+      return {
+        items,
+        nextCursor,
+      };
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+
+      const errorId = crypto.randomUUID();
+      this.logger.error(
+        JSON.stringify({
+          event: 'leagues.discover.failed',
+          errorId,
+          userId,
+          route,
+          reason: this.getErrorReason(err),
+          stack: this.getErrorStack(err),
+        }),
+      );
+      throw new InternalServerErrorException({
+        statusCode: 500,
+        code: 'LEAGUES_DISCOVER_UNAVAILABLE',
+        message: 'Unable to discover leagues at the moment. Please try again.',
+        errorId,
+      });
+    }
+  }
+
+  private buildDiscoverLeaguesQuery(params: {
+    userId: string;
+    q?: string;
+    cityId?: string;
+    mode?: LeagueMode;
+    status?: LeagueStatus;
+    limit: number;
+    cursor: DiscoverLeagueCursor | null;
+    includeActivity: boolean;
+    includeGeoProjection: boolean;
+    includeIsPublicFilter: boolean;
+  }) {
+    const sortExpression = params.includeActivity
+      ? 'COALESCE((SELECT MAX(la."createdAt") FROM "league_activity" la WHERE la."leagueId" = l.id), l."createdAt")'
+      : 'l."createdAt"';
+
+    const qb = this.leagueRepo
+      .createQueryBuilder('l')
+      .leftJoin(User, 'creator', 'creator.id = l."creatorId"');
+
+    const selectColumns = [
+      'l.id AS id',
+      'l.name AS name',
+      'l.mode AS mode',
+      'l.status AS status',
+      params.includeIsPublicFilter
+        ? 'l."isPublic" AS "isPublic"'
+        : 'TRUE AS "isPublic"',
+    ];
+
+    if (params.includeGeoProjection) {
+      qb.leftJoin(City, 'city', 'city.id = creator."cityId"').leftJoin(
+        Province,
+        'province',
+        'province.id = city."provinceId"',
+      );
+      selectColumns.push(
+        'city.name AS "cityName"',
+        'province.code AS "provinceCode"',
+      );
+    } else {
+      selectColumns.push('NULL AS "cityName"', 'NULL AS "provinceCode"');
+    }
+
+    qb.select(selectColumns)
+      .addSelect(
+        (subQuery) =>
+          subQuery
+            .select('COUNT(1)')
+            .from(LeagueMember, 'lm')
+            .where('lm."leagueId" = l.id'),
+        'membersCount',
+      );
+
+    if (params.includeActivity) {
+      qb.addSelect(
+        (subQuery) =>
+          subQuery
+            .select('MAX(la."createdAt")')
+            .from(LeagueActivity, 'la')
+            .where('la."leagueId" = l.id'),
+        'lastActivityAt',
+      );
+    } else {
+      qb.addSelect('NULL', 'lastActivityAt');
+    }
+
+    qb
+      .addSelect(sortExpression, 'sortAt')
+      .where(
+        'NOT EXISTS (SELECT 1 FROM "league_members" lm2 WHERE lm2."leagueId" = l.id AND lm2."userId" = :userId)',
+        { userId: params.userId },
+      );
+
+    if (params.includeIsPublicFilter) {
+      qb.andWhere('l."isPublic" = true');
+    }
+
+    if (params.q) {
+      qb.andWhere('l.name ILIKE :q', { q: `%${params.q}%` });
+    }
+
+    if (params.cityId) {
+      qb.andWhere('creator."cityId" = :cityId', { cityId: params.cityId });
+    }
+
+    if (params.mode) {
+      qb.andWhere('l.mode = :mode', { mode: params.mode });
+    }
+
+    if (params.status) {
+      qb.andWhere('l.status = :status', { status: params.status });
+    } else {
+      qb.andWhere('l.status != :finishedStatus', {
+        finishedStatus: LeagueStatus.FINISHED,
+      });
+    }
+
+    if (params.cursor) {
+      qb.andWhere(`(${sortExpression}, l.id) < (:cursorSortAt, :cursorId)`, {
+        cursorSortAt: params.cursor.sortAt,
+        cursorId: params.cursor.id,
+      });
+    }
+
+    qb.orderBy(sortExpression, 'DESC')
+      .addOrderBy('l.id', 'DESC')
+      .take(params.limit + 1);
+
+    return qb;
+  }
+
   private buildMyLeaguesListQuery(
     userId: string,
     includeActivity: boolean,
@@ -566,6 +830,25 @@ export class LeaguesService {
       code === '42703' &&
       (normalizedMessage.includes('my_member.role') ||
         normalizedMessage.includes('league_members.role'))
+    );
+  }
+
+  private isLeaguePublicColumnMissing(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    return (
+      code === '42703' &&
+      (normalizedMessage.includes('ispublic') ||
+        normalizedMessage.includes('l.ispublic'))
     );
   }
 
@@ -1291,6 +1574,278 @@ export class LeaguesService {
     return { ok: true };
   }
 
+  // -- join requests ------------------------------------------------
+
+  async createJoinRequest(
+    userId: string,
+    leagueId: string,
+    dto: CreateLeagueJoinRequestDto,
+  ) {
+    await this.assertLeagueExists(leagueId);
+    const message = this.normalizeJoinRequestMessage(dto.message);
+
+    const request = await this.dataSource.transaction(async (manager) => {
+      const member = await manager
+        .getRepository(LeagueMember)
+        .findOne({ where: { leagueId, userId } });
+      if (member) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'LEAGUE_MEMBER_EXISTS',
+          message: 'You are already a member of this league',
+        });
+      }
+
+      const repo = manager.getRepository(LeagueJoinRequest);
+      const existing = await repo
+        .createQueryBuilder('request')
+        .setLock('pessimistic_write')
+        .where('request."leagueId" = :leagueId', { leagueId })
+        .andWhere('request."userId" = :userId', { userId })
+        .getOne();
+
+      if (existing) {
+        if (existing.status === LeagueJoinRequestStatus.PENDING) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'LEAGUE_JOIN_REQUEST_PENDING',
+            message: 'A pending join request already exists',
+          });
+        }
+        if (existing.status === LeagueJoinRequestStatus.APPROVED) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'LEAGUE_JOIN_REQUEST_ALREADY_APPROVED',
+            message: 'This join request has already been approved',
+          });
+        }
+
+        existing.status = LeagueJoinRequestStatus.PENDING;
+        existing.message = message;
+        const retried = await repo.save(existing);
+        const hydrated = await repo.findOne({
+          where: { id: retried.id },
+          relations: ['user'],
+        });
+        return hydrated ?? retried;
+      }
+
+      const created = repo.create({
+        leagueId,
+        userId,
+        status: LeagueJoinRequestStatus.PENDING,
+        message,
+      });
+
+      try {
+        const saved = await repo.save(created);
+        const hydrated = await repo.findOne({
+          where: { id: saved.id },
+          relations: ['user'],
+        });
+        return hydrated ?? saved;
+      } catch (err: any) {
+        if (String(err?.code) !== '23505') {
+          throw err;
+        }
+
+        const concurrent = await repo.findOne({
+          where: { leagueId, userId },
+          relations: ['user'],
+        });
+        if (!concurrent) {
+          throw err;
+        }
+
+        if (concurrent.status === LeagueJoinRequestStatus.PENDING) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'LEAGUE_JOIN_REQUEST_PENDING',
+            message: 'A pending join request already exists',
+          });
+        }
+        if (concurrent.status === LeagueJoinRequestStatus.APPROVED) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'LEAGUE_JOIN_REQUEST_ALREADY_APPROVED',
+            message: 'This join request has already been approved',
+          });
+        }
+
+        concurrent.status = LeagueJoinRequestStatus.PENDING;
+        concurrent.message = message;
+        return repo.save(concurrent);
+      }
+    });
+
+    return this.toJoinRequestView(request);
+  }
+
+  async listJoinRequests(
+    userId: string,
+    leagueId: string,
+    status?: LeagueJoinRequestStatus,
+  ) {
+    await this.assertLeagueExists(leagueId);
+    await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
+
+    const requests = await this.joinRequestRepo.find({
+      where: {
+        leagueId,
+        status: status ?? LeagueJoinRequestStatus.PENDING,
+      },
+      relations: ['user'],
+      order: {
+        createdAt: 'DESC',
+        id: 'DESC',
+      },
+    });
+
+    return {
+      items: requests.map((request) => this.toJoinRequestView(request)),
+    };
+  }
+
+  async approveJoinRequest(userId: string, leagueId: string, requestId: string) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueExistsInManager(manager, leagueId);
+      await this.assertRoleInManager(
+        manager,
+        leagueId,
+        userId,
+        LeagueRole.OWNER,
+        LeagueRole.ADMIN,
+      );
+
+      const request = await this.getJoinRequestForUpdate(
+        manager,
+        leagueId,
+        requestId,
+      );
+
+      if (
+        request.status === LeagueJoinRequestStatus.REJECTED ||
+        request.status === LeagueJoinRequestStatus.CANCELED
+      ) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'LEAGUE_JOIN_REQUEST_INVALID_STATE',
+          message: `Cannot approve a ${request.status} request`,
+        });
+      }
+
+      if (request.status !== LeagueJoinRequestStatus.APPROVED) {
+        request.status = LeagueJoinRequestStatus.APPROVED;
+        await manager.getRepository(LeagueJoinRequest).save(request);
+      }
+
+      const memberRepo = manager.getRepository(LeagueMember);
+      const existingMember = await memberRepo.findOne({
+        where: { leagueId, userId: request.userId },
+      });
+      const member = await this.ensureMemberInTransaction(
+        manager,
+        leagueId,
+        request.userId,
+      );
+
+      if (!existingMember) {
+        await manager.getRepository(LeagueActivity).save({
+          leagueId,
+          type: LeagueActivityType.MEMBER_JOINED,
+          actorId: userId,
+          entityId: request.userId,
+          payload: { source: 'join_request' },
+        });
+      }
+
+      const hydrated = await manager.getRepository(LeagueJoinRequest).findOne({
+        where: { id: request.id },
+        relations: ['user'],
+      });
+
+      return {
+        request: hydrated ?? request,
+        member,
+      };
+    });
+
+    return {
+      request: this.toJoinRequestView(result.request),
+      member: this.toMemberView(result.member),
+    };
+  }
+
+  async rejectJoinRequest(userId: string, leagueId: string, requestId: string) {
+    const request = await this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueExistsInManager(manager, leagueId);
+      await this.assertRoleInManager(
+        manager,
+        leagueId,
+        userId,
+        LeagueRole.OWNER,
+        LeagueRole.ADMIN,
+      );
+
+      const row = await this.getJoinRequestForUpdate(manager, leagueId, requestId);
+      if (row.status === LeagueJoinRequestStatus.REJECTED) {
+        return row;
+      }
+      if (row.status !== LeagueJoinRequestStatus.PENDING) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'LEAGUE_JOIN_REQUEST_INVALID_STATE',
+          message: `Cannot reject a ${row.status} request`,
+        });
+      }
+
+      row.status = LeagueJoinRequestStatus.REJECTED;
+      return manager.getRepository(LeagueJoinRequest).save(row);
+    });
+
+    return this.toJoinRequestView(request);
+  }
+
+  async cancelJoinRequest(userId: string, leagueId: string, requestId: string) {
+    const request = await this.dataSource.transaction(async (manager) => {
+      await this.assertLeagueExistsInManager(manager, leagueId);
+
+      const row = await this.getJoinRequestForUpdate(manager, leagueId, requestId);
+      const canModerate = await this.hasRoleInManager(
+        manager,
+        leagueId,
+        userId,
+        LeagueRole.OWNER,
+        LeagueRole.ADMIN,
+      );
+
+      if (row.userId !== userId && !canModerate) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'LEAGUE_FORBIDDEN',
+          message: 'You do not have permission to cancel this request',
+        });
+      }
+
+      if (row.status === LeagueJoinRequestStatus.CANCELED) {
+        return row;
+      }
+
+      if (row.status === LeagueJoinRequestStatus.APPROVED) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'LEAGUE_JOIN_REQUEST_INVALID_STATE',
+          message: 'Cannot cancel an approved request',
+        });
+      }
+
+      row.status = LeagueJoinRequestStatus.CANCELED;
+      return manager.getRepository(LeagueJoinRequest).save(row);
+    });
+
+    return this.toJoinRequestView(request);
+  }
+
   private async ensureMemberInTransaction(
     manager: EntityManager,
     leagueId: string,
@@ -1542,6 +2097,95 @@ export class LeaguesService {
     return member;
   }
 
+  private async assertRoleInManager(
+    manager: EntityManager,
+    leagueId: string,
+    userId: string,
+    ...allowedRoles: LeagueRole[]
+  ): Promise<void> {
+    const hasRole = await this.hasRoleInManager(
+      manager,
+      leagueId,
+      userId,
+      ...allowedRoles,
+    );
+    if (!hasRole) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'LEAGUE_FORBIDDEN',
+        message: 'You do not have permission to perform this action',
+      });
+    }
+  }
+
+  private async hasRoleInManager(
+    manager: EntityManager,
+    leagueId: string,
+    userId: string,
+    ...allowedRoles: LeagueRole[]
+  ): Promise<boolean> {
+    const member = await manager
+      .getRepository(LeagueMember)
+      .findOne({ where: { leagueId, userId } });
+    if (!member) return false;
+    return allowedRoles.includes(member.role);
+  }
+
+  private async assertLeagueExists(leagueId: string): Promise<void> {
+    const league = await this.leagueRepo.findOne({
+      where: { id: leagueId },
+      select: ['id'],
+    });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+  }
+
+  private async assertLeagueExistsInManager(
+    manager: EntityManager,
+    leagueId: string,
+  ): Promise<void> {
+    const league = await manager.getRepository(League).findOne({
+      where: { id: leagueId },
+      select: ['id'],
+    });
+    if (!league) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_NOT_FOUND',
+        message: 'League not found',
+      });
+    }
+  }
+
+  private async getJoinRequestForUpdate(
+    manager: EntityManager,
+    leagueId: string,
+    requestId: string,
+  ): Promise<LeagueJoinRequest> {
+    const request = await manager
+      .getRepository(LeagueJoinRequest)
+      .createQueryBuilder('request')
+      .setLock('pessimistic_write')
+      .where('request.id = :requestId', { requestId })
+      .andWhere('request."leagueId" = :leagueId', { leagueId })
+      .getOne();
+
+    if (!request) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAGUE_JOIN_REQUEST_NOT_FOUND',
+        message: 'Join request not found',
+      });
+    }
+
+    return request;
+  }
+
   // -- notification helpers -----------------------------------------
 
   private async sendInviteReceivedNotifications(
@@ -1714,6 +2358,40 @@ export class LeaguesService {
     return item;
   }
 
+  private toDiscoverLeagueItem(
+    row: DiscoverLeagueRow | null | undefined,
+    includeIsPublic: boolean,
+  ): DiscoverLeagueItem | null {
+    if (!row || typeof row !== 'object') {
+      return null;
+    }
+
+    const id = this.toNonEmptyTrimmedString(row.id);
+    if (!id) return null;
+
+    const sortAt = this.toNullableIsoString(row.sortAt);
+    if (!sortAt) return null;
+
+    const membersCount = this.toSafeInteger(row.membersCount) ?? 0;
+
+    const item: DiscoverLeagueItem = {
+      id,
+      name: this.toNonEmptyTrimmedString(row.name) ?? 'Liga',
+      mode: this.toLeagueModeValue(row.mode),
+      status: this.toLeagueStatusValue(row.status),
+      cityName: this.toNullableTrimmedString(row.cityName),
+      provinceCode: this.toNullableTrimmedString(row.provinceCode),
+      membersCount,
+      lastActivityAt: this.toNullableIsoString(row.lastActivityAt),
+    };
+
+    if (includeIsPublic) {
+      item.isPublic = this.toBooleanValue(row.isPublic);
+    }
+
+    return item;
+  }
+
   private toLeagueListMode(mode: unknown): LeagueListMode {
     const normalized = this.toNormalizedString(mode, 'lower');
     if (normalized === 'open') return 'OPEN';
@@ -1754,6 +2432,22 @@ export class LeaguesService {
     return undefined;
   }
 
+  private toLeagueModeValue(mode: unknown): LeagueMode {
+    const normalized = this.toNormalizedString(mode, 'lower');
+    if (normalized === LeagueMode.OPEN) return LeagueMode.OPEN;
+    if (normalized === LeagueMode.MINI) return LeagueMode.MINI;
+    if (normalized === LeagueMode.SCHEDULED) return LeagueMode.SCHEDULED;
+    return LeagueMode.SCHEDULED;
+  }
+
+  private toLeagueStatusValue(status: unknown): LeagueStatus {
+    const normalized = this.toNormalizedString(status, 'lower');
+    if (normalized === LeagueStatus.ACTIVE) return LeagueStatus.ACTIVE;
+    if (normalized === LeagueStatus.FINISHED) return LeagueStatus.FINISHED;
+    if (normalized === LeagueStatus.DRAFT) return LeagueStatus.DRAFT;
+    return LeagueStatus.DRAFT;
+  }
+
   private toSafeInteger(value: unknown): number | undefined {
     if (typeof value === 'bigint') {
       if (value <= 0n) return 0;
@@ -1768,6 +2462,67 @@ export class LeaguesService {
       if (!Number.isNaN(parsed)) return Math.max(0, parsed);
     }
     return undefined;
+  }
+
+  private toBooleanValue(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return (
+        normalized === 'true' ||
+        normalized === 't' ||
+        normalized === '1' ||
+        normalized === 'yes'
+      );
+    }
+    return false;
+  }
+
+  private normalizeDiscoverLimit(limit?: number): number {
+    if (!Number.isFinite(limit)) return LEAGUES_DISCOVER_DEFAULT_LIMIT;
+    const parsed = Math.trunc(Number(limit));
+    if (parsed < 1) return 1;
+    return Math.min(LEAGUES_DISCOVER_MAX_LIMIT, parsed);
+  }
+
+  private parseDiscoverCursor(cursor?: string): DiscoverLeagueCursor | null {
+    if (!cursor || cursor.trim().length === 0) return null;
+    try {
+      const parsed = JSON.parse(
+        Buffer.from(cursor, 'base64url').toString('utf8'),
+      ) as Partial<DiscoverLeagueCursor>;
+      const sortAtRaw =
+        typeof parsed.sortAt === 'string' ? parsed.sortAt : undefined;
+      const idRaw = typeof parsed.id === 'string' ? parsed.id.trim() : '';
+      const sortAtIso = sortAtRaw ? this.toNullableIsoString(sortAtRaw) : null;
+      if (!sortAtIso || idRaw.length === 0) {
+        throw new Error('Invalid discover cursor payload');
+      }
+      return {
+        sortAt: sortAtIso,
+        id: idRaw,
+      };
+    } catch {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'LEAGUE_DISCOVER_CURSOR_INVALID',
+        message: 'Invalid discover cursor',
+      });
+    }
+  }
+
+  private buildDiscoverNextCursor(row: DiscoverLeagueRow): string | null {
+    const sortAt = this.toNullableIsoString(row.sortAt);
+    const id = this.toNonEmptyTrimmedString(row.id);
+    if (!sortAt || !id) return null;
+    return Buffer.from(
+      JSON.stringify({
+        sortAt,
+        id,
+      }),
+      'utf8',
+    ).toString('base64url');
   }
 
   private toNullableIsoString(
@@ -1874,6 +2629,19 @@ export class LeaguesService {
     };
   }
 
+  private toJoinRequestView(request: LeagueJoinRequest) {
+    return {
+      id: request.id,
+      leagueId: request.leagueId,
+      userId: request.userId,
+      status: request.status,
+      message: request.message ?? null,
+      userDisplayName: request.user?.displayName ?? null,
+      createdAt: request.createdAt.toISOString(),
+      updatedAt: request.updatedAt.toISOString(),
+    };
+  }
+
   private toInviteView(i: LeagueInvite) {
     return {
       id: i.id,
@@ -1887,6 +2655,17 @@ export class LeaguesService {
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private normalizeJoinRequestMessage(message?: string | null): string | null {
+    if (typeof message !== 'string') {
+      return null;
+    }
+    const trimmed = message.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    return trimmed.slice(0, LEAGUE_JOIN_REQUEST_MAX_MESSAGE_LENGTH);
   }
 
   private normalizeLeagueDateInput(dateValue?: string | null): string | null {
