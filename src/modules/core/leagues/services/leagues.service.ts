@@ -301,6 +301,7 @@ export class LeaguesService {
     try {
       let includeActivity = true;
       let includeGeoProjection = true;
+      let includeRoleColumn = true;
       let rows: LeagueListRawRow[] | undefined;
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -309,6 +310,7 @@ export class LeaguesService {
             userId,
             includeActivity,
             includeGeoProjection,
+            includeRoleColumn,
           ).getRawMany();
           break;
         } catch (err) {
@@ -317,13 +319,20 @@ export class LeaguesService {
           const canFallbackGeoProjection =
             includeGeoProjection &&
             this.isLeagueGeoProjectionUnsupported(err);
+          const canFallbackRoleColumn =
+            includeRoleColumn && this.isLeagueRoleColumnMissing(err);
 
-          if (!canFallbackActivity && !canFallbackGeoProjection) {
+          if (
+            !canFallbackActivity &&
+            !canFallbackGeoProjection &&
+            !canFallbackRoleColumn
+          ) {
             throw err;
           }
 
           if (canFallbackActivity) includeActivity = false;
           if (canFallbackGeoProjection) includeGeoProjection = false;
+          if (canFallbackRoleColumn) includeRoleColumn = false;
 
           const queryFallbackErrorId = crypto.randomUUID();
           this.logger.warn(
@@ -336,6 +345,7 @@ export class LeaguesService {
               stack: this.getErrorStack(err),
               includeActivity,
               includeGeoProjection,
+              includeRoleColumn,
             }),
           );
         }
@@ -423,6 +433,7 @@ export class LeaguesService {
     userId: string,
     includeActivity: boolean,
     includeGeoProjection: boolean,
+    includeRoleColumn: boolean,
   ) {
     const qb = this.leagueRepo
       .createQueryBuilder('l')
@@ -434,12 +445,19 @@ export class LeaguesService {
       );
 
     const selectColumns = [
-        'l.id AS id',
-        'l.name AS name',
-        'l.mode AS mode',
-        'l.status AS status',
-        'my_member.role AS role',
-      ];
+      'l.id AS id',
+      'l.name AS name',
+      'l.mode AS mode',
+      'l.status AS status',
+    ];
+
+    if (includeRoleColumn) {
+      selectColumns.push('my_member.role AS role');
+    } else {
+      selectColumns.push(
+        `CASE WHEN l."creatorId" = my_member."userId" THEN 'owner' ELSE 'member' END AS role`,
+      );
+    }
 
     if (includeGeoProjection) {
       qb.leftJoin(User, 'creator', 'creator.id = l."creatorId"')
@@ -530,6 +548,25 @@ export class LeaguesService {
     }
 
     return false;
+  }
+
+  private isLeagueRoleColumnMissing(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    return (
+      code === '42703' &&
+      (normalizedMessage.includes('my_member.role') ||
+        normalizedMessage.includes('league_members.role'))
+    );
   }
 
   private getErrorReason(err: unknown): string {
@@ -1541,13 +1578,13 @@ export class LeaguesService {
           payload.endDate = league.endDate;
         }
 
-        await this.userNotifications.create({
-          userId: invite.invitedUserId,
-          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
-          title: `You've been invited to ${league.name}`,
-          body: `${inviterName} invited you to join their league.`,
-          data: payload,
-        });
+    await this.userNotifications.create({
+      userId: invite.invitedUserId,
+      type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+      title: `You have been invited to ${league.name}`,
+      body: `${inviterName} invited you to join their league.`,
+      data: payload,
+    });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'unknown';
         this.logger.error(

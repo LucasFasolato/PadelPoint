@@ -648,6 +648,71 @@ describe('LeaguesService', () => {
       expect(leagueRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
     });
 
+    it('should fallback when league member role column is unavailable', async () => {
+      const primaryQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockRejectedValue({
+          code: '42703',
+          message: 'column my_member.role does not exist',
+        }),
+      };
+      const fallbackQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-1',
+            name: 'Liga fallback role',
+            mode: 'scheduled',
+            status: 'draft',
+            role: 'member',
+            membersCount: '2',
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder
+        .mockReturnValueOnce(primaryQb as any)
+        .mockReturnValueOnce(fallbackQb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'league-1',
+            name: 'Liga fallback role',
+            mode: 'SCHEDULED',
+            modeKey: 'SCHEDULED',
+            status: 'UPCOMING',
+            statusKey: 'UPCOMING',
+            role: 'MEMBER',
+            membersCount: 2,
+            cityName: null,
+            provinceCode: null,
+            lastActivityAt: null,
+          },
+        ],
+      });
+      expect(leagueRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(fallbackQb.select).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          `CASE WHEN l."creatorId" = my_member."userId" THEN 'owner' ELSE 'member' END AS role`,
+        ]),
+      );
+    });
+
     it('should handle malformed raw rows without throwing', async () => {
       const qb = {
         innerJoin: jest.fn().mockReturnThis(),
