@@ -58,8 +58,8 @@ type ScopeResolution = {
 type LeaderboardParams = {
   userId: string;
   scope?: string;
-  provinceCode?: string;
-  cityId?: string;
+  provinceCode?: string | string[];
+  cityId?: string | string[];
   cityName?: string | string[];
   category?: string;
   timeframe?: string;
@@ -801,9 +801,9 @@ export class RankingsService {
 
   private async resolveScope(params: {
     scope: RankingScope;
-    provinceCode?: string;
-    cityId?: string;
-    cityName?: unknown;
+    provinceCode?: unknown;
+    cityId?: unknown;
+    cityName?: string | string[];
     context?: {
       requestId?: string;
     };
@@ -849,7 +849,7 @@ export class RankingsService {
       };
     }
 
-    const cityId = (params.cityId ?? '').trim();
+    const cityId = (this.coerceQueryString(params.cityId) ?? '').trim();
     if (cityId) {
       const city = await this.cityRepo.findOne({
         where: { id: cityId },
@@ -882,19 +882,24 @@ export class RankingsService {
     const hasCityId = Boolean(cityId);
     const hasCityName = Boolean(normalizedCityName);
     const hasProvinceCode = Boolean(normalizedProvinceCode);
-    this.logger.debug(
-      JSON.stringify({
-        event: 'rankings.city_resolution_debug',
-        requestId: params.context?.requestId ?? null,
-        rawType: typeof params.cityName,
-        isArray: Array.isArray(params.cityName),
-        normalizedCityNameLength: normalizedCityName?.length ?? 0,
-        hasCityId,
-        hasCityName,
-        hasProvinceCode,
-      }),
-    );
     if (!hasCityId && !(normalizedCityName && normalizedProvinceCode)) {
+      this.logger.debug(
+        JSON.stringify({
+          event: 'rankings.city_resolution_debug',
+          requestId: params.context?.requestId ?? null,
+          scope: params.scope,
+          cityIdType: typeof params.cityId,
+          cityNameType: typeof params.cityName,
+          cityNameIsArray: Array.isArray(params.cityName),
+          provinceCodeType: typeof params.provinceCode,
+          provinceCodeIsArray: Array.isArray(params.provinceCode),
+          normalizedCityNameLen: normalizedCityName?.length ?? 0,
+          normalizedProvinceCode: normalizedProvinceCode ?? null,
+          hasCityId,
+          hasCityName,
+          hasProvinceCode,
+        }),
+      );
       throw new BadRequestException(CITY_REQUIRED_ERROR);
     }
 
@@ -966,9 +971,10 @@ export class RankingsService {
     });
   }
 
-  private normalizeProvinceCode(code: string | null | undefined): string | null {
-    if (typeof code !== 'string') return null;
-    const trimmed = code.trim().toUpperCase();
+  private normalizeProvinceCode(code: unknown): string | null {
+    const s = this.coerceQueryString(code);
+    if (!s) return null;
+    const trimmed = s.trim().toUpperCase();
     if (!trimmed) return null;
     return trimmed.startsWith('AR-') ? trimmed.slice(3) : trimmed;
   }

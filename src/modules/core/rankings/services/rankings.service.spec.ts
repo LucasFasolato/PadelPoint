@@ -303,7 +303,7 @@ describe('RankingsService', () => {
     expect(cityRepo.findOne).not.toHaveBeenCalled();
   });
 
-  it('does not throw CITY_REQUIRED when cityName is present in CITY scope fallback', async () => {
+  it('does not throw CITY_REQUIRED with CITY scope when cityName is string and provinceCode is string', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();
     const userRepo = createRepoMock();
@@ -315,7 +315,7 @@ describe('RankingsService', () => {
 
     const provinceQb = {
       where: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-a', code: 'A' }),
     };
     provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
 
@@ -333,18 +333,18 @@ describe('RankingsService', () => {
 
     const result = await (service as any).resolveScope({
       scope: RankingScope.CITY,
-      cityName: 'Rosario',
-      provinceCode: 'AR-S',
+      cityName: 'Salta',
+      provinceCode: 'AR-A',
       context: { requestId: 'req-1' },
     });
 
     expect(result).toEqual({
       scope: RankingScope.CITY,
-      provinceCode: 'S',
-      provinceCodeIso: 'AR-S',
+      provinceCode: 'A',
+      provinceCodeIso: 'AR-A',
       cityId: null,
-      cityNameNormalized: 'rosario',
-      dimensionKey: 'CITY_NAME|S|rosario',
+      cityNameNormalized: 'salta',
+      dimensionKey: 'CITY_NAME|A|salta',
     });
     expect(
       debugSpy.mock.calls.some(
@@ -400,7 +400,7 @@ describe('RankingsService', () => {
     });
   });
 
-  it('does not throw CITY_REQUIRED when cityName arrives as string[] in CITY fallback', async () => {
+  it('does not throw CITY_REQUIRED with CITY scope when cityName is string[] and provinceCode is string', async () => {
     const snapshotRepo = createRepoMock();
     const matchRepo = createRepoMock();
     const userRepo = createRepoMock();
@@ -412,7 +412,7 @@ describe('RankingsService', () => {
 
     const provinceQb = {
       where: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-a', code: 'A' }),
     };
     provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
 
@@ -429,17 +429,103 @@ describe('RankingsService', () => {
 
     const result = await (service as any).resolveScope({
       scope: RankingScope.CITY,
-      cityName: ['Rosario'],
-      provinceCode: 'AR-S',
+      cityName: ['Salta'],
+      provinceCode: 'AR-A',
     });
 
     expect(result).toEqual({
       scope: RankingScope.CITY,
-      provinceCode: 'S',
-      provinceCodeIso: 'AR-S',
+      provinceCode: 'A',
+      provinceCodeIso: 'AR-A',
       cityId: null,
-      cityNameNormalized: 'rosario',
-      dimensionKey: 'CITY_NAME|S|rosario',
+      cityNameNormalized: 'salta',
+      dimensionKey: 'CITY_NAME|A|salta',
+    });
+  });
+
+  it('does not throw CITY_REQUIRED with CITY scope when cityName is string and provinceCode is string[]', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-a', code: 'A' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: 'Salta',
+      provinceCode: ['AR-A'],
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'A',
+      provinceCodeIso: 'AR-A',
+      cityId: null,
+      cityNameNormalized: 'salta',
+      dimensionKey: 'CITY_NAME|A|salta',
+    });
+  });
+
+  it('does not throw CITY_REQUIRED with CITY scope when cityName is string[] and provinceCode is string[]', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-a', code: 'A' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: ['Salta'],
+      provinceCode: ['AR-A'],
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'A',
+      provinceCodeIso: 'AR-A',
+      cityId: null,
+      cityNameNormalized: 'salta',
+      dimensionKey: 'CITY_NAME|A|salta',
     });
   });
 
@@ -468,14 +554,53 @@ describe('RankingsService', () => {
       (service as any).resolveScope({
         scope: RankingScope.CITY,
         cityName: undefined,
-        provinceCode: 'AR-S',
+        provinceCode: 'AR-A',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       (service as any).resolveScope({
         scope: RankingScope.CITY,
         cityName: undefined,
-        provinceCode: 'AR-S',
+        provinceCode: 'AR-A',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CITY_REQUIRED' }),
+    });
+  });
+
+  it('throws CITY_REQUIRED when provinceCode is undefined in CITY fallback', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    await expect(
+      (service as any).resolveScope({
+        scope: RankingScope.CITY,
+        cityName: 'Salta',
+        provinceCode: undefined,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveScope({
+        scope: RankingScope.CITY,
+        cityName: 'Salta',
+        provinceCode: undefined,
       }),
     ).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'CITY_REQUIRED' }),
