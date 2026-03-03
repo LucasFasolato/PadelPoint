@@ -16,7 +16,9 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -226,6 +228,42 @@ export class LeaguesController {
   }
 
   @Patch(':leagueId/settings')
+  @ApiBody({
+    required: false,
+    description:
+      'Partial update. Send an empty object {} to restore default league settings.',
+    schema: {
+      type: 'object',
+      properties: {
+        winPoints: { type: 'integer', minimum: 0, maximum: 10 },
+        drawPoints: { type: 'integer', minimum: 0, maximum: 10 },
+        lossPoints: { type: 'integer', minimum: 0, maximum: 10 },
+        tieBreakers: {
+          type: 'array',
+          items: { type: 'string', enum: ['points', 'wins', 'setsDiff', 'gamesDiff'] },
+        },
+        includeSources: {
+          type: 'array',
+          items: { type: 'string', enum: ['manual', 'reservation'] },
+        },
+      },
+      additionalProperties: false,
+    },
+    examples: {
+      partialUpdate: {
+        summary: 'Update parcial',
+        value: {
+          drawPoints: 2,
+          tieBreakers: ['points', 'setsDiff', 'gamesDiff'],
+          includeSources: ['manual'],
+        },
+      },
+      resetDefaults: {
+        summary: 'Reset a defaults',
+        value: {},
+      },
+    },
+  })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -273,6 +311,22 @@ export class LeaguesController {
         recomputeTriggered: { type: 'boolean', example: true },
       },
       required: ['settings', 'recomputeTriggered'],
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Settings validation failed',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        code: { type: 'string', example: 'SETTINGS_INVALID_POINTS_ORDER' },
+        message: {
+          type: 'string',
+          example:
+            'Invalid points order: winPoints must be >= drawPoints >= lossPoints',
+        },
+      },
+      required: ['statusCode', 'code', 'message'],
     },
   })
   @ApiForbiddenResponse({ description: 'Only owner/admin can update settings' })

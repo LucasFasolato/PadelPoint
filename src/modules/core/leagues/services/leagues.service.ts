@@ -1934,10 +1934,25 @@ export class LeaguesService {
     await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
 
     const current = normalizeLeagueSettings(league.settings);
-    const next = normalizeLeagueSettings({
-      ...current,
-      ...dto,
-    });
+    const incomingEntries = Object.entries(dto).filter(
+      ([, value]) => value !== undefined,
+    );
+    const isResetToDefaultsRequest = incomingEntries.length === 0;
+    const next = isResetToDefaultsRequest
+      ? normalizeLeagueSettings(DEFAULT_LEAGUE_SETTINGS)
+      : normalizeLeagueSettings({
+          ...current,
+          ...dto,
+        });
+
+    if (!(next.winPoints >= next.drawPoints && next.drawPoints >= next.lossPoints)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'SETTINGS_INVALID_POINTS_ORDER',
+        message:
+          'Invalid points order: winPoints must be >= drawPoints >= lossPoints',
+      });
+    }
 
     const updatedFields: Array<keyof LeagueSettings> = [];
     if (current.winPoints !== next.winPoints) updatedFields.push('winPoints');
@@ -1972,8 +1987,20 @@ export class LeaguesService {
         });
         recomputeTriggered = true;
       } catch (err) {
+        const anyErr = err as {
+          code?: unknown;
+          driverError?: { code?: unknown };
+        };
+        const errorCode = String(
+          anyErr?.driverError?.code ?? anyErr?.code ?? 'unknown',
+        );
         this.logger.warn(
-          `settings recompute failed: leagueId=${leagueId} error=${err instanceof Error ? err.message : String(err)}`,
+          JSON.stringify({
+            event: 'league_settings_recompute_failed',
+            leagueId,
+            actorId: userId,
+            errorCode,
+          }),
         );
       }
 
@@ -1983,6 +2010,18 @@ export class LeaguesService {
         userId,
         leagueId,
         { updatedFields },
+      );
+    }
+
+    if (hasRealChange || hasStorageDrift) {
+      this.logger.log(
+        JSON.stringify({
+          event: 'league_settings_updated',
+          leagueId,
+          actorId: userId,
+          keysChanged: updatedFields,
+          recomputeTriggered,
+        }),
       );
     }
 
