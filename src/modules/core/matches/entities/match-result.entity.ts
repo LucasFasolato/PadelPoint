@@ -29,6 +29,17 @@ export enum WinnerTeam {
   B = 'B',
 }
 
+export type RankingImpactReason =
+  | 'WEEKLY_LIMIT'
+  | 'COOLDOWN'
+  | 'RIVAL_DIMINISHING';
+
+export type MatchRankingImpact = {
+  applied: boolean;
+  multiplier: number;
+  reason?: RankingImpactReason;
+};
+
 @Entity('match_results')
 @Index(['challenge'], { unique: true })
 export class MatchResult {
@@ -124,6 +135,9 @@ export class MatchResult {
 
   @Column({ type: 'boolean', default: false })
   eloApplied!: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  rankingImpact!: MatchRankingImpact | null;
 
   @CreateDateColumn()
   createdAt!: Date;
