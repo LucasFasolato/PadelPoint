@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Header,
+  Patch,
   Param,
   Post,
   Query,
@@ -9,9 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { UserNotificationsService } from '../services/user-notifications.service';
 import { UserNotificationsQueryDto } from '../dto/user-notifications-query.dto';
+import { CanonicalNotificationsInboxResponseDto } from '../dto/notifications-inbox.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -25,7 +28,20 @@ export class UserNotificationsController {
   @Header('Pragma', 'no-cache')
   list(@Req() req: Request, @Query() query: UserNotificationsQueryDto) {
     const user = req.user as AuthUser;
-    return this.service.list(user.userId, {
+    // Compatibility alias for old clients; canonical endpoint is GET /notifications/inbox
+    return this.service.listLegacyFromCanonical(user.userId, {
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+  }
+
+  @Get('inbox')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: CanonicalNotificationsInboxResponseDto })
+  inbox(@Req() req: Request, @Query() query: UserNotificationsQueryDto) {
+    const user = req.user as AuthUser;
+    return this.service.listInboxCanonical(user.userId, {
       cursor: query.cursor,
       limit: query.limit,
     });
@@ -42,6 +58,13 @@ export class UserNotificationsController {
 
   @Post(':id/read')
   async markRead(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as AuthUser;
+    await this.service.markRead(user.userId, id);
+    return { ok: true };
+  }
+
+  @Patch(':id/read')
+  async markReadPatch(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     await this.service.markRead(user.userId, id);
     return { ok: true };

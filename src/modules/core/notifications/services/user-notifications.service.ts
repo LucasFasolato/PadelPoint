@@ -15,7 +15,7 @@ export type CreateUserNotificationInput = {
   data?: Record<string, unknown> | null;
 };
 
-type NotificationView = {
+export type NotificationView = {
   id: string;
   type: UserNotificationType;
   title: string;
@@ -23,6 +23,37 @@ type NotificationView = {
   data: Record<string, unknown> | null;
   readAt: string | null;
   createdAt: string;
+};
+
+export type CanonicalNotificationEntityRefs = {
+  leagueId: string | null;
+  matchId: string | null;
+  challengeId: string | null;
+  inviteId: string | null;
+};
+
+export type CanonicalNotificationAction = {
+  type: 'VIEW' | 'ACCEPT' | 'DECLINE';
+  label: string;
+  href?: string;
+};
+
+export type CanonicalNotificationItem = {
+  id: string;
+  type: UserNotificationType;
+  title: string;
+  body: string | null;
+  createdAt: string;
+  readAt: string | null;
+  entityRefs: CanonicalNotificationEntityRefs;
+  actions?: CanonicalNotificationAction[];
+  data?: Record<string, unknown> | null;
+};
+
+export type CanonicalNotificationsInboxResponse = {
+  items: CanonicalNotificationItem[];
+  nextCursor: string | null;
+  unreadCount: number;
 };
 
 @Injectable()
@@ -64,7 +95,8 @@ export class UserNotificationsService {
       `notification persisted: id=${saved.id} type=${saved.type} userId=${saved.userId}`,
     );
 
-    // 2. WebSocket delivery (best-effort, non-blocking)
+    // 2. WebSocket delivery (best-effort, non-blocking).
+    // Canonical and legacy inbox clients both rely on this same event.
     const view = this.toView(saved);
     try {
       const delivered = this.gateway.emitToUser(
@@ -127,6 +159,41 @@ export class UserNotificationsService {
     return {
       items: items.map((n) => this.toView(n)),
       nextCursor,
+    };
+  }
+
+  async listInboxCanonical(
+    userId: string,
+    opts: { cursor?: string; limit?: number },
+  ): Promise<CanonicalNotificationsInboxResponse> {
+    const [listResult, unreadCount] = await Promise.all([
+      this.list(userId, opts),
+      this.getUnreadCount(userId),
+    ]);
+
+    return {
+      items: listResult.items.map((item) => this.toCanonicalItem(item)),
+      nextCursor: listResult.nextCursor,
+      unreadCount,
+    };
+  }
+
+  async listLegacyFromCanonical(
+    userId: string,
+    opts: { cursor?: string; limit?: number },
+  ): Promise<{ items: NotificationView[]; nextCursor: string | null }> {
+    const canonical = await this.listInboxCanonical(userId, opts);
+    return {
+      items: canonical.items.map((item) => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        body: item.body,
+        data: item.data ?? null,
+        readAt: item.readAt,
+        createdAt: item.createdAt,
+      })),
+      nextCursor: canonical.nextCursor,
     };
   }
 
@@ -225,6 +292,72 @@ export class UserNotificationsService {
       readAt: n.readAt ? n.readAt.toISOString() : null,
       createdAt: n.createdAt.toISOString(),
     };
+  }
+
+  private toCanonicalItem(item: NotificationView): CanonicalNotificationItem {
+    const data = item.data ?? null;
+    const refs = this.extractEntityRefs(data);
+    const actions = this.extractActions(data);
+
+    return {
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      body: item.body,
+      createdAt: item.createdAt,
+      readAt: item.readAt,
+      entityRefs: refs,
+      ...(actions.length > 0 ? { actions } : {}),
+      data,
+    };
+  }
+
+  private extractEntityRefs(
+    data: Record<string, unknown> | null,
+  ): CanonicalNotificationEntityRefs {
+    return {
+      leagueId: this.pickString(data?.leagueId),
+      matchId: this.pickString(data?.matchId),
+      challengeId: this.pickString(data?.challengeId),
+      inviteId: this.pickString(data?.inviteId),
+    };
+  }
+
+  private extractActions(
+    data: Record<string, unknown> | null,
+  ): CanonicalNotificationAction[] {
+    const actions: CanonicalNotificationAction[] = [];
+    const link = this.pickString(data?.link);
+    const inviteId = this.pickString(data?.inviteId);
+
+    if (link) {
+      actions.push({
+        type: 'VIEW',
+        label: 'Ver',
+        href: link,
+      });
+    }
+
+    if (inviteId) {
+      actions.push({
+        type: 'ACCEPT',
+        label: 'Aceptar',
+        href: `/leagues/invites/${inviteId}/accept`,
+      });
+      actions.push({
+        type: 'DECLINE',
+        label: 'Rechazar',
+        href: `/leagues/invites/${inviteId}/decline`,
+      });
+    }
+
+    return actions;
+  }
+
+  private pickString(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private assertValidInviteNotificationPayload(

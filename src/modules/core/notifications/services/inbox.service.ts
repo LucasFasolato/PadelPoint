@@ -428,7 +428,11 @@ export class InboxService {
     userId: string,
     limit: number,
   ): Promise<NotificationDTO[]> {
-    const result = await this.userNotificationsService.list(userId, { limit });
+    // Deprecated /me/inbox reuses canonical inbox pipeline internally.
+    const result = await this.userNotificationsService.listInboxCanonical(
+      userId,
+      { limit },
+    );
     return result.items.map((item) => ({
       id: item.id,
       type: item.type,
