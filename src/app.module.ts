@@ -24,6 +24,7 @@ import { PlayersModule } from './modules/core/players/players.module';
 import { RankingsModule } from './modules/core/rankings/rankings.module';
 import { IntentsModule } from './modules/core/intents/intents.module';
 import { InsightsModule } from './modules/core/insights/insights.module';
+import { EndorsementsModule } from './modules/core/endorsements/endorsements.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { InsightsModule } from './modules/core/insights/insights.module';
     RankingsModule,
     IntentsModule,
     InsightsModule,
+    EndorsementsModule,
   ],
 })
 export class AppModule {}
