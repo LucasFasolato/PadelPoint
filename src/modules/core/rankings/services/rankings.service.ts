@@ -164,24 +164,6 @@ export class RankingsService {
   }
 
   async getLeaderboard(params: LeaderboardParams) {
-    this.logger.debug(
-      JSON.stringify({
-        event: 'rankings.getLeaderboard.input',
-        requestId: params.context?.requestId ?? null,
-        scope: params.scope ?? null,
-        cityIdType: typeof params.cityId,
-        cityIdIsArray: Array.isArray(params.cityId),
-        cityIdLen: this.coerceQueryString(params.cityId)?.trim().length ?? 0,
-        cityNameType: typeof params.cityName,
-        cityNameIsArray: Array.isArray(params.cityName),
-        cityNameLen: this.coerceQueryString(params.cityName)?.trim().length ?? 0,
-        provinceCodeType: typeof params.provinceCode,
-        provinceCodeIsArray: Array.isArray(params.provinceCode),
-        provinceCodeLen:
-          this.coerceQueryString(params.provinceCode)?.trim().length ?? 0,
-      }),
-    );
-
     const scope = this.normalizeScope(params.scope);
     const scopeResolution = await this.resolveScope({
       scope,
@@ -838,24 +820,6 @@ export class RankingsService {
       requestId?: string;
     };
   }): Promise<ScopeResolution> {
-    this.logger.debug(
-      JSON.stringify({
-        event: 'rankings.resolveScope.input',
-        requestId: params.context?.requestId ?? null,
-        scope: params.scope,
-        cityIdType: typeof params.cityId,
-        cityIdIsArray: Array.isArray(params.cityId),
-        cityIdLen: this.coerceQueryString(params.cityId)?.trim().length ?? 0,
-        cityNameType: typeof params.cityName,
-        cityNameIsArray: Array.isArray(params.cityName),
-        cityNameLen: this.coerceQueryString(params.cityName)?.trim().length ?? 0,
-        provinceCodeType: typeof params.provinceCode,
-        provinceCodeIsArray: Array.isArray(params.provinceCode),
-        provinceCodeLen:
-          this.coerceQueryString(params.provinceCode)?.trim().length ?? 0,
-      }),
-    );
-
     if (params.scope === RankingScope.COUNTRY) {
       return {
         scope: RankingScope.COUNTRY,
@@ -932,33 +896,12 @@ export class RankingsService {
     const hasProvinceCode = Boolean(normalizedProvinceCode);
     const cityRequiredGuardTriggered =
       !hasCityId && !(normalizedCityName && normalizedProvinceCode);
-    this.logger.debug(
-      JSON.stringify({
-        event: 'rankings.resolveScope.normalized',
-        requestId: params.context?.requestId ?? null,
-        cityIdLen: cityId.length,
-        normalizedCityNameLen: normalizedCityName?.length ?? 0,
-        normalizedProvinceCode: normalizedProvinceCode ?? null,
-        hasCityId,
-        hasCityName,
-        hasProvinceCode,
-        cityRequiredGuardTriggered,
-      }),
-    );
 
     if (cityRequiredGuardTriggered) {
       this.logger.debug(
         JSON.stringify({
-          event: 'rankings.city_resolution_debug',
+          event: 'rankings.city_required',
           requestId: params.context?.requestId ?? null,
-          scope: params.scope,
-          cityIdType: typeof params.cityId,
-          cityNameType: typeof params.cityName,
-          cityNameIsArray: Array.isArray(params.cityName),
-          provinceCodeType: typeof params.provinceCode,
-          provinceCodeIsArray: Array.isArray(params.provinceCode),
-          normalizedCityNameLen: normalizedCityName?.length ?? 0,
-          normalizedProvinceCode: normalizedProvinceCode ?? null,
           hasCityId,
           hasCityName,
           hasProvinceCode,

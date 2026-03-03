@@ -48,33 +48,12 @@ export class RankingsController {
       : headerValue ?? null;
     const rawKeys =
       req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
-    const rawCityId = (req.query as Record<string, unknown>)?.cityId;
-    const rawCityName = (req.query as Record<string, unknown>)?.cityName;
-    const rawProvinceCode = (req.query as Record<string, unknown>)?.provinceCode;
-    const getQueryLen = (value: unknown): number => {
-      if (typeof value === 'string') return value.trim().length;
-      if (Array.isArray(value)) {
-        const first = value.find((entry) => typeof entry === 'string');
-        return typeof first === 'string' ? first.trim().length : 0;
-      }
-      return 0;
-    };
 
     this.logger.debug(
       JSON.stringify({
         event: 'rankings.query',
         requestId,
         rawKeys,
-        scopeRaw: query.scope ?? null,
-        cityIdType: typeof rawCityId,
-        cityIdIsArray: Array.isArray(rawCityId),
-        cityIdLen: getQueryLen(rawCityId),
-        cityNameType: typeof rawCityName,
-        cityNameIsArray: Array.isArray(rawCityName),
-        cityNameLen: getQueryLen(rawCityName),
-        provinceCodeType: typeof rawProvinceCode,
-        provinceCodeIsArray: Array.isArray(rawProvinceCode),
-        provinceCodeLen: getQueryLen(rawProvinceCode),
         dto: {
           scope: query.scope ?? null,
           cityId: Boolean(query.cityId),
