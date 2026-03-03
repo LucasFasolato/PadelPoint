@@ -1,6 +1,6 @@
 import { RankingsService } from './rankings.service';
 import { ConfigService } from '@nestjs/config';
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { RankingScope } from '../enums/ranking-scope.enum';
 import { RankingTimeframe } from '../enums/ranking-timeframe.enum';
 import { RankingMode } from '../enums/ranking-mode.enum';
@@ -387,6 +387,49 @@ describe('RankingsService', () => {
     const result = await (service as any).resolveScope({
       scope: RankingScope.CITY,
       cityName: '  Rosario   ',
+      provinceCode: 'ar-s',
+    });
+
+    expect(result).toEqual({
+      scope: RankingScope.CITY,
+      provinceCode: 'S',
+      provinceCodeIso: 'AR-S',
+      cityId: null,
+      cityNameNormalized: 'rosario',
+      dimensionKey: 'CITY_NAME|S|rosario',
+    });
+  });
+
+  it('does not throw CITY_REQUIRED when cityName arrives as string[] in CITY fallback', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const provinceQb = {
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 'prov-s', code: 'S' }),
+    };
+    provinceRepo.createQueryBuilder.mockReturnValue(provinceQb);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    const result = await (service as any).resolveScope({
+      scope: RankingScope.CITY,
+      cityName: ['Rosario'],
       provinceCode: 'AR-S',
     });
 
@@ -397,6 +440,45 @@ describe('RankingsService', () => {
       cityId: null,
       cityNameNormalized: 'rosario',
       dimensionKey: 'CITY_NAME|S|rosario',
+    });
+  });
+
+  it('throws CITY_REQUIRED when cityName is undefined in CITY fallback', async () => {
+    const snapshotRepo = createRepoMock();
+    const matchRepo = createRepoMock();
+    const userRepo = createRepoMock();
+    const playerProfileRepo = createRepoMock();
+    const cityRepo = createRepoMock();
+    const provinceRepo = createRepoMock();
+    const userNotificationRepo = createRepoMock();
+    const config = createConfigMock(4);
+
+    const service = new RankingsService(
+      snapshotRepo,
+      matchRepo,
+      userRepo,
+      playerProfileRepo,
+      cityRepo,
+      provinceRepo,
+      userNotificationRepo,
+      config,
+    );
+
+    await expect(
+      (service as any).resolveScope({
+        scope: RankingScope.CITY,
+        cityName: undefined,
+        provinceCode: 'AR-S',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveScope({
+        scope: RankingScope.CITY,
+        cityName: undefined,
+        provinceCode: 'AR-S',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CITY_REQUIRED' }),
     });
   });
 

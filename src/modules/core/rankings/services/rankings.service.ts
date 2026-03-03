@@ -60,7 +60,7 @@ type LeaderboardParams = {
   scope?: string;
   provinceCode?: string;
   cityId?: string;
-  cityName?: string;
+  cityName?: string | string[];
   category?: string;
   timeframe?: string;
   mode?: string;
@@ -803,7 +803,7 @@ export class RankingsService {
     scope: RankingScope;
     provinceCode?: string;
     cityId?: string;
-    cityName?: string;
+    cityName?: unknown;
     context?: {
       requestId?: string;
     };
@@ -876,20 +876,25 @@ export class RankingsService {
 
     const normalizedCityName = this.normalizeCityName(params.cityName);
     const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
-    const cityNameNormalized = this.toCityNameKey(normalizedCityName);
+    const cityNameNormalized = normalizedCityName
+      ? this.toCityNameKey(normalizedCityName)
+      : null;
     const hasCityId = Boolean(cityId);
     const hasCityName = Boolean(normalizedCityName);
     const hasProvinceCode = Boolean(normalizedProvinceCode);
+    this.logger.debug(
+      JSON.stringify({
+        event: 'rankings.city_resolution_debug',
+        requestId: params.context?.requestId ?? null,
+        rawType: typeof params.cityName,
+        isArray: Array.isArray(params.cityName),
+        normalizedCityNameLength: normalizedCityName?.length ?? 0,
+        hasCityId,
+        hasCityName,
+        hasProvinceCode,
+      }),
+    );
     if (!hasCityId && !(normalizedCityName && normalizedProvinceCode)) {
-      this.logger.debug(
-        JSON.stringify({
-          event: 'rankings.city_required',
-          requestId: params.context?.requestId ?? null,
-          hasCityId,
-          hasCityName,
-          hasProvinceCode,
-        }),
-      );
       throw new BadRequestException(CITY_REQUIRED_ERROR);
     }
 
@@ -968,15 +973,25 @@ export class RankingsService {
     return trimmed.startsWith('AR-') ? trimmed.slice(3) : trimmed;
   }
 
-  private normalizeCityName(value: string | null | undefined): string {
-    if (typeof value !== 'string') return '';
-    const collapsed = value.trim().replace(/\s+/g, ' ');
-    return collapsed;
+  private coerceQueryString(value: unknown): string | null {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      const first = value.find((entry) => typeof entry === 'string');
+      return typeof first === 'string' ? first : null;
+    }
+    return null;
   }
 
-  private toCityNameKey(value: string | null | undefined): string {
+  private normalizeCityName(value: unknown): string | null {
+    const coerced = this.coerceQueryString(value);
+    if (!coerced) return null;
+    const collapsed = coerced.trim().replace(/\s+/g, ' ');
+    return collapsed.length ? collapsed : null;
+  }
+
+  private toCityNameKey(value: unknown): string | null {
     const normalized = this.normalizeCityName(value);
-    return normalized ? normalized.toLowerCase() : '';
+    return normalized ? normalized.toLowerCase() : null;
   }
 
   private normalizePlayerProfileLocation(location: unknown): {
