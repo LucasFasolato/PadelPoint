@@ -23,8 +23,19 @@ import { SkillRadarResponseDto } from '../dto/skill-radar-response.dto';
 import { MatchmakingRivalsQueryDto } from '../dto/matchmaking-rivals-query.dto';
 import { MatchmakingRivalsResponseDto } from '../dto/matchmaking-rivals-response.dto';
 import { CompetitiveChallengesQueryDto } from '../dto/competitive-challenges-query.dto';
-import { DiscoverCandidatesQueryDto } from '../dto/discover-candidates-query.dto';
+import {
+  DiscoverCandidatesQueryDto,
+  DiscoverMode,
+  DiscoverScope,
+} from '../dto/discover-candidates-query.dto';
 import { DiscoverCandidatesResponseDto } from '../dto/discover-candidates-response.dto';
+import {
+  MatchmakingCandidatesQueryDto,
+  MatchmakingCandidatesScope,
+  MatchmakingPosition,
+} from '../dto/matchmaking-candidates-query.dto';
+import { MatchmakingCandidatesResponseDto } from '../dto/matchmaking-candidates-response.dto';
+import { MatchType } from '../../matches/enums/match-type.enum';
 
 type AuthUser = {
   userId: string;
@@ -77,7 +88,10 @@ export class CompetitiveController {
   }
 
   @Get('matchmaking/rivals')
-  @ApiOperation({ summary: 'Find suggested rivals for current player' })
+  @ApiOperation({
+    summary: 'Find suggested rivals for current player (legacy endpoint)',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
   matchmakingRivals(
     @Req() req: Request,
@@ -94,7 +108,10 @@ export class CompetitiveController {
   }
 
   @Get('matchmaking/partners')
-  @ApiOperation({ summary: 'Find suggested partners for current player' })
+  @ApiOperation({
+    summary: 'Find suggested partners for current player (legacy endpoint)',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
   matchmakingPartners(
     @Req() req: Request,
@@ -110,6 +127,18 @@ export class CompetitiveController {
     });
   }
 
+  @Get('matchmaking/candidates')
+  @SkipCityRequired()
+  @ApiOperation({ summary: 'Canonical matchmaking candidates endpoint' })
+  @ApiOkResponse({ type: MatchmakingCandidatesResponseDto })
+  matchmakingCandidates(
+    @Req() req: Request,
+    @Query() q: MatchmakingCandidatesQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.competitive.matchmakingCandidates(user.userId, q);
+  }
+
   @Get('challenges')
   listChallenges(
     @Req() req: Request,
@@ -122,20 +151,32 @@ export class CompetitiveController {
   }
 
   @Get('discover/candidates')
-  @ApiOperation({ summary: 'Discover candidate opponents for current player' })
+  @ApiOperation({
+    summary: 'Discover candidate opponents for current player (legacy endpoint)',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: DiscoverCandidatesResponseDto })
-  discoverCandidates(
+  async discoverCandidates(
     @Req() req: Request,
     @Query() q: DiscoverCandidatesQueryDto,
   ) {
     const user = req.user as AuthUser;
-    return this.competitive.discoverCandidates(user.userId, {
-      mode: q.mode,
-      scope: q.scope,
+    const canonical = await this.competitive.matchmakingCandidates(user.userId, {
+      scope:
+        q.scope === DiscoverScope.PROVINCE
+          ? MatchmakingCandidatesScope.PROVINCE
+          : MatchmakingCandidatesScope.CITY,
       limit: q.limit ?? 20,
       category: q.category,
-      order: q.order,
+      matchType:
+        q.mode === DiscoverMode.FRIENDLY
+          ? MatchType.FRIENDLY
+          : MatchType.COMPETITIVE,
+      position: MatchmakingPosition.ANY,
+      sameCategory:
+        typeof q.category === 'string' && q.category.trim().length > 0,
     });
+    return { items: canonical.items };
   }
 
   @Get('onboarding')

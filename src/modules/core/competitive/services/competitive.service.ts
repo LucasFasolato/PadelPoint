@@ -39,6 +39,11 @@ import {
   encodeMatchmakingRivalsCursor,
   type MatchmakingRivalsCursorPayload,
 } from '../utils/matchmaking-rivals-cursor.util';
+import {
+  decodeMatchmakingCandidatesCursor,
+  encodeMatchmakingCandidatesCursor,
+  type MatchmakingCandidatesCursorPayload,
+} from '../utils/matchmaking-candidates-cursor.util';
 import { computeMatchmakingScore } from '../utils/matchmaking-scoring.util';
 import {
   clamp01Score,
@@ -63,6 +68,12 @@ import {
   DiscoverOrder,
   DiscoverScope,
 } from '../dto/discover-candidates-query.dto';
+import {
+  MatchmakingCandidatesQueryDto,
+  MatchmakingCandidatesScope,
+  MatchmakingPosition,
+} from '../dto/matchmaking-candidates-query.dto';
+import { MatchmakingPositionFilterStatus } from '../dto/matchmaking-candidates-response.dto';
 import { normalizeCategoryFilter } from '../../rankings/utils/ranking-computation.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
@@ -213,6 +224,21 @@ type DiscoverCandidateItem = {
   categoryKey?: string | null;
   matchesPlayed30d?: number | null;
   lastActiveAt?: string | null;
+};
+
+type MatchmakingCandidatesParams = Pick<
+  MatchmakingCandidatesQueryDto,
+  | 'scope'
+  | 'category'
+  | 'matchType'
+  | 'position'
+  | 'limit'
+  | 'cursor'
+  | 'sameCategory'
+>;
+
+type MatchmakingCandidateItem = DiscoverCandidateItem & {
+  preferredPosition?: MatchmakingPosition | null;
 };
 
 type DiscoverMatchAggregateRow = {
@@ -581,6 +607,271 @@ export class CompetitiveService {
     );
   }
 
+  async matchmakingCandidates(
+    userId: string,
+    params: MatchmakingCandidatesParams = {},
+  ): Promise<{
+    items: MatchmakingCandidateItem[];
+    nextCursor: string | null;
+    appliedFilters: {
+      scope: MatchmakingCandidatesScope;
+      sameCategory: boolean;
+      category: string | null;
+      categoryNumber: number | null;
+      matchType: MatchType;
+      position: MatchmakingPosition;
+      positionStatus: MatchmakingPositionFilterStatus;
+      limit: number;
+    };
+  }> {
+    const scope = this.normalizeMatchmakingScope(params.scope);
+    const matchType = this.normalizeMatchmakingMatchType(params.matchType);
+    const position = this.normalizeMatchmakingPosition(params.position);
+    const sameCategory = params.sameCategory ?? true;
+    const limit = Math.max(1, Math.min(50, params.limit ?? 20));
+    const categoryRaw =
+      typeof params.category === 'string' ? params.category.trim() : '';
+    const categoryNumber = this.normalizeDiscoverCategory(categoryRaw);
+    const cursor = params.cursor
+      ? decodeMatchmakingCandidatesCursor(params.cursor)
+      : null;
+
+    if (sameCategory && !categoryRaw) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CATEGORY_REQUIRED',
+        message: 'category is required when sameCategory=true',
+      });
+    }
+    if (sameCategory && categoryNumber == null) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INVALID_CATEGORY',
+        message: 'category must map to 1..8',
+      });
+    }
+
+    const appliedFilters = {
+      scope,
+      sameCategory,
+      category: categoryRaw.length > 0 ? categoryRaw : null,
+      categoryNumber,
+      matchType,
+      position,
+      positionStatus:
+        position === MatchmakingPosition.ANY
+          ? MatchmakingPositionFilterStatus.IGNORED
+          : MatchmakingPositionFilterStatus.APPLIED,
+      limit,
+    };
+
+    const me = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['city', 'city.province', 'city.province.country'],
+    });
+    if (!me) {
+      return {
+        items: [],
+        nextCursor: null,
+        appliedFilters,
+      };
+    }
+
+    const scopeCityId = me.cityId ?? null;
+    const scopeProvinceId = me.city?.provinceId ?? null;
+    const scopeCountryId = me.city?.province?.countryId ?? null;
+
+    if (scope === MatchmakingCandidatesScope.CITY && !scopeCityId) {
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+    }
+    if (scope === MatchmakingCandidatesScope.PROVINCE && !scopeProvinceId) {
+      return {
+        items: [],
+        nextCursor: null,
+        appliedFilters,
+      };
+    }
+    if (scope === MatchmakingCandidatesScope.COUNTRY && !scopeCountryId) {
+      return {
+        items: [],
+        nextCursor: null,
+        appliedFilters,
+      };
+    }
+
+    const candidateFetchLimit = Math.max(200, Math.min(1000, limit * 20));
+    const candidateQb = this.userRepo
+      .createQueryBuilder('u')
+      .leftJoinAndSelect('u.city', 'city')
+      .leftJoinAndSelect('city.province', 'province')
+      .leftJoinAndSelect('province.country', 'country')
+      .leftJoinAndSelect('u.competitiveProfile', 'profile')
+      .where('u.id != :userId', { userId })
+      .andWhere('u.active = true');
+
+    if (scope === MatchmakingCandidatesScope.CITY && scopeCityId) {
+      candidateQb.andWhere('u."cityId" = :scopeCityId', { scopeCityId });
+    } else if (
+      scope === MatchmakingCandidatesScope.PROVINCE &&
+      scopeProvinceId
+    ) {
+      candidateQb.andWhere('city."provinceId" = :scopeProvinceId', {
+        scopeProvinceId,
+      });
+    } else if (scope === MatchmakingCandidatesScope.COUNTRY && scopeCountryId) {
+      candidateQb.andWhere('province."countryId" = :scopeCountryId', {
+        scopeCountryId,
+      });
+    }
+
+    if (matchType === MatchType.COMPETITIVE) {
+      candidateQb
+        .andWhere('profile.id IS NOT NULL')
+        .andWhere('u."cityId" IS NOT NULL');
+    }
+
+    if (sameCategory && categoryNumber != null) {
+      const { minInclusive, maxExclusive } = getEloRangeForCategory(
+        categoryNumber,
+      );
+      candidateQb.andWhere('profile.elo >= :categoryMinElo', {
+        categoryMinElo: minInclusive,
+      });
+      if (maxExclusive != null) {
+        candidateQb.andWhere('profile.elo < :categoryMaxElo', {
+          categoryMaxElo: maxExclusive,
+        });
+      }
+    }
+
+    const rawCandidates = await candidateQb.take(candidateFetchLimit).getMany();
+    if (rawCandidates.length === 0) {
+      return {
+        items: [],
+        nextCursor: null,
+        appliedFilters,
+      };
+    }
+
+    const candidateIds = rawCandidates.map((candidate) => candidate.id);
+    const blockedIds = await this.getDiscoverBlockedUserIds(userId, candidateIds);
+    const candidates = rawCandidates.filter(
+      (candidate) => !blockedIds.has(candidate.id),
+    );
+    if (candidates.length === 0) {
+      return {
+        items: [],
+        nextCursor: null,
+        appliedFilters,
+      };
+    }
+
+    const discoverMode =
+      matchType === MatchType.FRIENDLY
+        ? DiscoverMode.FRIENDLY
+        : DiscoverMode.COMPETITIVE;
+    const candidateActivity = await this.getDiscoverActivityByUserIds(
+      candidates.map((candidate) => candidate.id),
+      discoverMode,
+    );
+
+    let ranked: MatchmakingCandidateItem[] = candidates.map((candidate) => {
+      const activity = candidateActivity.get(candidate.id);
+      const lastActiveAt = activity?.lastActiveAt
+        ? activity.lastActiveAt.toISOString()
+        : null;
+      const elo =
+        typeof candidate.competitiveProfile?.elo === 'number'
+          ? candidate.competitiveProfile.elo
+          : null;
+      const categoryKey =
+        typeof elo === 'number'
+          ? this.toDiscoverCategoryKey(categoryFromElo(elo))
+          : null;
+
+      return {
+        userId: candidate.id,
+        displayName: this.getDiscoverDisplayName(
+          candidate.displayName,
+          candidate.email,
+        ),
+        cityName: candidate.city?.name ?? null,
+        provinceCode: candidate.city?.province?.code ?? null,
+        elo,
+        categoryKey,
+        matchesPlayed30d: activity?.matchesPlayed30d ?? 0,
+        lastActiveAt,
+        preferredPosition: this.resolvePreferredPosition(
+          candidate.competitiveProfile?.preferences ?? null,
+        ),
+      };
+    });
+
+    if (position !== MatchmakingPosition.ANY) {
+      const positionSupported = ranked.some(
+        (item) =>
+          item.preferredPosition === MatchmakingPosition.LEFT ||
+          item.preferredPosition === MatchmakingPosition.RIGHT ||
+          item.preferredPosition === MatchmakingPosition.ANY,
+      );
+
+      if (positionSupported) {
+        ranked = ranked.filter((item) =>
+          this.matchesRequestedPosition(item.preferredPosition, position),
+        );
+      } else {
+        appliedFilters.positionStatus =
+          MatchmakingPositionFilterStatus.NOT_SUPPORTED;
+      }
+    }
+
+    ranked.sort((a, b) => this.compareMatchmakingCandidates(a, b));
+
+    const paged = cursor
+      ? ranked.filter((item) =>
+          this.isAfterMatchmakingCandidatesCursor(
+            {
+              matchesPlayed30d: item.matchesPlayed30d ?? 0,
+              lastActiveAt: this.toCursorActiveAt(item.lastActiveAt),
+              userId: item.userId,
+            },
+            cursor,
+          ),
+        )
+      : ranked;
+
+    const slice = paged.slice(0, limit);
+    const nextCursor =
+      paged.length > limit && slice.length > 0
+        ? encodeMatchmakingCandidatesCursor({
+            matchesPlayed30d:
+              slice[slice.length - 1].matchesPlayed30d ?? 0,
+            lastActiveAt: this.toCursorActiveAt(
+              slice[slice.length - 1].lastActiveAt,
+            ),
+            userId: slice[slice.length - 1].userId,
+          })
+        : null;
+
+    this.logger.debug(
+      `matchmakingCandidates resolvedFilters=${JSON.stringify({
+        scope: appliedFilters.scope,
+        sameCategory: appliedFilters.sameCategory,
+        categoryNumber: appliedFilters.categoryNumber,
+        matchType: appliedFilters.matchType,
+        position: appliedFilters.position,
+        positionStatus: appliedFilters.positionStatus,
+        limit: appliedFilters.limit,
+      })} candidates=${ranked.length} returned=${slice.length}`,
+    );
+
+    return {
+      items: slice,
+      nextCursor,
+      appliedFilters,
+    };
+  }
+
   async discoverCandidates(
     userId: string,
     params: DiscoverCandidatesParams = {},
@@ -774,6 +1065,120 @@ export class CompetitiveService {
       return fallback;
     }
     return null;
+  }
+
+  private normalizeMatchmakingScope(
+    scope?: MatchmakingCandidatesScope,
+  ): MatchmakingCandidatesScope {
+    if (scope === MatchmakingCandidatesScope.PROVINCE) {
+      return MatchmakingCandidatesScope.PROVINCE;
+    }
+    if (scope === MatchmakingCandidatesScope.COUNTRY) {
+      return MatchmakingCandidatesScope.COUNTRY;
+    }
+    return MatchmakingCandidatesScope.CITY;
+  }
+
+  private normalizeMatchmakingMatchType(matchType?: MatchType): MatchType {
+    return matchType === MatchType.FRIENDLY
+      ? MatchType.FRIENDLY
+      : MatchType.COMPETITIVE;
+  }
+
+  private normalizeMatchmakingPosition(
+    position?: MatchmakingPosition,
+  ): MatchmakingPosition {
+    if (position === MatchmakingPosition.LEFT) return MatchmakingPosition.LEFT;
+    if (position === MatchmakingPosition.RIGHT) return MatchmakingPosition.RIGHT;
+    return MatchmakingPosition.ANY;
+  }
+
+  private resolvePreferredPosition(
+    preferences: Record<string, unknown> | null | undefined,
+  ): MatchmakingPosition | null {
+    if (!preferences || typeof preferences !== 'object') return null;
+
+    const pick = (value: unknown): string | null =>
+      typeof value === 'string' && value.trim().length > 0
+        ? value.trim().toUpperCase()
+        : null;
+
+    const direct =
+      pick(preferences.position) ??
+      pick(preferences.side) ??
+      pick((preferences as Record<string, unknown>).preferredPosition);
+    if (!direct) return null;
+
+    const normalized = this.normalizePositionToken(direct);
+    return normalized;
+  }
+
+  private normalizePositionToken(
+    value: string,
+  ): MatchmakingPosition | null {
+    if (
+      ['LEFT', 'IZQUIERDA', 'REVES', 'BACKHAND'].includes(value)
+    ) {
+      return MatchmakingPosition.LEFT;
+    }
+    if (
+      ['RIGHT', 'DERECHA', 'DRIVE', 'FOREHAND'].includes(value)
+    ) {
+      return MatchmakingPosition.RIGHT;
+    }
+    if (['ANY', 'BOTH', 'AMBOS', 'INDIFFERENT'].includes(value)) {
+      return MatchmakingPosition.ANY;
+    }
+    return null;
+  }
+
+  private matchesRequestedPosition(
+    preferredPosition: MatchmakingPosition | null | undefined,
+    requestedPosition: MatchmakingPosition,
+  ): boolean {
+    if (requestedPosition === MatchmakingPosition.ANY) return true;
+    if (!preferredPosition) return false;
+    if (preferredPosition === MatchmakingPosition.ANY) return true;
+    return preferredPosition === requestedPosition;
+  }
+
+  private compareMatchmakingCandidates(
+    a: MatchmakingCandidateItem,
+    b: MatchmakingCandidateItem,
+  ): number {
+    const aMatches = a.matchesPlayed30d ?? 0;
+    const bMatches = b.matchesPlayed30d ?? 0;
+    if (aMatches !== bMatches) return bMatches - aMatches;
+
+    const aLast =
+      this.parseDateSafe(a.lastActiveAt ?? null)?.getTime() ??
+      new Date(0).getTime();
+    const bLast =
+      this.parseDateSafe(b.lastActiveAt ?? null)?.getTime() ??
+      new Date(0).getTime();
+    if (aLast !== bLast) return bLast - aLast;
+
+    return a.userId.localeCompare(b.userId);
+  }
+
+  private isAfterMatchmakingCandidatesCursor(
+    item: MatchmakingCandidatesCursorPayload,
+    cursor: MatchmakingCandidatesCursorPayload,
+  ): boolean {
+    if (item.matchesPlayed30d !== cursor.matchesPlayed30d) {
+      return item.matchesPlayed30d < cursor.matchesPlayed30d;
+    }
+
+    const itemLast = new Date(item.lastActiveAt).getTime();
+    const cursorLast = new Date(cursor.lastActiveAt).getTime();
+    if (itemLast !== cursorLast) return itemLast < cursorLast;
+
+    return item.userId > cursor.userId;
+  }
+
+  private toCursorActiveAt(value: string | null | undefined): string {
+    const parsed = this.parseDateSafe(value ?? null);
+    return (parsed ?? new Date(0)).toISOString();
   }
 
   private async getDiscoverBlockedUserIds(
