@@ -422,6 +422,48 @@ describe('LeaguesService', () => {
   // -- listMyLeagues --------------------------------------------
 
   describe('listMyLeagues', () => {
+    it('listMyLeagues does not throw and returns array when user is member', async () => {
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            id: 'league-1',
+            name: 'Liga',
+            mode: 'scheduled',
+            status: 'draft',
+            role: 'member',
+            membersCount: '2',
+            cityName: 'Salta',
+            provinceCode: 'A',
+            lastActivityAt: null,
+          },
+        ]),
+      };
+      leagueRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.listMyLeagues(FAKE_USER_ID);
+
+      expect(result.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'league-1',
+            role: 'MEMBER',
+          }),
+        ]),
+      );
+      expect(qb.innerJoin).toHaveBeenCalledWith(
+        LeagueMember,
+        'my_member',
+        'my_member."leagueId" = l.id AND my_member."userId" = :userId',
+        { userId: FAKE_USER_ID },
+      );
+    });
+
     it('should map null-safe league list fields with fallbacks', async () => {
       const qb = {
         innerJoin: jest.fn().mockReturnThis(),

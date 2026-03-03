@@ -428,8 +428,8 @@ export class LeaguesService {
       .createQueryBuilder('l')
       .innerJoin(
         LeagueMember,
-        'myMember',
-        'myMember."leagueId" = l.id AND myMember."userId" = :userId',
+        'my_member',
+        'my_member."leagueId" = l.id AND my_member."userId" = :userId',
         { userId },
       );
 
@@ -438,7 +438,7 @@ export class LeaguesService {
         'l.name AS name',
         'l.mode AS mode',
         'l.status AS status',
-        'myMember.role AS role',
+        'my_member.role AS role',
       ];
 
     if (includeGeoProjection) {
