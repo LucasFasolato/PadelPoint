@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { MatchesService } from './matches.service';
-import { MatchResult, MatchResultStatus } from '../entities/match-result.entity';
+import { MatchResult, MatchResultStatus, WinnerTeam } from '../entities/match-result.entity';
 import { MatchDispute } from '../entities/match-dispute.entity';
 import { MatchAuditLog } from '../entities/match-audit-log.entity';
 import { Challenge } from '../../challenges/entities/challenge.entity';
@@ -1372,6 +1372,38 @@ describe('MatchesService', () => {
   });
 
   describe('getLeaguePendingConfirmations', () => {
+    it('returns empty list when league has no pending confirmations', async () => {
+      const dsMemberRepo = createMockRepo<LeagueMember>();
+      dsMemberRepo.findOne.mockResolvedValue({
+        id: 'm1',
+        leagueId: 'league-1',
+        userId: USER_B1,
+      });
+      dataSource.getRepository.mockImplementation((entity: any) => {
+        if (entity === LeagueMember) return dsMemberRepo;
+        return createMockRepo();
+      });
+
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
+
+      const result = await service.getLeaguePendingConfirmations(USER_B1, 'league-1', {
+        limit: 10,
+      });
+
+      expect(result.items).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+    });
+
     it('returns only league pending confirmations the caller can confirm', async () => {
       const dsMemberRepo = createMockRepo<LeagueMember>();
       dsMemberRepo.findOne.mockResolvedValue({
@@ -1388,16 +1420,32 @@ describe('MatchesService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([
-          fakeMatch({
-            id: 'match-pending-1',
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            matchId: 'match-pending-1',
+            challengeId: 'challenge-1',
             leagueId: 'league-1',
+            matchType: MatchType.COMPETITIVE,
             status: MatchResultStatus.PENDING_CONFIRM,
+            playedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            winnerTeam: WinnerTeam.A,
             reportedByUserId: USER_A1,
-          }),
+            teamASet1: 6,
+            teamBSet1: 4,
+            teamASet2: null,
+            teamBSet2: null,
+            teamASet3: null,
+            teamBSet3: null,
+            teamA1Id: USER_A1,
+            teamA2Id: null,
+            teamB1Id: USER_B1,
+            teamB2Id: null,
+          },
         ]),
       };
       matchRepo.createQueryBuilder.mockReturnValue(qb as any);

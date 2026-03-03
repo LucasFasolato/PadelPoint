@@ -84,6 +84,11 @@ type PendingConfirmationRawRow = {
   leagueName: string | null;
   playedAt: Date | string | null;
   createdAt: Date | string | null;
+  // additional fields used by league-specific query
+  matchType?: MatchType;
+  status?: MatchResultStatus;
+  winnerTeam?: WinnerTeam;
+  reportedByUserId?: string | null;
   teamASet1: number | null;
   teamBSet1: number | null;
   teamASet2: number | null;
@@ -1586,7 +1591,9 @@ export class MatchesService {
         '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
         { userId },
       )
-      .orderBy('m."playedAt"', 'DESC')
+      // use COALESCE expression for consistent ordering and avoid TypeORM bug
+      .addSelect('COALESCE(m."playedAt", m."createdAt")', 'sortPlayedAt')
+      .orderBy('sortPlayedAt', 'DESC')
       .addOrderBy('m.id', 'DESC')
       .take(limit + 1);
 
@@ -1598,15 +1605,24 @@ export class MatchesService {
       });
     }
 
-    const rows = await qb.getMany();
+    // fetch raw rows to avoid TypeORM orderBy/relations bug
+    const rows = await qb.getRawMany<PendingConfirmationRawRow>();
+
+    if (!Array.isArray(rows)) {
+      // defensive, should not happen normally
+      throw new SafePendingConfirmationsFallbackError(
+        'Unexpected league pending confirmations query result shape',
+      );
+    }
+
     const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
+    const pagedRows = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore
-      ? `${items[items.length - 1].playedAt?.toISOString() ?? new Date().toISOString()}|${items[items.length - 1].id}`
+      ? `${pagedRows[pagedRows.length - 1].playedAt?.toString() ?? new Date().toString()}|${pagedRows[pagedRows.length - 1].matchId}`
       : null;
 
     const challengeIds = [
-      ...new Set(items.map((m) => m.challengeId).filter(Boolean)),
+      ...new Set(pagedRows.map((r) => r.challengeId).filter(Boolean)),
     ];
     const challenges =
       challengeIds.length > 0
@@ -1615,6 +1631,25 @@ export class MatchesService {
           })
         : [];
     const challengeMap = new Map(challenges.map((ch) => [ch.id, ch]));
+
+    // convert raw rows to MatchResult objects for reuse of existing mapping
+    const items: MatchResult[] = pagedRows.map((r) => ({
+      id: r.matchId,
+      challengeId: r.challengeId,
+      leagueId: r.leagueId,
+      matchType: r.matchType as any,
+      status: r.status as any,
+      playedAt: r.playedAt instanceof Date ? r.playedAt : new Date(r.playedAt),
+      winnerTeam: r.winnerTeam as any,
+      teamASet1: r.teamASet1,
+      teamBSet1: r.teamBSet1,
+      teamASet2: r.teamASet2,
+      teamBSet2: r.teamBSet2,
+      teamASet3: r.teamASet3,
+      teamBSet3: r.teamBSet3,
+      reportedByUserId: r.reportedByUserId,
+      createdAt: r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt),
+    } as any));
 
     const result = await this.toPendingConfirmationViews(items, challengeMap);
 
