@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 
 export type MatchmakingCandidatesCursorPayload = {
+  lastActiveAt: string | null;
   matchesPlayed30d: number;
-  lastActiveAt: string;
   userId: string;
 };
 
@@ -20,22 +20,30 @@ export function decodeMatchmakingCandidatesCursor(
       Buffer.from(value, 'base64url').toString('utf8'),
     ) as Partial<MatchmakingCandidatesCursorPayload>;
 
-    const parsedDate = new Date(parsed.lastActiveAt ?? '');
+    const hasNullLastActiveAt = parsed.lastActiveAt === null;
+    const parsedDate =
+      typeof parsed.lastActiveAt === 'string'
+        ? new Date(parsed.lastActiveAt)
+        : null;
     if (
       typeof parsed.matchesPlayed30d !== 'number' ||
       !Number.isInteger(parsed.matchesPlayed30d) ||
       parsed.matchesPlayed30d < 0 ||
       typeof parsed.userId !== 'string' ||
       parsed.userId.length === 0 ||
-      typeof parsed.lastActiveAt !== 'string' ||
-      Number.isNaN(parsedDate.getTime())
+      (!hasNullLastActiveAt &&
+        (typeof parsed.lastActiveAt !== 'string' ||
+          !parsedDate ||
+          Number.isNaN(parsedDate.getTime())))
     ) {
       throw new Error('invalid cursor shape');
     }
 
     return {
+      lastActiveAt: hasNullLastActiveAt
+        ? null
+        : parsedDate?.toISOString() ?? null,
       matchesPlayed30d: parsed.matchesPlayed30d,
-      lastActiveAt: parsedDate.toISOString(),
       userId: parsed.userId,
     };
   } catch {

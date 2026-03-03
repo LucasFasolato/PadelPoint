@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -651,7 +652,16 @@ export class CompetitiveService {
       });
     }
 
-    const appliedFilters = {
+    const appliedFilters: {
+      scope: MatchmakingCandidatesScope;
+      sameCategory: boolean;
+      category: string | null;
+      categoryNumber: number | null;
+      matchType: MatchType;
+      position: MatchmakingPosition;
+      positionStatus: MatchmakingPositionFilterStatus;
+      limit: number;
+    } = {
       scope,
       sameCategory,
       category: categoryRaw.length > 0 ? categoryRaw : null,
@@ -665,10 +675,16 @@ export class CompetitiveService {
       limit,
     };
 
-    const me = await this.userRepo.findOne({
-      where: { id: userId },
-      relations: ['city', 'city.province', 'city.province.country'],
-    });
+    const [me, myCompetitiveProfile] = await Promise.all([
+      this.userRepo.findOne({
+        where: { id: userId },
+        relations: ['city', 'city.province', 'city.province.country'],
+      }),
+      this.profileRepo.findOne({
+        where: { userId },
+        select: ['id', 'initialCategory'],
+      }),
+    ]);
     if (!me) {
       return {
         items: [],
@@ -677,10 +693,34 @@ export class CompetitiveService {
       };
     }
 
+    if (matchType === MatchType.COMPETITIVE) {
+      if (!myCompetitiveProfile) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'COMPETITIVE_PROFILE_REQUIRED',
+          message: 'Competitive profile is required for competitive matchmaking',
+        });
+      }
+      if (
+        !Number.isInteger(myCompetitiveProfile.initialCategory) ||
+        myCompetitiveProfile.initialCategory == null
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'CATEGORY_REQUIRED',
+          message:
+            'Set your competitive category to use competitive matchmaking',
+        });
+      }
+    }
+
     const scopeCityId = me.cityId ?? null;
     const scopeProvinceId = me.city?.provinceId ?? null;
     const scopeCountryId = me.city?.province?.countryId ?? null;
 
+    if (matchType === MatchType.COMPETITIVE && !scopeCityId) {
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+    }
     if (scope === MatchmakingCandidatesScope.CITY && !scopeCityId) {
       throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
     }
@@ -727,7 +767,8 @@ export class CompetitiveService {
     if (matchType === MatchType.COMPETITIVE) {
       candidateQb
         .andWhere('profile.id IS NOT NULL')
-        .andWhere('u."cityId" IS NOT NULL');
+        .andWhere('u."cityId" IS NOT NULL')
+        .andWhere('profile."initialCategory" IS NOT NULL');
     }
 
     if (sameCategory && categoryNumber != null) {
@@ -822,6 +863,7 @@ export class CompetitiveService {
       } else {
         appliedFilters.positionStatus =
           MatchmakingPositionFilterStatus.NOT_SUPPORTED;
+        appliedFilters.position = MatchmakingPosition.ANY;
       }
     }
 
@@ -829,28 +871,21 @@ export class CompetitiveService {
 
     const paged = cursor
       ? ranked.filter((item) =>
-          this.isAfterMatchmakingCandidatesCursor(
-            {
-              matchesPlayed30d: item.matchesPlayed30d ?? 0,
-              lastActiveAt: this.toCursorActiveAt(item.lastActiveAt),
-              userId: item.userId,
-            },
+          this.compareMatchmakingCandidatesCursorPayload(
+            this.toMatchmakingCandidatesCursorPayload(item),
             cursor,
-          ),
+          ) > 0,
         )
       : ranked;
 
     const slice = paged.slice(0, limit);
     const nextCursor =
       paged.length > limit && slice.length > 0
-        ? encodeMatchmakingCandidatesCursor({
-            matchesPlayed30d:
-              slice[slice.length - 1].matchesPlayed30d ?? 0,
-            lastActiveAt: this.toCursorActiveAt(
-              slice[slice.length - 1].lastActiveAt,
+        ? encodeMatchmakingCandidatesCursor(
+            this.toMatchmakingCandidatesCursorPayload(
+              slice[slice.length - 1],
             ),
-            userId: slice[slice.length - 1].userId,
-          })
+          )
         : null;
 
     this.logger.debug(
@@ -1146,39 +1181,47 @@ export class CompetitiveService {
     a: MatchmakingCandidateItem,
     b: MatchmakingCandidateItem,
   ): number {
-    const aMatches = a.matchesPlayed30d ?? 0;
-    const bMatches = b.matchesPlayed30d ?? 0;
-    if (aMatches !== bMatches) return bMatches - aMatches;
-
-    const aLast =
-      this.parseDateSafe(a.lastActiveAt ?? null)?.getTime() ??
-      new Date(0).getTime();
-    const bLast =
-      this.parseDateSafe(b.lastActiveAt ?? null)?.getTime() ??
-      new Date(0).getTime();
-    if (aLast !== bLast) return bLast - aLast;
-
-    return a.userId.localeCompare(b.userId);
+    return this.compareMatchmakingCandidatesCursorPayload(
+      this.toMatchmakingCandidatesCursorPayload(a),
+      this.toMatchmakingCandidatesCursorPayload(b),
+    );
   }
 
-  private isAfterMatchmakingCandidatesCursor(
-    item: MatchmakingCandidatesCursorPayload,
-    cursor: MatchmakingCandidatesCursorPayload,
-  ): boolean {
-    if (item.matchesPlayed30d !== cursor.matchesPlayed30d) {
-      return item.matchesPlayed30d < cursor.matchesPlayed30d;
+  private compareMatchmakingCandidatesCursorPayload(
+    a: MatchmakingCandidatesCursorPayload,
+    b: MatchmakingCandidatesCursorPayload,
+  ): number {
+    const aLast = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : null;
+    const bLast = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : null;
+
+    if (aLast === null && bLast !== null) return 1;
+    if (aLast !== null && bLast === null) return -1;
+    if (aLast !== null && bLast !== null && aLast !== bLast) {
+      return bLast - aLast;
     }
 
-    const itemLast = new Date(item.lastActiveAt).getTime();
-    const cursorLast = new Date(cursor.lastActiveAt).getTime();
-    if (itemLast !== cursorLast) return itemLast < cursorLast;
+    if (a.matchesPlayed30d !== b.matchesPlayed30d) {
+      return b.matchesPlayed30d - a.matchesPlayed30d;
+    }
 
-    return item.userId > cursor.userId;
+    return b.userId.localeCompare(a.userId);
   }
 
-  private toCursorActiveAt(value: string | null | undefined): string {
+  private toMatchmakingCandidatesCursorPayload(
+    item: MatchmakingCandidateItem,
+  ): MatchmakingCandidatesCursorPayload {
+    return {
+      lastActiveAt: this.toCursorLastActiveAt(item.lastActiveAt),
+      matchesPlayed30d: item.matchesPlayed30d ?? 0,
+      userId: item.userId,
+    };
+  }
+
+  private toCursorLastActiveAt(
+    value: string | null | undefined,
+  ): string | null {
     const parsed = this.parseDateSafe(value ?? null);
-    return (parsed ?? new Date(0)).toISOString();
+    return parsed ? parsed.toISOString() : null;
   }
 
   private async getDiscoverBlockedUserIds(

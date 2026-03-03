@@ -10,7 +10,12 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { SkipCityRequired } from '@common/decorators/skip-city-required.decorator';
 
@@ -130,6 +135,13 @@ export class CompetitiveController {
   @Get('matchmaking/candidates')
   @SkipCityRequired()
   @ApiOperation({ summary: 'Canonical matchmaking candidates endpoint' })
+  @ApiQuery({ name: 'scope', required: false, enum: MatchmakingCandidatesScope })
+  @ApiQuery({ name: 'category', required: false, type: String })
+  @ApiQuery({ name: 'matchType', required: false, enum: MatchType })
+  @ApiQuery({ name: 'position', required: false, enum: MatchmakingPosition })
+  @ApiQuery({ name: 'sameCategory', required: false, type: Boolean })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiOkResponse({ type: MatchmakingCandidatesResponseDto })
   matchmakingCandidates(
     @Req() req: Request,
