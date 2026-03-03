@@ -29,7 +29,11 @@ import { UpdateLeagueProfileDto } from '../dto/update-league-profile.dto';
 import { SetLeagueAvatarDto } from '../dto/set-league-avatar.dto';
 import { UpdateMemberRoleDto } from '../dto/update-member-role.dto';
 import { LeagueRole } from '../enums/league-role.enum';
-import { DEFAULT_LEAGUE_SETTINGS } from '../types/league-settings.type';
+import {
+  DEFAULT_LEAGUE_SETTINGS,
+  LeagueSettings,
+  normalizeLeagueSettings,
+} from '../types/league-settings.type';
 import { User } from '../../users/entities/user.entity';
 import { City } from '../../geo/entities/city.entity';
 import { Province } from '../../geo/entities/province.entity';
@@ -254,8 +258,8 @@ export class LeaguesService {
       avatarUrl: null,
       settings:
         mode === LeagueMode.MINI
-          ? { ...MINI_LEAGUE_SETTINGS }
-          : DEFAULT_LEAGUE_SETTINGS,
+          ? normalizeLeagueSettings(MINI_LEAGUE_SETTINGS)
+          : normalizeLeagueSettings(DEFAULT_LEAGUE_SETTINGS),
     });
 
     const saved = await this.leagueRepo.save(league);
@@ -1910,14 +1914,14 @@ export class LeaguesService {
     }
 
     await this.assertMembership(leagueId, userId);
-    return league.settings ?? DEFAULT_LEAGUE_SETTINGS;
+    return normalizeLeagueSettings(league.settings);
   }
 
   async updateLeagueSettings(
     userId: string,
     leagueId: string,
     dto: UpdateLeagueSettingsDto,
-  ) {
+  ): Promise<{ settings: LeagueSettings; recomputeTriggered: boolean }> {
     const league = await this.leagueRepo.findOne({ where: { id: leagueId } });
     if (!league) {
       throw new NotFoundException({
@@ -1929,52 +1933,60 @@ export class LeaguesService {
 
     await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
 
-    const current = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
-    league.settings = {
-      winPoints: dto.winPoints ?? current.winPoints,
-      drawPoints: dto.drawPoints ?? current.drawPoints,
-      lossPoints: dto.lossPoints ?? current.lossPoints,
-      tieBreakers: dto.tieBreakers ?? current.tieBreakers,
-      includeSources: dto.includeSources ?? current.includeSources,
-    };
-    const updatedFields: string[] = [];
-    if (dto.winPoints !== undefined && dto.winPoints !== current.winPoints) {
-      updatedFields.push('winPoints');
-    }
-    if (dto.drawPoints !== undefined && dto.drawPoints !== current.drawPoints) {
-      updatedFields.push('drawPoints');
-    }
-    if (dto.lossPoints !== undefined && dto.lossPoints !== current.lossPoints) {
-      updatedFields.push('lossPoints');
-    }
+    const current = normalizeLeagueSettings(league.settings);
+    const next = normalizeLeagueSettings({
+      ...current,
+      ...dto,
+    });
+
+    const updatedFields: Array<keyof LeagueSettings> = [];
+    if (current.winPoints !== next.winPoints) updatedFields.push('winPoints');
+    if (current.drawPoints !== next.drawPoints) updatedFields.push('drawPoints');
+    if (current.lossPoints !== next.lossPoints) updatedFields.push('lossPoints');
     if (
-      dto.tieBreakers !== undefined &&
-      JSON.stringify(dto.tieBreakers) !== JSON.stringify(current.tieBreakers)
+      JSON.stringify(current.tieBreakers) !== JSON.stringify(next.tieBreakers)
     ) {
       updatedFields.push('tieBreakers');
     }
     if (
-      dto.includeSources !== undefined &&
-      JSON.stringify(dto.includeSources) !==
-        JSON.stringify(current.includeSources)
+      JSON.stringify(current.includeSources) !==
+      JSON.stringify(next.includeSources)
     ) {
       updatedFields.push('includeSources');
     }
 
-    // Save settings + recompute standings in a single transaction
-    await this.dataSource.transaction(async (manager) => {
-      await manager.save(league);
-      await this.leagueStandingsService.recomputeLeague(manager, leagueId);
-    });
-    this.logLeagueActivity(
-      leagueId,
-      LeagueActivityType.SETTINGS_UPDATED,
-      userId,
-      leagueId,
-      { updatedFields },
-    );
+    const hasRealChange = updatedFields.length > 0;
+    const hasStorageDrift =
+      JSON.stringify(league.settings ?? null) !== JSON.stringify(next);
 
-    return league.settings;
+    if (hasRealChange || hasStorageDrift) {
+      league.settings = next;
+      await this.leagueRepo.save(league);
+    }
+
+    let recomputeTriggered = false;
+    if (hasRealChange) {
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          await this.leagueStandingsService.recomputeLeague(manager, leagueId);
+        });
+        recomputeTriggered = true;
+      } catch (err) {
+        this.logger.warn(
+          `settings recompute failed: leagueId=${leagueId} error=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      this.logLeagueActivity(
+        leagueId,
+        LeagueActivityType.SETTINGS_UPDATED,
+        userId,
+        leagueId,
+        { updatedFields },
+      );
+    }
+
+    return { settings: next, recomputeTriggered };
   }
 
   async updateLeagueProfile(
@@ -2587,7 +2599,7 @@ export class LeaguesService {
       statusKey: this.toLeagueStatusKey(statusValue),
       canRecordMatches,
       ...(reason ? { reason } : {}),
-      settings: league.settings ?? DEFAULT_LEAGUE_SETTINGS,
+      settings: normalizeLeagueSettings(league.settings),
       createdAt: league.createdAt.toISOString(),
       members: members.map((m) => this.toMemberView(m)),
     };

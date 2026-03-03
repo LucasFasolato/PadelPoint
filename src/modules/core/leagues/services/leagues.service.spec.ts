@@ -1763,9 +1763,12 @@ describe('LeaguesService', () => {
         },
       );
 
-      expect(result.winPoints).toBe(2);
-      expect(result.drawPoints).toBe(0);
-      expect(result.tieBreakers).toEqual(DEFAULT_LEAGUE_SETTINGS.tieBreakers);
+      expect(result.settings.winPoints).toBe(2);
+      expect(result.settings.drawPoints).toBe(0);
+      expect(result.settings.tieBreakers).toEqual(
+        DEFAULT_LEAGUE_SETTINGS.tieBreakers,
+      );
+      expect(result.recomputeTriggered).toBe(true);
     });
 
     it('should allow ADMIN to update settings', async () => {
@@ -1784,7 +1787,12 @@ describe('LeaguesService', () => {
         },
       );
 
-      expect(result.tieBreakers).toEqual(['points', 'setsDiff', 'gamesDiff']);
+      expect(result.settings.tieBreakers).toEqual([
+        'points',
+        'setsDiff',
+        'gamesDiff',
+      ]);
+      expect(result.recomputeTriggered).toBe(true);
     });
 
     it('should reject MEMBER from updating settings', async () => {

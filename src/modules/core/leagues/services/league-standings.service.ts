@@ -13,8 +13,8 @@ import { LeagueStatus } from '../enums/league-status.enum';
 import { LeagueMode } from '../enums/league-mode.enum';
 import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
 import {
-  DEFAULT_LEAGUE_SETTINGS,
   LeagueSettings,
+  normalizeLeagueSettings,
 } from '../types/league-settings.type';
 import {
   computeStandingsDiff,
@@ -146,12 +146,9 @@ export class LeagueStandingsService {
     const totalMatchesFetched = matches.length;
 
     // Read configurable settings (fallback to defaults)
-    const settings: LeagueSettings = league.settings ?? DEFAULT_LEAGUE_SETTINGS;
+    const settings: LeagueSettings = normalizeLeagueSettings(league.settings);
     const { winPoints, drawPoints, lossPoints } = settings;
-    const includeSources = settings.includeSources ?? {
-      RESERVATION: true,
-      MANUAL: true,
-    };
+    const includeSources = new Set(settings.includeSources);
 
     // Filter: all 4 participants must be league members + source filter
     const leagueMatches = matches.filter((mr) => {
@@ -172,8 +169,10 @@ export class LeagueStandingsService {
 
       // Filter by match source (reservation-backed vs manual)
       const isReservationBacked = ch.reservationId != null;
-      if (isReservationBacked && !includeSources.RESERVATION) return false;
-      if (!isReservationBacked && !includeSources.MANUAL) return false;
+      if (isReservationBacked && !includeSources.has('reservation')) {
+        return false;
+      }
+      if (!isReservationBacked && !includeSources.has('manual')) return false;
 
       return true;
     });

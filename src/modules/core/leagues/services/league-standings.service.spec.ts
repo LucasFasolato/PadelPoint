@@ -435,9 +435,9 @@ describe('LeagueStandingsService', () => {
       const customSettings: LeagueSettings = {
         winPoints: 2,
         drawPoints: 0,
-        lossPoints: -1,
+        lossPoints: 0,
         tieBreakers: ['points', 'wins', 'setsDiff', 'gamesDiff'],
-        includeSources: { RESERVATION: true, MANUAL: true },
+        includeSources: ['manual', 'reservation'],
       };
       const league = fakeLeague({ settings: customSettings });
       const members = [
@@ -471,9 +471,9 @@ describe('LeagueStandingsService', () => {
       expect(p1.points).toBe(2);
       expect(p1.wins).toBe(1);
 
-      // Losers get -1 points (lossPoints=-1)
+      // Losers get 0 points (lossPoints=0)
       const p3 = result.find((m) => m.userId === uid(3));
-      expect(p3.points).toBe(-1);
+      expect(p3.points).toBe(0);
       expect(p3.losses).toBe(1);
     });
 
@@ -528,7 +528,7 @@ describe('LeagueStandingsService', () => {
         drawPoints: 1,
         lossPoints: 0,
         tieBreakers: ['points', 'setsDiff', 'gamesDiff'],
-        includeSources: { RESERVATION: true, MANUAL: true },
+        includeSources: ['manual', 'reservation'],
       };
       const league = fakeLeague({ settings: customSettings });
       const members = [

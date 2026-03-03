@@ -16,10 +16,12 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
+  ApiBearerAuth,
   ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
@@ -52,6 +54,8 @@ type AuthUser = { userId: string; email: string; role: string };
 
 @Controller('leagues')
 @UseGuards(JwtAuthGuard)
+@ApiTags('leagues')
+@ApiBearerAuth()
 export class LeaguesController {
   constructor(
     private readonly leaguesService: LeaguesService,
@@ -184,23 +188,103 @@ export class LeaguesController {
     return this.leaguesService.getLeagueDetail(user.userId, id);
   }
 
-  @Get(':id/settings')
+  @Get(':leagueId/settings')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        winPoints: { type: 'integer', minimum: 0, maximum: 10, example: 3 },
+        drawPoints: { type: 'integer', minimum: 0, maximum: 10, example: 1 },
+        lossPoints: { type: 'integer', minimum: 0, maximum: 10, example: 0 },
+        tieBreakers: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['points', 'wins', 'setsDiff', 'gamesDiff'],
+        },
+        includeSources: {
+          type: 'array',
+          items: { type: 'string', enum: ['manual', 'reservation'] },
+          example: ['manual', 'reservation'],
+        },
+      },
+      required: [
+        'winPoints',
+        'drawPoints',
+        'lossPoints',
+        'tieBreakers',
+        'includeSources',
+      ],
+    },
+  })
   getSettings(
     @Req() req: Request,
-    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId'))
+    leagueId: string,
   ) {
     const user = req.user as AuthUser;
-    return this.leaguesService.getLeagueSettings(user.userId, id);
+    return this.leaguesService.getLeagueSettings(user.userId, leagueId);
   }
 
-  @Patch(':id/settings')
+  @Patch(':leagueId/settings')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        settings: {
+          type: 'object',
+          properties: {
+            winPoints: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 10,
+              example: 3,
+            },
+            drawPoints: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 10,
+              example: 1,
+            },
+            lossPoints: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 10,
+              example: 0,
+            },
+            tieBreakers: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['points', 'wins', 'setsDiff', 'gamesDiff'],
+            },
+            includeSources: {
+              type: 'array',
+              items: { type: 'string', enum: ['manual', 'reservation'] },
+              example: ['manual', 'reservation'],
+            },
+          },
+          required: [
+            'winPoints',
+            'drawPoints',
+            'lossPoints',
+            'tieBreakers',
+            'includeSources',
+          ],
+        },
+        recomputeTriggered: { type: 'boolean', example: true },
+      },
+      required: ['settings', 'recomputeTriggered'],
+    },
+  })
+  @ApiForbiddenResponse({ description: 'Only owner/admin can update settings' })
+  @ApiNotFoundResponse({ description: 'League not found' })
   updateSettings(
     @Req() req: Request,
-    @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId'))
+    leagueId: string,
     @Body() dto: UpdateLeagueSettingsDto,
   ) {
     const user = req.user as AuthUser;
-    return this.leaguesService.updateLeagueSettings(user.userId, id, dto);
+    return this.leaguesService.updateLeagueSettings(user.userId, leagueId, dto);
   }
 
   @Patch(':id')
