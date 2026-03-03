@@ -1593,7 +1593,8 @@ export class MatchesService {
       )
       // use COALESCE expression for consistent ordering and avoid TypeORM bug
       .addSelect('COALESCE(m."playedAt", m."createdAt")', 'sortPlayedAt')
-      .orderBy('sortPlayedAt', 'DESC')
+      // order by the expression directly to avoid Postgres lowercase-alias issue
+      .orderBy('COALESCE(m."playedAt", m."createdAt")', 'DESC')
       .addOrderBy('m.id', 'DESC')
       .take(limit + 1);
 
