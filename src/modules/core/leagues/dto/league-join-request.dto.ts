@@ -11,6 +11,9 @@ export class LeagueJoinRequestItemDto {
   @ApiProperty({ format: 'uuid' })
   userId!: string;
 
+  @ApiProperty({ format: 'uuid' })
+  requesterUserId!: string;
+
   @ApiProperty({ enum: LeagueJoinRequestStatus })
   status!: LeagueJoinRequestStatus;
 
@@ -19,6 +22,21 @@ export class LeagueJoinRequestItemDto {
 
   @ApiProperty({ nullable: true })
   userDisplayName!: string | null;
+
+  @ApiProperty({ nullable: true })
+  requesterDisplayName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  requesterEmail!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  requesterAvatarUrl!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  requesterCity!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  requesterProvince!: string | null;
 
   @ApiProperty()
   createdAt!: string;

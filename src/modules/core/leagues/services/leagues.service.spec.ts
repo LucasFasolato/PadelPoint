@@ -597,6 +597,7 @@ describe('LeaguesService', () => {
             modeKey: 'SCHEDULED',
             status: 'UPCOMING',
             statusKey: 'UPCOMING',
+            computedStatus: 'UPCOMING',
             cityName: null,
             provinceCode: null,
             lastActivityAt: null,
@@ -673,8 +674,9 @@ describe('LeaguesService', () => {
             name: 'Liga sin actividad',
             mode: 'SCHEDULED',
             modeKey: 'SCHEDULED',
-            status: 'UPCOMING',
-            statusKey: 'UPCOMING',
+            status: 'ACTIVE',
+            statusKey: 'ACTIVE',
+            computedStatus: 'ACTIVE',
             role: 'OWNER',
             membersCount: 2,
             cityName: null,
@@ -733,8 +735,9 @@ describe('LeaguesService', () => {
             name: 'Liga fallback geo',
             mode: 'SCHEDULED',
             modeKey: 'SCHEDULED',
-            status: 'UPCOMING',
-            statusKey: 'UPCOMING',
+            status: 'ACTIVE',
+            statusKey: 'ACTIVE',
+            computedStatus: 'ACTIVE',
             role: 'OWNER',
             membersCount: 3,
             cityName: null,
@@ -793,8 +796,9 @@ describe('LeaguesService', () => {
             name: 'Liga fallback role',
             mode: 'SCHEDULED',
             modeKey: 'SCHEDULED',
-            status: 'UPCOMING',
-            statusKey: 'UPCOMING',
+            status: 'ACTIVE',
+            statusKey: 'ACTIVE',
+            computedStatus: 'ACTIVE',
             role: 'MEMBER',
             membersCount: 2,
             cityName: null,
@@ -847,6 +851,7 @@ describe('LeaguesService', () => {
             modeKey: 'SCHEDULED',
             status: 'UPCOMING',
             statusKey: 'UPCOMING',
+            computedStatus: 'UPCOMING',
             cityName: null,
             provinceCode: null,
             lastActivityAt: null,
@@ -873,14 +878,59 @@ describe('LeaguesService', () => {
         name: 'Geo Missing',
         mode: 'SCHEDULED',
         modeKey: 'SCHEDULED',
-        status: 'UPCOMING',
-        statusKey: 'UPCOMING',
+        status: 'ACTIVE',
+        statusKey: 'ACTIVE',
+        computedStatus: 'ACTIVE',
         role: 'MEMBER',
         membersCount: 2,
         cityName: null,
         provinceCode: null,
         lastActivityAt: null,
       });
+    });
+
+    it('computes UPCOMING status when membersCount is 1', () => {
+      const item = (service as any).toLeagueListItemView({
+        id: 'league-status-1',
+        name: 'Liga 1',
+        mode: 'scheduled',
+        status: 'draft',
+        role: 'member',
+        membersCount: '1',
+        cityName: null,
+        provinceCode: null,
+        lastActivityAt: null,
+      });
+
+      expect(item).toEqual(
+        expect.objectContaining({
+          status: 'UPCOMING',
+          statusKey: 'UPCOMING',
+          computedStatus: 'UPCOMING',
+        }),
+      );
+    });
+
+    it('computes ACTIVE status when membersCount is 2', () => {
+      const item = (service as any).toLeagueListItemView({
+        id: 'league-status-2',
+        name: 'Liga 2',
+        mode: 'scheduled',
+        status: 'draft',
+        role: 'member',
+        membersCount: '2',
+        cityName: null,
+        provinceCode: null,
+        lastActivityAt: null,
+      });
+
+      expect(item).toEqual(
+        expect.objectContaining({
+          status: 'ACTIVE',
+          statusKey: 'ACTIVE',
+          computedStatus: 'ACTIVE',
+        }),
+      );
     });
   });
 
@@ -2213,6 +2263,50 @@ describe('LeaguesService', () => {
   // -- join requests ----------------------------------------------
 
   describe('join requests', () => {
+    it('listJoinRequests returns requester metadata (userId, name, email, avatar, city/province)', async () => {
+      const request = fakeJoinRequest({
+        id: 'join-request-meta-1',
+        userId: FAKE_USER_ID_2,
+        user: {
+          id: FAKE_USER_ID_2,
+          displayName: 'Invitee Player',
+          email: 'invitee@example.com',
+          city: {
+            name: 'Salta',
+            province: { code: 'AR-A' },
+          },
+        } as any,
+      });
+      leagueRepo.findOne.mockResolvedValue(fakeLeague());
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ userId: FAKE_USER_ID, role: LeagueRole.OWNER }),
+      );
+      joinRequestRepo.find.mockResolvedValue([request]);
+      mediaAssetRepo.find.mockResolvedValue([
+        {
+          ownerId: FAKE_USER_ID_2,
+          secureUrl: 'https://cdn.test/users/avatar-2.png',
+          url: 'https://cdn.test/users/avatar-2.png',
+          createdAt: new Date('2025-01-01T12:00:00Z'),
+        } as MediaAsset,
+      ]);
+
+      const result = await service.listJoinRequests(FAKE_USER_ID, 'league-1');
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          userId: FAKE_USER_ID_2,
+          requesterUserId: FAKE_USER_ID_2,
+          requesterDisplayName: 'Invitee Player',
+          requesterEmail: 'invitee@example.com',
+          requesterAvatarUrl: 'https://cdn.test/users/avatar-2.png',
+          requesterCity: 'Salta',
+          requesterProvince: 'AR-A',
+        }),
+      );
+    });
+
     it('createJoinRequest creates a pending request', async () => {
       const created = fakeJoinRequest({
         id: 'join-request-1',

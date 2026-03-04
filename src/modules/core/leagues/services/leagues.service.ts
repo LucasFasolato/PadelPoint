@@ -38,6 +38,8 @@ import { User } from '../../users/entities/user.entity';
 import { City } from '../../geo/entities/city.entity';
 import { Province } from '../../geo/entities/province.entity';
 import { MediaAsset } from '@core/media/entities/media-asset.entity';
+import { MediaOwnerType } from '@core/media/enums/media-owner-type.enum';
+import { MediaKind } from '@core/media/enums/media-kind.enum';
 import { MatchResult } from '../../matches/entities/match-result.entity';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
@@ -82,6 +84,7 @@ type LeagueListItemView = {
   modeKey: LeagueModeKey;
   status: LeagueListStatus;
   statusKey: LeagueStatusKey;
+  computedStatus: LeagueStatusKey;
   role?: LeagueListRole;
   membersCount?: number;
   cityName?: string | null;
@@ -854,6 +857,139 @@ export class LeaguesService {
       (normalizedMessage.includes('ispublic') ||
         normalizedMessage.includes('l.ispublic'))
     );
+  }
+
+  private isJoinRequestGeoProjectionUnsupported(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    if (code === '42P01' || code === '42501') {
+      return (
+        normalizedMessage.includes(' relation cities') ||
+        normalizedMessage.includes(' relation provinces')
+      );
+    }
+
+    if (code === '42703') {
+      return (
+        normalizedMessage.includes('cityid') ||
+        normalizedMessage.includes('provinceid') ||
+        normalizedMessage.includes('city.name') ||
+        normalizedMessage.includes('province.code') ||
+        normalizedMessage.includes('province.name')
+      );
+    }
+
+    return false;
+  }
+
+  private isUserAvatarLookupUnsupported(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    return (
+      (code === '42P01' || code === '42703' || code === '42501') &&
+      (normalizedMessage.includes('media_assets') ||
+        normalizedMessage.includes('ownertype') ||
+        normalizedMessage.includes('ownerid') ||
+        normalizedMessage.includes('secureurl') ||
+        normalizedMessage.includes('kind'))
+    );
+  }
+
+  private async loadJoinRequestsWithRequesterContext(
+    leagueId: string,
+    status: LeagueJoinRequestStatus,
+    actorUserId: string,
+  ): Promise<LeagueJoinRequest[]> {
+    const baseFind = () =>
+      this.joinRequestRepo.find({
+        where: { leagueId, status },
+        relations: ['user'],
+        order: { createdAt: 'DESC', id: 'DESC' },
+      });
+
+    try {
+      return await this.joinRequestRepo.find({
+        where: { leagueId, status },
+        relations: ['user', 'user.city', 'user.city.province'],
+        order: { createdAt: 'DESC', id: 'DESC' },
+      });
+    } catch (err) {
+      if (!this.isJoinRequestGeoProjectionUnsupported(err)) {
+        throw err;
+      }
+
+      this.logger.warn(
+        JSON.stringify({
+          event: 'leagues.join_requests.geo_fallback',
+          leagueId,
+          actorUserId,
+          reason: this.getErrorReason(err),
+        }),
+      );
+      return baseFind();
+    }
+  }
+
+  private async loadUserAvatarUrlMap(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueUserIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    try {
+      const avatars = await this.mediaAssetRepo.find({
+        where: {
+          ownerType: MediaOwnerType.USER,
+          kind: MediaKind.USER_AVATAR,
+          active: true,
+          ownerId: In(uniqueUserIds),
+        },
+        order: { createdAt: 'DESC' },
+      });
+
+      const byUserId = new Map<string, string>();
+      for (const avatar of avatars) {
+        if (!byUserId.has(avatar.ownerId)) {
+          const url = (avatar.secureUrl ?? avatar.url ?? '').trim();
+          if (url.length > 0) {
+            byUserId.set(avatar.ownerId, url);
+          }
+        }
+      }
+      return byUserId;
+    } catch (err) {
+      if (!this.isUserAvatarLookupUnsupported(err)) {
+        throw err;
+      }
+      this.logger.warn(
+        JSON.stringify({
+          event: 'leagues.join_requests.avatar_fallback',
+          reason: this.getErrorReason(err),
+          usersCount: uniqueUserIds.length,
+        }),
+      );
+      return new Map<string, string>();
+    }
   }
 
   private getErrorReason(err: unknown): string {
@@ -1692,21 +1828,23 @@ export class LeaguesService {
   ) {
     await this.assertLeagueExists(leagueId);
     await this.assertRole(leagueId, userId, LeagueRole.OWNER, LeagueRole.ADMIN);
-
-    const requests = await this.joinRequestRepo.find({
-      where: {
-        leagueId,
-        status: status ?? LeagueJoinRequestStatus.PENDING,
-      },
-      relations: ['user'],
-      order: {
-        createdAt: 'DESC',
-        id: 'DESC',
-      },
-    });
+    const requestedStatus = status ?? LeagueJoinRequestStatus.PENDING;
+    const requests = await this.loadJoinRequestsWithRequesterContext(
+      leagueId,
+      requestedStatus,
+      userId,
+    );
+    const avatarUrlByUserId = await this.loadUserAvatarUrlMap(
+      requests.map((request) => request.userId),
+    );
 
     return {
-      items: requests.map((request) => this.toJoinRequestView(request)),
+      items: requests.map((request) =>
+        this.toJoinRequestView(
+          request,
+          avatarUrlByUserId.get(request.userId) ?? null,
+        ),
+      ),
     };
   }
 
@@ -2389,14 +2527,19 @@ export class LeaguesService {
     const parsedMembersCount = this.toSafeInteger(row.membersCount);
     const role = this.toLeagueListRole(row.role);
     const lastActivityAt = this.toNullableIsoString(row.lastActivityAt);
+    const computedStatus = this.resolveLeagueListStatus(
+      row.status,
+      parsedMembersCount,
+    );
 
     const item: LeagueListItemView = {
       id,
       name: rawName ?? 'Liga',
       mode: this.toLeagueListMode(row.mode),
-      status: this.toLeagueListStatus(row.status),
+      status: computedStatus,
       modeKey: this.toLeagueModeKey(row.mode),
-      statusKey: this.toLeagueStatusKey(row.status),
+      statusKey: this.toLeagueStatusKey(computedStatus),
+      computedStatus: this.toLeagueStatusKey(computedStatus),
     };
 
     if (role) item.role = role;
@@ -2465,6 +2608,25 @@ export class LeaguesService {
     if (normalized === 'active') return 'ACTIVE';
     if (normalized === 'finished') return 'FINISHED';
     return normalized.length > 0 ? normalized.toUpperCase() : 'UPCOMING';
+  }
+
+  private resolveLeagueListStatus(
+    status: unknown,
+    membersCount: number | undefined,
+  ): LeagueListStatus {
+    const normalized = this.toNormalizedString(status, 'lower');
+    if (normalized === 'finished') {
+      return 'FINISHED';
+    }
+    if (normalized === 'active') {
+      return 'ACTIVE';
+    }
+
+    if (membersCount !== undefined) {
+      return membersCount >= 2 ? 'ACTIVE' : 'UPCOMING';
+    }
+
+    return this.toLeagueListStatus(status);
   }
 
   private toLeagueStatusKey(status: unknown): LeagueStatusKey {
@@ -2680,14 +2842,29 @@ export class LeaguesService {
     };
   }
 
-  private toJoinRequestView(request: LeagueJoinRequest) {
+  private toJoinRequestView(
+    request: LeagueJoinRequest,
+    requesterAvatarUrl?: string | null,
+  ) {
+    const requesterDisplayName = request.user?.displayName ?? null;
+    const requesterEmail = request.user?.email ?? null;
+    const requesterCity = request.user?.city?.name ?? null;
+    const requesterProvince =
+      request.user?.city?.province?.code ?? request.user?.city?.province?.name ?? null;
+
     return {
       id: request.id,
       leagueId: request.leagueId,
       userId: request.userId,
+      requesterUserId: request.userId,
       status: request.status,
       message: request.message ?? null,
-      userDisplayName: request.user?.displayName ?? null,
+      userDisplayName: requesterDisplayName,
+      requesterDisplayName,
+      requesterEmail,
+      requesterAvatarUrl: requesterAvatarUrl ?? null,
+      requesterCity,
+      requesterProvince,
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
     };

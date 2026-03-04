@@ -35,6 +35,13 @@ export class LeagueListItemDto {
   })
   statusKey: 'UPCOMING' | 'ACTIVE' | 'FINISHED';
 
+  @ApiProperty({
+    description:
+      'Computed status that normalizes legacy rows using membersCount fallback.',
+    enum: ['UPCOMING', 'ACTIVE', 'FINISHED'],
+  })
+  computedStatus: 'UPCOMING' | 'ACTIVE' | 'FINISHED';
+
   @ApiPropertyOptional({ enum: ['OWNER', 'ADMIN', 'MEMBER'] })
   role?: 'OWNER' | 'ADMIN' | 'MEMBER';
 
