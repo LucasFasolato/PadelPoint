@@ -133,6 +133,25 @@ type ParticipantIds = {
   captains: { A: string; B: string };
 };
 
+type ManualReportInput = {
+  teamA1Id: string;
+  teamA2Id?: string;
+  teamB1Id: string;
+  teamB2Id?: string;
+  sets: Array<{ a: number; b: number }>;
+  playedAt?: string;
+  matchType?: MatchType;
+};
+
+type NormalizedManualRoster = {
+  isDoubles: boolean;
+  teamA1Id: string;
+  teamA2Id: string | null;
+  teamB1Id: string;
+  teamB2Id: string | null;
+  playerIds: string[];
+};
+
 class SafePendingConfirmationsFallbackError extends Error {}
 
 @Injectable()
@@ -284,6 +303,134 @@ export class MatchesService {
 
     const winnerTeam: WinnerTeam = winsA > winsB ? WinnerTeam.A : WinnerTeam.B;
     return { winnerTeam };
+  }
+
+  private validateManualReportSets(sets: Array<{ a: number; b: number }>) {
+    if (!Array.isArray(sets) || sets.length < 2 || sets.length > 3) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'SETS_COUNT_INVALID',
+        message: 'sets must contain exactly 2 or 3 sets for best-of-3 format',
+      });
+    }
+
+    let winsA = 0;
+    let winsB = 0;
+    const setWinners: WinnerTeam[] = [];
+
+    for (let i = 0; i < sets.length; i += 1) {
+      const set = sets[i];
+      const a = set?.a;
+      const b = set?.b;
+
+      if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'SET_SCORE_INVALID',
+          message: `set #${i + 1} scores must be integer values >= 0`,
+        });
+      }
+      if (a === b) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'SET_SCORE_INVALID',
+          message: `set #${i + 1} cannot end tied`,
+        });
+      }
+
+      const max = Math.max(a, b);
+      const min = Math.min(a, b);
+      const validSet =
+        (max === 6 && min >= 0 && min <= 4) ||
+        (max === 7 && (min === 5 || min === 6));
+
+      if (!validSet) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'SET_SCORE_INVALID',
+          message: `set #${i + 1} must be 6-0..4, 7-5 or 7-6`,
+        });
+      }
+
+      const setWinner = a > b ? WinnerTeam.A : WinnerTeam.B;
+      setWinners.push(setWinner);
+      if (setWinner === WinnerTeam.A) winsA += 1;
+      else winsB += 1;
+    }
+
+    if (winsA === winsB || (winsA !== 2 && winsB !== 2)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'SETS_COUNT_INVALID',
+        message: 'best-of-3 format requires a winner with exactly 2 sets won',
+      });
+    }
+
+    if (sets.length === 3) {
+      const firstTwoA = setWinners
+        .slice(0, 2)
+        .filter((winner) => winner === WinnerTeam.A).length;
+      const firstTwoB = 2 - firstTwoA;
+      if (firstTwoA === 2 || firstTwoB === 2) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'SETS_COUNT_INVALID',
+          message: 'third set is only allowed when first two sets are split 1-1',
+        });
+      }
+    }
+
+    return {
+      winnerTeam: winsA > winsB ? WinnerTeam.A : WinnerTeam.B,
+    };
+  }
+
+  private normalizeManualRoster(input: {
+    teamA1Id: string;
+    teamA2Id?: string | null;
+    teamB1Id: string;
+    teamB2Id?: string | null;
+  }): NormalizedManualRoster {
+    const teamA1Id =
+      typeof input.teamA1Id === 'string' ? input.teamA1Id.trim() : '';
+    const teamB1Id =
+      typeof input.teamB1Id === 'string' ? input.teamB1Id.trim() : '';
+    const teamA2Value =
+      typeof input.teamA2Id === 'string' ? input.teamA2Id.trim() : '';
+    const teamB2Value =
+      typeof input.teamB2Id === 'string' ? input.teamB2Id.trim() : '';
+    const hasTeamA2 = teamA2Value.length > 0;
+    const hasTeamB2 = teamB2Value.length > 0;
+
+    if (hasTeamA2 !== hasTeamB2) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'TEAM2_INCOMPLETE',
+        message: 'For doubles, both teamA2Id and teamB2Id are required',
+      });
+    }
+
+    const isDoubles = hasTeamA2 && hasTeamB2;
+    const playerIds = isDoubles
+      ? [teamA1Id, teamA2Value, teamB1Id, teamB2Value]
+      : [teamA1Id, teamB1Id];
+
+    if (new Set(playerIds).size !== playerIds.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'DUPLICATE_PLAYERS',
+        message: 'All players must be different',
+      });
+    }
+
+    return {
+      isDoubles,
+      teamA1Id,
+      teamA2Id: isDoubles ? teamA2Value : null,
+      teamB1Id,
+      teamB2Id: isDoubles ? teamB2Value : null,
+      playerIds,
+    };
   }
 
   private validateLeagueSets(sets: Array<{ a: number; b: number }>) {
@@ -1026,15 +1173,7 @@ export class MatchesService {
   async reportManual(
     userId: string,
     leagueId: string,
-    dto: {
-      teamA1Id: string;
-      teamA2Id: string;
-      teamB1Id: string;
-      teamB2Id: string;
-      sets: Array<{ a: number; b: number }>;
-      playedAt?: string;
-      matchType?: MatchType;
-    },
+    dto: ManualReportInput,
   ) {
     return this.dataSource.transaction(async (manager) => {
       this.assertLeagueIdRequired(leagueId);
@@ -1044,6 +1183,8 @@ export class MatchesService {
       const matchRepo = manager.getRepository(MatchResult);
 
       const matchType = this.normalizeMatchType(dto.matchType);
+      const roster = this.normalizeManualRoster(dto);
+      const playerIds = roster.playerIds;
 
       // 1. Validate league
       await this.assertLeagueReadyForMatchUsage(manager, leagueId);
@@ -1060,59 +1201,31 @@ export class MatchesService {
         });
       }
 
-      // 3. Prevent duplicate player selection
-      const playerIds = [
-        dto.teamA1Id,
-        dto.teamA2Id,
-        dto.teamB1Id,
-        dto.teamB2Id,
-      ];
-      if (new Set(playerIds).size !== 4) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'DUPLICATE_PLAYERS',
-          message: 'All 4 players must be different',
-        });
-      }
-
+      // 3. All participants must share city and be league members
       await this.assertUsersShareCityOrThrow(
         manager.getRepository(User),
         playerIds,
         'match',
       );
+      await this.assertLeaguePlayers(manager, leagueId, playerIds);
 
-      // 4. All 4 participants must be league members
-      const memberCount = await memberRepo
-        .createQueryBuilder('m')
-        .where('m."leagueId" = :leagueId', { leagueId })
-        .andWhere('m."userId" IN (:...playerIds)', { playerIds })
-        .getCount();
+      // 4. Validate sets
+      const { winnerTeam } = this.validateManualReportSets(dto.sets);
 
-      if (memberCount !== 4) {
-        throw new BadRequestException({
-          statusCode: 400,
-          code: 'LEAGUE_MEMBERS_MISSING',
-          message: 'All 4 match participants must be members of the league',
-        });
-      }
-
-      // 5. Validate sets
-      const { winnerTeam } = this.validateSets(dto.sets);
-
-      // 6. Auto-create challenge (no reservation)
+      // 5. Auto-create challenge (no reservation)
       const challenge = chRepo.create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
         matchType,
-        teamA1Id: dto.teamA1Id,
-        teamA2Id: dto.teamA2Id,
-        teamB1Id: dto.teamB1Id,
-        teamB2Id: dto.teamB2Id,
+        teamA1Id: roster.teamA1Id,
+        teamA2Id: roster.teamA2Id,
+        teamB1Id: roster.teamB1Id,
+        teamB2Id: roster.teamB2Id,
         reservationId: null,
       });
       await chRepo.save(challenge);
 
-      // 7. Create match result
+      // 6. Create match result
       const playedAt = dto.playedAt
         ? DateTime.fromISO(dto.playedAt, { zone: TZ })
         : DateTime.now().setZone(TZ);
@@ -1150,14 +1263,14 @@ export class MatchesService {
 
       const saved = await matchRepo.save(match);
 
-      // 8. Notify other participants (fire-and-forget)
+      // 7. Notify other participants (fire-and-forget)
       this.notifyMatchReported(saved, playerIds, userId).catch((err) =>
         this.logger.error(
           `failed to send match-reported notifications: ${err.message}`,
         ),
       );
 
-      // 9. League activity (fire-and-forget)
+      // 8. League activity (fire-and-forget)
       this.logLeagueActivity(
         leagueId,
         LeagueActivityType.MATCH_REPORTED,

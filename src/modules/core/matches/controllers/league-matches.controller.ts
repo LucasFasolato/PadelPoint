@@ -123,6 +123,38 @@ export class LeagueMatchesController {
   }
 
   @Post(':leagueId/report-manual')
+  @ApiBody({
+    type: ReportManualDto,
+    description:
+      'Supports singles (1v1) and doubles (2v2). For doubles, provide both teamA2Id and teamB2Id. For singles, omit both.',
+    examples: {
+      singles: {
+        summary: 'Singles (1v1)',
+        value: {
+          teamA1Id: '11111111-1111-4111-8111-111111111111',
+          teamB1Id: '22222222-2222-4222-8222-222222222222',
+          sets: [
+            { a: 6, b: 4 },
+            { a: 6, b: 4 },
+          ],
+        },
+      },
+      doubles: {
+        summary: 'Doubles (2v2)',
+        value: {
+          teamA1Id: '11111111-1111-4111-8111-111111111111',
+          teamA2Id: '33333333-3333-4333-8333-333333333333',
+          teamB1Id: '22222222-2222-4222-8222-222222222222',
+          teamB2Id: '44444444-4444-4444-8444-444444444444',
+          sets: [
+            { a: 6, b: 4 },
+            { a: 3, b: 6 },
+            { a: 7, b: 6 },
+          ],
+        },
+      },
+    },
+  })
   reportManual(
     @Req() req: Request,
     @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
