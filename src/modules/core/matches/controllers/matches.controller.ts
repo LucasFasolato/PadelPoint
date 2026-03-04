@@ -30,9 +30,19 @@ export class MatchesController {
   constructor(private readonly service: MatchesService) {}
 
   @Get('me')
-  async getMyMatches(@Req() req: Request) {
+  async getMyMatches(
+    @Req() req: Request,
+    @Query('legacy') legacy?: string,
+  ) {
     const user = req.user as AuthUser;
-    return this.service.getMyMatches(user.userId);
+    const items = await this.service.getMyMatches(user.userId);
+    if (legacy === '1' || legacy?.toLowerCase() === 'true') {
+      return items;
+    }
+    return {
+      items,
+      nextCursor: null,
+    };
   }
 
   @Get('me/pending-confirmations')
