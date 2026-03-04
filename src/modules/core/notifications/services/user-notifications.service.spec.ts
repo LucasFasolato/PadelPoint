@@ -5,6 +5,8 @@ import { UserNotification } from '../entities/user-notification.entity';
 import { UserNotificationType } from '../enums/user-notification-type.enum';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
+import { LeagueInvite } from '@/modules/core/leagues/entities/league-invite.entity';
+import { InviteStatus } from '@/modules/core/leagues/enums/invite-status.enum';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -27,16 +29,19 @@ function fakeNotification(
 describe('UserNotificationsService', () => {
   let service: UserNotificationsService;
   let repo: MockRepo<UserNotification>;
+  let inviteRepo: MockRepo<LeagueInvite>;
   let gateway: { emitToUser: jest.Mock };
 
   beforeEach(async () => {
     repo = createMockRepo<UserNotification>();
+    inviteRepo = createMockRepo<LeagueInvite>();
     gateway = { emitToUser: jest.fn().mockReturnValue(true) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserNotificationsService,
         { provide: getRepositoryToken(UserNotification), useValue: repo },
+        { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
         { provide: NotificationsGateway, useValue: gateway },
       ],
     }).compile();
@@ -249,6 +254,83 @@ describe('UserNotificationsService', () => {
 
       expect(result.items).toHaveLength(2);
       expect(result.nextCursor).toBe('2025-01-02T00:00:00.000Z');
+    });
+  });
+
+  describe('listInboxCanonical', () => {
+    it('returns actionable invite notifications when invite status is pending', async () => {
+      const inviteId = '33333333-3333-4333-8333-333333333333';
+      const listItems = [
+        fakeNotification({
+          id: 'invite-notif',
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          data: {
+            inviteId,
+            leagueId: '11111111-1111-4111-8111-111111111111',
+          },
+        }),
+      ];
+
+      repo.createQueryBuilder = jest.fn().mockImplementation(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(listItems),
+        getCount: jest.fn().mockResolvedValue(1),
+      }));
+      inviteRepo.find.mockResolvedValue([
+        { id: inviteId, status: InviteStatus.PENDING } as LeagueInvite,
+      ]);
+
+      const result = await service.listInboxCanonical(FAKE_USER_ID, {});
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          canAct: true,
+          actionStatus: 'PENDING',
+          actions: expect.arrayContaining([
+            expect.objectContaining({ type: 'ACCEPT' }),
+            expect.objectContaining({ type: 'DECLINE' }),
+          ]),
+        }),
+      );
+    });
+
+    it('returns handled invite notifications without action buttons when already accepted', async () => {
+      const inviteId = '44444444-4444-4444-8444-444444444444';
+      const listItems = [
+        fakeNotification({
+          id: 'invite-notif-accepted',
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          data: {
+            inviteId,
+            leagueId: '11111111-1111-4111-8111-111111111111',
+          },
+        }),
+      ];
+
+      repo.createQueryBuilder = jest.fn().mockImplementation(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(listItems),
+        getCount: jest.fn().mockResolvedValue(1),
+      }));
+      inviteRepo.find.mockResolvedValue([
+        { id: inviteId, status: InviteStatus.ACCEPTED } as LeagueInvite,
+      ]);
+
+      const result = await service.listInboxCanonical(FAKE_USER_ID, {});
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].canAct).toBe(false);
+      expect(result.items[0].actionStatus).toBe('ACCEPTED');
+      expect(
+        (result.items[0].actions ?? []).some(
+          (action) => action.type === 'ACCEPT' || action.type === 'DECLINE',
+        ),
+      ).toBe(false);
     });
   });
 

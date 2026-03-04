@@ -44,6 +44,22 @@ export class CanonicalNotificationInboxItemDto {
   @ApiPropertyOptional({ nullable: true })
   readAt: string | null;
 
+  @ApiProperty({
+    description:
+      'Whether the notification still supports actionable buttons (accept/decline).',
+  })
+  canAct: boolean;
+
+  @ApiProperty({
+    enum: ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'NOT_ACTIONABLE'],
+  })
+  actionStatus:
+    | 'PENDING'
+    | 'ACCEPTED'
+    | 'REJECTED'
+    | 'EXPIRED'
+    | 'NOT_ACTIONABLE';
+
   @ApiProperty({ type: CanonicalNotificationEntityRefsDto })
   entityRefs: CanonicalNotificationEntityRefsDto;
 

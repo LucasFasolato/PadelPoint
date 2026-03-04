@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { isUUID } from 'class-validator';
 
 import { UserNotification } from '../entities/user-notification.entity';
 import { UserNotificationType } from '../enums/user-notification-type.enum';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
+import { LeagueInvite } from '@/modules/core/leagues/entities/league-invite.entity';
+import { InviteStatus } from '@/modules/core/leagues/enums/invite-status.enum';
 
 export type CreateUserNotificationInput = {
   userId: string;
@@ -23,6 +25,13 @@ export type NotificationView = {
   data: Record<string, unknown> | null;
   readAt: string | null;
   createdAt: string;
+  canAct?: boolean;
+  actionStatus?:
+    | 'PENDING'
+    | 'ACCEPTED'
+    | 'REJECTED'
+    | 'EXPIRED'
+    | 'NOT_ACTIONABLE';
 };
 
 export type CanonicalNotificationEntityRefs = {
@@ -45,6 +54,13 @@ export type CanonicalNotificationItem = {
   body: string | null;
   createdAt: string;
   readAt: string | null;
+  canAct: boolean;
+  actionStatus:
+    | 'PENDING'
+    | 'ACCEPTED'
+    | 'REJECTED'
+    | 'EXPIRED'
+    | 'NOT_ACTIONABLE';
   entityRefs: CanonicalNotificationEntityRefs;
   actions?: CanonicalNotificationAction[];
   data?: Record<string, unknown> | null;
@@ -63,6 +79,8 @@ export class UserNotificationsService {
   constructor(
     @InjectRepository(UserNotification)
     private readonly repo: Repository<UserNotification>,
+    @InjectRepository(LeagueInvite)
+    private readonly inviteRepo: Repository<LeagueInvite>,
     private readonly gateway: NotificationsGateway,
   ) {}
 
@@ -170,9 +188,14 @@ export class UserNotificationsService {
       this.list(userId, opts),
       this.getUnreadCount(userId),
     ]);
+    const inviteStatusById = await this.fetchInviteStatusMap(
+      listResult.items.map((item) => this.pickString(item.data?.inviteId)),
+    );
 
     return {
-      items: listResult.items.map((item) => this.toCanonicalItem(item)),
+      items: listResult.items.map((item) =>
+        this.toCanonicalItem(item, inviteStatusById),
+      ),
       nextCursor: listResult.nextCursor,
       unreadCount,
     };
@@ -192,6 +215,8 @@ export class UserNotificationsService {
         data: item.data ?? null,
         readAt: item.readAt,
         createdAt: item.createdAt,
+        canAct: item.canAct,
+        actionStatus: item.actionStatus,
       })),
       nextCursor: canonical.nextCursor,
     };
@@ -294,10 +319,14 @@ export class UserNotificationsService {
     };
   }
 
-  private toCanonicalItem(item: NotificationView): CanonicalNotificationItem {
+  private toCanonicalItem(
+    item: NotificationView,
+    inviteStatusById: Map<string, InviteStatus>,
+  ): CanonicalNotificationItem {
     const data = item.data ?? null;
     const refs = this.extractEntityRefs(data);
-    const actions = this.extractActions(data);
+    const actionState = this.resolveActionState(data, inviteStatusById);
+    const actions = this.extractActions(data, actionState.canAct);
 
     return {
       id: item.id,
@@ -306,6 +335,8 @@ export class UserNotificationsService {
       body: item.body,
       createdAt: item.createdAt,
       readAt: item.readAt,
+      canAct: actionState.canAct,
+      actionStatus: actionState.actionStatus,
       entityRefs: refs,
       ...(actions.length > 0 ? { actions } : {}),
       data,
@@ -325,6 +356,7 @@ export class UserNotificationsService {
 
   private extractActions(
     data: Record<string, unknown> | null,
+    canAct: boolean,
   ): CanonicalNotificationAction[] {
     const actions: CanonicalNotificationAction[] = [];
     const link = this.pickString(data?.link);
@@ -338,7 +370,7 @@ export class UserNotificationsService {
       });
     }
 
-    if (inviteId) {
+    if (inviteId && canAct) {
       actions.push({
         type: 'ACCEPT',
         label: 'Aceptar',
@@ -358,6 +390,79 @@ export class UserNotificationsService {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private resolveActionState(
+    data: Record<string, unknown> | null,
+    inviteStatusById: Map<string, InviteStatus>,
+  ): {
+    canAct: boolean;
+    actionStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'NOT_ACTIONABLE';
+  } {
+    const inviteId = this.pickString(data?.inviteId);
+    if (!inviteId) {
+      return { canAct: false, actionStatus: 'NOT_ACTIONABLE' };
+    }
+
+    const status = inviteStatusById.get(inviteId);
+    if (status === InviteStatus.PENDING) {
+      return { canAct: true, actionStatus: 'PENDING' };
+    }
+    if (status === InviteStatus.ACCEPTED) {
+      return { canAct: false, actionStatus: 'ACCEPTED' };
+    }
+    if (status === InviteStatus.DECLINED) {
+      return { canAct: false, actionStatus: 'REJECTED' };
+    }
+    if (status === InviteStatus.EXPIRED) {
+      return { canAct: false, actionStatus: 'EXPIRED' };
+    }
+    return { canAct: false, actionStatus: 'NOT_ACTIONABLE' };
+  }
+
+  private async fetchInviteStatusMap(
+    inviteIds: Array<string | null>,
+  ): Promise<Map<string, InviteStatus>> {
+    const uniqueIds = [...new Set(inviteIds.filter((id): id is string => !!id))];
+    if (uniqueIds.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const invites = await this.inviteRepo.find({
+        where: { id: In(uniqueIds) },
+        select: ['id', 'status'],
+      });
+      return new Map(invites.map((invite) => [invite.id, invite.status]));
+    } catch (err: unknown) {
+      if (this.isInviteStatusLookupUnsupported(err)) {
+        this.logger.warn(
+          'invite status lookup unavailable (legacy schema), notifications will default to not actionable',
+        );
+        return new Map();
+      }
+      throw err;
+    }
+  }
+
+  private isInviteStatusLookupUnsupported(err: unknown): boolean {
+    const anyErr = err as {
+      code?: unknown;
+      message?: unknown;
+      driverError?: { code?: unknown; message?: unknown };
+    };
+    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
+    const rawMessage = String(
+      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    ).toLowerCase();
+    const normalizedMessage = rawMessage.replace(/["'`]/g, '');
+
+    return (
+      (code === '42P01' || code === '42703' || code === '42501') &&
+      (normalizedMessage.includes('league_invites') ||
+        normalizedMessage.includes('invite.status') ||
+        normalizedMessage.includes('inviteid'))
+    );
   }
 
   private assertValidInviteNotificationPayload(
