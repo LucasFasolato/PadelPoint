@@ -1,8 +1,11 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Query, Res } from '@nestjs/common';
+import { ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { MediaService } from '../services/media.service';
 import { MediaOwnerType } from '../enums/media-owner-type.enum';
 import { MediaKind } from '../enums/media-kind.enum';
 
+@ApiTags('public-media')
 @Controller('public/media')
 export class PublicMediaController {
   constructor(private readonly media: MediaService) {}
@@ -55,11 +58,25 @@ export class PublicMediaController {
   }
 
   @Get('users/:userId/avatar')
-  userAvatar(@Param('userId') userId: string) {
-    return this.media.getSinglePublic(
+  @ApiOkResponse({
+    description: 'User avatar media asset',
+  })
+  @ApiNoContentResponse({
+    description: 'No avatar available for this user',
+  })
+  async userAvatar(
+    @Param('userId') userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const asset = await this.media.getSinglePublic(
       MediaOwnerType.USER,
       userId,
       MediaKind.USER_AVATAR,
     );
+    if (!asset) {
+      res.status(HttpStatus.NO_CONTENT);
+      return;
+    }
+    return asset;
   }
 }

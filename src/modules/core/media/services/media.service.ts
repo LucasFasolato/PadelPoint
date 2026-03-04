@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config'; // Added ConfigService
 import { initCloudinary } from './cloudinary.client';
 
@@ -251,23 +251,31 @@ export class MediaService {
     ownerId: string,
     kind: MediaKind,
   ) {
-    const asset = await this.mediaRepo.findOne({
-      where: { ownerType, ownerId, kind, active: true },
-      order: { createdAt: 'DESC' },
-      select: [
-        'id',
-        'ownerType',
-        'ownerId',
-        'kind',
-        'url',
-        'secureUrl',
-        'width',
-        'height',
-        'format',
-        'createdAt',
-      ],
-    });
+    try {
+      const asset = await this.mediaRepo.findOne({
+        where: { ownerType, ownerId, kind, active: true },
+        order: { createdAt: 'DESC' },
+        select: [
+          'id',
+          'ownerType',
+          'ownerId',
+          'kind',
+          'url',
+          'secureUrl',
+          'width',
+          'height',
+          'format',
+          'createdAt',
+        ],
+      });
 
-    return asset ?? null;
+      return asset ?? null;
+    } catch (error) {
+      const code = (error as QueryFailedError & { code?: string })?.code;
+      if (error instanceof QueryFailedError && code === '42P01') {
+        return null;
+      }
+      throw error;
+    }
   }
 }
