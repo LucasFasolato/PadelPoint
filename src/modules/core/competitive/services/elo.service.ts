@@ -11,6 +11,7 @@ import { EloHistory, EloHistoryReason } from '../entities/elo-history.entity';
 import { CompetitiveProfile } from '../entities/competitive-profile.entity';
 import {
   MatchRankingImpact,
+  RankingImpactDelta,
   MatchResult,
   MatchResultStatus,
   RankingImpactReason,
@@ -29,10 +30,7 @@ type HistoricalCompetitiveMatch = {
   id: string;
   playedAt: Date;
   rankingImpact: MatchRankingImpact | null;
-  teamA1Id: string | null;
-  teamA2Id: string | null;
-  teamB1Id: string | null;
-  teamB2Id: string | null;
+  participantIds: string[];
 };
 
 @Injectable()
@@ -115,10 +113,30 @@ export class EloService {
   }
 
   private toRivalKey(playerIds: Array<string | null | undefined>): string {
-    return playerIds
+    return [...new Set(playerIds)]
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
       .sort()
       .join('|');
+  }
+
+  private extractParticipantsForAntiFarm(ch: Challenge): string[] {
+    return [...new Set([
+      ch.teamA1Id,
+      ch.teamA2Id,
+      ch.teamB1Id,
+      ch.teamB2Id,
+    ])].filter((id): id is string => typeof id === 'string' && id.length > 0);
+  }
+
+  private extractParticipantsFromHistoryRow(row: {
+    teamA1Id: string | null;
+    teamA2Id: string | null;
+    teamB1Id: string | null;
+    teamB2Id: string | null;
+  }): string[] {
+    return [row.teamA1Id, row.teamA2Id, row.teamB1Id, row.teamB2Id].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
   }
 
   private isRankingImpactApplied(
@@ -165,7 +183,43 @@ export class EloService {
       output.reason = value.reason as RankingImpactReason;
     }
 
+    const baseDelta = value as { baseDelta?: unknown };
+    const finalDelta = value as { finalDelta?: unknown };
+    const computedAt = value as { computedAt?: unknown };
+
+    const parsedBaseDelta = this.parseRankingDelta(baseDelta.baseDelta);
+    const parsedFinalDelta = this.parseRankingDelta(finalDelta.finalDelta);
+    const parsedComputedAt = this.parseIsoDateString(computedAt.computedAt);
+    if (parsedBaseDelta) output.baseDelta = parsedBaseDelta;
+    if (parsedFinalDelta) output.finalDelta = parsedFinalDelta;
+    if (parsedComputedAt) output.computedAt = parsedComputedAt;
+
     return output;
+  }
+
+  private parseRankingDelta(raw: unknown): RankingImpactDelta | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const value = raw as { teamA?: unknown; teamB?: unknown };
+    if (
+      typeof value.teamA !== 'number' ||
+      !Number.isFinite(value.teamA) ||
+      typeof value.teamB !== 'number' ||
+      !Number.isFinite(value.teamB)
+    ) {
+      return null;
+    }
+
+    return {
+      teamA: Math.trunc(value.teamA),
+      teamB: Math.trunc(value.teamB),
+    };
+  }
+
+  private parseIsoDateString(raw: unknown): string | null {
+    if (typeof raw !== 'string' || raw.trim().length === 0) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
   }
 
   private async loadHistoricalCompetitiveMatches(
@@ -174,6 +228,7 @@ export class EloService {
     participantIds: string[],
     playedAt: Date,
   ): Promise<HistoricalCompetitiveMatch[]> {
+    if (participantIds.length === 0) return [];
     const windowStart = new Date(playedAt.getTime() - ANTI_FARM_WINDOW_MS);
 
     const rows = await manager
@@ -225,10 +280,7 @@ export class EloService {
           id: row.id,
           playedAt: played,
           rankingImpact: this.parseRankingImpact(row.rankingImpact),
-          teamA1Id: row.teamA1Id,
-          teamA2Id: row.teamA2Id,
-          teamB1Id: row.teamB1Id,
-          teamB2Id: row.teamB2Id,
+          participantIds: this.extractParticipantsFromHistoryRow(row),
         } satisfies HistoricalCompetitiveMatch;
       })
       .filter((row): row is HistoricalCompetitiveMatch => row !== null);
@@ -239,8 +291,7 @@ export class EloService {
     match: MatchResult,
     challenge: Challenge,
   ): Promise<MatchRankingImpact> {
-    const { teamA, teamB } = this.extractParticipantsOrThrow(challenge);
-    const participantIds = [...teamA, ...teamB];
+    const participantIds = this.extractParticipantsForAntiFarm(challenge);
     const playedAt = match.playedAt ?? new Date();
     const history = await this.loadHistoricalCompetitiveMatches(
       manager,
@@ -251,7 +302,7 @@ export class EloService {
 
     const rivalKey = this.toRivalKey(participantIds);
     const sameRivalMatches = history.filter((h) => {
-      const rowKey = this.toRivalKey([h.teamA1Id, h.teamA2Id, h.teamB1Id, h.teamB2Id]);
+      const rowKey = this.toRivalKey(h.participantIds);
       return rowKey === rivalKey;
     });
 
@@ -268,9 +319,8 @@ export class EloService {
     );
     for (const h of history) {
       if (!this.isRankingImpactApplied(h.rankingImpact)) continue;
-      const rowPlayers = [h.teamA1Id, h.teamA2Id, h.teamB1Id, h.teamB2Id];
       for (const pid of participantIds) {
-        if (rowPlayers.includes(pid)) {
+        if (h.participantIds.includes(pid)) {
           impactedByPlayer.set(pid, (impactedByPlayer.get(pid) ?? 0) + 1);
         }
       }
@@ -298,6 +348,27 @@ export class EloService {
     }
 
     return { applied: false, multiplier: 0, reason: 'RIVAL_DIMINISHING' };
+  }
+
+  private withRankingImpactAudit(
+    impact: MatchRankingImpact,
+    baseDelta: RankingImpactDelta,
+    finalDelta: RankingImpactDelta,
+    computedAt: string,
+  ): MatchRankingImpact {
+    const reason: RankingImpactReason | undefined =
+      impact.multiplier < 1
+        ? impact.reason ?? 'RIVAL_DIMINISHING'
+        : impact.reason;
+
+    return {
+      applied: impact.applied,
+      multiplier: impact.multiplier,
+      ...(reason ? { reason } : {}),
+      baseDelta,
+      finalDelta,
+      computedAt,
+    };
   }
 
   /**
@@ -332,8 +403,10 @@ export class EloService {
       throw new BadRequestException('Match must be CONFIRMED to apply ELO');
     }
 
-    // ✅ Idempotent primary guard (safe because row is locked)
-    if (match.eloApplied) return { ok: true, alreadyApplied: true };
+    // Idempotent primary guard (safe because row is locked)
+    if (match.eloProcessed || match.eloApplied) {
+      return { ok: true, alreadyApplied: true };
+    }
 
     // 🔒 Lock challenge row too (optional but consistent)
     const challenge = await challengeRepo
@@ -343,8 +416,6 @@ export class EloService {
       .getOne();
 
     if (!challenge) throw new NotFoundException('Challenge not found');
-
-    const { teamA, teamB } = this.extractParticipantsOrThrow(challenge);
 
     // ✅ Backup idempotency: if ANY history for this match exists, mark applied
     // (this is extra safety if something weird happened previously)
@@ -356,19 +427,28 @@ export class EloService {
 
     if (anyHistory) {
       match.eloApplied = true;
+      match.eloProcessed = true;
       await matchRepo.save(match);
       return { ok: true, alreadyApplied: true };
     }
 
-    const rankingImpact = await this.computeRankingImpact(
+    const rankingImpactPolicy = await this.computeRankingImpact(
       manager,
       match,
       challenge,
     );
-    match.rankingImpact = rankingImpact;
+    const computedAt = new Date().toISOString();
 
-    if (!rankingImpact.applied || rankingImpact.multiplier <= 0) {
-      match.eloApplied = true;
+    if (!rankingImpactPolicy.applied || rankingImpactPolicy.multiplier <= 0) {
+      const rankingImpact = this.withRankingImpactAudit(
+        rankingImpactPolicy,
+        { teamA: 0, teamB: 0 },
+        { teamA: 0, teamB: 0 },
+        computedAt,
+      );
+      match.rankingImpact = rankingImpact;
+      match.eloApplied = false;
+      match.eloProcessed = true;
       await matchRepo.save(match);
       this.logger.warn(
         JSON.stringify({
@@ -385,6 +465,8 @@ export class EloService {
         rankingImpact,
       };
     }
+
+    const { teamA, teamB } = this.extractParticipantsOrThrow(challenge);
 
     // Load / create profiles
     const pA1 = await this.getOrCreateProfile(manager, teamA[0]);
@@ -413,8 +495,15 @@ export class EloService {
 
     const baseDeltaA = Math.round(kA * (SA - EA));
     const baseDeltaB = Math.round(kB * (SB - EB));
-    const deltaA = Math.round(baseDeltaA * rankingImpact.multiplier);
-    const deltaB = Math.round(baseDeltaB * rankingImpact.multiplier);
+    const deltaA = Math.round(baseDeltaA * rankingImpactPolicy.multiplier);
+    const deltaB = Math.round(baseDeltaB * rankingImpactPolicy.multiplier);
+    const rankingImpact = this.withRankingImpactAudit(
+      rankingImpactPolicy,
+      { teamA: baseDeltaA, teamB: baseDeltaB },
+      { teamA: deltaA, teamB: deltaB },
+      computedAt,
+    );
+    match.rankingImpact = rankingImpact;
 
     if (rankingImpact.multiplier < 1) {
       this.logger.log(
@@ -488,6 +577,7 @@ export class EloService {
     ]);
 
     match.eloApplied = true;
+    match.eloProcessed = true;
     await matchRepo.save(match);
 
     return {

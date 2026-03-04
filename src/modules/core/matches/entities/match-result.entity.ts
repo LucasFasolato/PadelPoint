@@ -34,10 +34,18 @@ export type RankingImpactReason =
   | 'COOLDOWN'
   | 'RIVAL_DIMINISHING';
 
+export type RankingImpactDelta = {
+  teamA: number;
+  teamB: number;
+};
+
 export type MatchRankingImpact = {
   applied: boolean;
   multiplier: number;
   reason?: RankingImpactReason;
+  baseDelta?: RankingImpactDelta;
+  finalDelta?: RankingImpactDelta;
+  computedAt?: string;
 };
 
 @Entity('match_results')
@@ -135,6 +143,9 @@ export class MatchResult {
 
   @Column({ type: 'boolean', default: false })
   eloApplied!: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  eloProcessed!: boolean;
 
   @Column({ type: 'jsonb', nullable: true })
   rankingImpact!: MatchRankingImpact | null;

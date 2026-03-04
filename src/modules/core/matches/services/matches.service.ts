@@ -757,6 +757,8 @@ export class MatchesService {
           existing.confirmedByUserId = null;
           existing.rejectionReason = null;
           existing.eloApplied = false;
+          existing.eloProcessed = false;
+          existing.rankingImpact = null;
           return matchRepo.save(existing);
         }
 
@@ -790,6 +792,8 @@ export class MatchesService {
         confirmedByUserId: null,
         rejectionReason: null,
         eloApplied: false,
+        eloProcessed: false,
+        rankingImpact: null,
       });
 
       return matchRepo.save(ent);
@@ -958,6 +962,8 @@ export class MatchesService {
         confirmedByUserId: null,
         rejectionReason: null,
         eloApplied: false,
+        eloProcessed: false,
+        rankingImpact: null,
       });
 
       const saved = await matchRepo.save(match);
@@ -1138,6 +1144,8 @@ export class MatchesService {
         confirmedByUserId: null,
         rejectionReason: null,
         eloApplied: false,
+        eloProcessed: false,
+        rankingImpact: null,
       });
 
       const saved = await matchRepo.save(match);
@@ -1255,6 +1263,8 @@ export class MatchesService {
           rejectionReason: null,
           source: MatchSource.MANUAL,
           eloApplied: false,
+          eloProcessed: false,
+          rankingImpact: null,
         });
 
         const saved = await manager
@@ -1300,6 +1310,8 @@ export class MatchesService {
         rejectionReason: null,
         source: MatchSource.MANUAL,
         eloApplied: false,
+        eloProcessed: false,
+        rankingImpact: null,
       });
 
       const saved = await manager
