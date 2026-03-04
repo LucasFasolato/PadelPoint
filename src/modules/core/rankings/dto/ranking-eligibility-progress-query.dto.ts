@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
 import { RankingScope } from '../enums/ranking-scope.enum';
+import { normalizeCategoryInputToKey } from '../utils/ranking-computation.util';
 
 export class RankingEligibilityProgressQueryDto {
   @IsEnum(RankingScope)
@@ -10,9 +11,12 @@ export class RankingEligibilityProgressQueryDto {
 
   @IsString()
   @MinLength(1)
-  @MaxLength(24)
+  @MaxLength(32)
   @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    normalizeCategoryInputToKey(value, {
+      allowAll: true,
+      maxLength: 32,
+    }),
   )
   category!: string;
 }

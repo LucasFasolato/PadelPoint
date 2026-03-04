@@ -136,7 +136,17 @@ export class CompetitiveController {
   @SkipCityRequired()
   @ApiOperation({ summary: 'Canonical matchmaking candidates endpoint' })
   @ApiQuery({ name: 'scope', required: false, enum: MatchmakingCandidatesScope })
-  @ApiQuery({ name: 'category', required: false, type: String })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    type: String,
+    description: 'Optional category filter. Supports 7, 7ma, 6ta.',
+    examples: {
+      numeric: { value: '7' },
+      ordinal: { value: '7ma' },
+      canonical: { value: '6ta' },
+    },
+  })
   @ApiQuery({ name: 'matchType', required: false, enum: MatchType })
   @ApiQuery({ name: 'position', required: false, enum: MatchmakingPosition })
   @ApiQuery({ name: 'sameCategory', required: false, type: Boolean })

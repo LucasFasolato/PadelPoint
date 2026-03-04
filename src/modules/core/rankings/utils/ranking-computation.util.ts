@@ -54,7 +54,7 @@ export function normalizeCategoryFilter(category?: string | null): {
   return { categoryKey: normalized, categoryNumber: null };
 }
 
-function toCategoryKey(category: number): string {
+function categoryNumberToKey(category: number): string | null {
   if (category === 1) return '1ra';
   if (category === 2) return '2da';
   if (category === 3) return '3ra';
@@ -62,7 +62,45 @@ function toCategoryKey(category: number): string {
   if (category === 5) return '5ta';
   if (category === 6) return '6ta';
   if (category === 7) return '7ma';
-  return '8va';
+  if (category === 8) return '8va';
+  return null;
+}
+
+export function normalizeCategoryInputToKey(
+  input: unknown,
+  options?: {
+    allowAll?: boolean;
+    maxLength?: number;
+  },
+): string | undefined {
+  if (typeof input === 'undefined' || input === null) return undefined;
+
+  const maxLength = Math.max(1, Math.trunc(options?.maxLength ?? 32));
+  const allowAll = options?.allowAll ?? false;
+
+  if (typeof input === 'number') {
+    if (!Number.isInteger(input)) return undefined;
+    return categoryNumberToKey(input) ?? undefined;
+  }
+
+  const raw = typeof input === 'string' ? input : String(input);
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > maxLength) return undefined;
+
+  const normalized = normalizeCategoryFilter(trimmed);
+  if (normalized.categoryKey === 'all') {
+    return allowAll ? 'all' : undefined;
+  }
+
+  if (typeof normalized.categoryNumber === 'number') {
+    return categoryNumberToKey(normalized.categoryNumber) ?? undefined;
+  }
+
+  return undefined;
+}
+
+function toCategoryKey(category: number): string {
+  return categoryNumberToKey(category) ?? '8va';
 }
 
 function scoreRow(row: RankingCoreStats): number {

@@ -101,7 +101,17 @@ export class RankingsController {
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
   @ApiQuery({ name: 'scope', enum: RankingScope, required: true })
-  @ApiQuery({ name: 'category', type: String, required: true, example: '7ma' })
+  @ApiQuery({
+    name: 'category',
+    type: String,
+    required: true,
+    description: 'Category filter. Supports 7, 7ma, 6ta.',
+    examples: {
+      numeric: { value: '7' },
+      ordinal: { value: '7ma' },
+      canonical: { value: '6ta' },
+    },
+  })
   @ApiOkResponse({ type: RankingEligibilityProgressResponseDto })
   getMyProgress(
     @Req() req: Request,

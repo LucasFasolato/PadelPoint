@@ -1,6 +1,7 @@
 import {
   attachSnapshotMovement,
   computeGlobalRankingRows,
+  normalizeCategoryInputToKey,
   normalizeCategoryFilter,
 } from './ranking-computation.util';
 
@@ -15,6 +16,37 @@ describe('ranking-computation.util', () => {
         categoryKey: 'arbitrary',
         categoryNumber: null,
       });
+    });
+  });
+
+  describe('normalizeCategoryInputToKey', () => {
+    it('accepts numeric, numeric-string and ordinal values and returns canonical key', () => {
+      expect(normalizeCategoryInputToKey(6)).toBe('6ta');
+      expect(normalizeCategoryInputToKey('6')).toBe('6ta');
+      expect(normalizeCategoryInputToKey(' 7ma ')).toBe('7ma');
+      expect(normalizeCategoryInputToKey('8va')).toBe('8va');
+    });
+
+    it('returns undefined for empty/invalid values', () => {
+      expect(normalizeCategoryInputToKey(undefined)).toBeUndefined();
+      expect(normalizeCategoryInputToKey(null)).toBeUndefined();
+      expect(normalizeCategoryInputToKey('   ')).toBeUndefined();
+      expect(normalizeCategoryInputToKey('foo')).toBeUndefined();
+      expect(normalizeCategoryInputToKey(9)).toBeUndefined();
+    });
+
+    it('supports opt-in all category', () => {
+      expect(normalizeCategoryInputToKey('all')).toBeUndefined();
+      expect(normalizeCategoryInputToKey('all', { allowAll: true })).toBe('all');
+    });
+
+    it('enforces max length and trims input', () => {
+      expect(normalizeCategoryInputToKey('   6   ')).toBe('6ta');
+      expect(
+        normalizeCategoryInputToKey('x'.repeat(33), {
+          maxLength: 32,
+        }),
+      ).toBeUndefined();
     });
   });
 

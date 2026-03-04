@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { MatchType } from '@core/matches/enums/match-type.enum';
+import { normalizeCategoryInputToKey } from '@core/rankings/utils/ranking-computation.util';
 
 export enum MatchmakingCandidatesScope {
   CITY = 'CITY',
@@ -22,12 +23,6 @@ export enum MatchmakingPosition {
   LEFT = 'LEFT',
   RIGHT = 'RIGHT',
   ANY = 'ANY',
-}
-
-function trimOptional(value: unknown) {
-  if (typeof value === 'undefined' || value === null) return undefined;
-  const normalized = String(value).trim();
-  return normalized.length > 0 ? normalized : undefined;
 }
 
 function parseBoolean(value: unknown) {
@@ -54,9 +49,14 @@ export class MatchmakingCandidatesQueryDto {
   @ApiPropertyOptional({
     description:
       'Required when sameCategory=true. Supports values like 7, 7ma, 6ta.',
+    examples: ['7', '7ma', '6ta'],
   })
   @IsOptional()
-  @Transform(({ value }) => trimOptional(value))
+  @Transform(({ value }) =>
+    normalizeCategoryInputToKey(value, {
+      maxLength: 32,
+    }),
+  )
   @IsString()
   @MaxLength(32)
   category?: string;
