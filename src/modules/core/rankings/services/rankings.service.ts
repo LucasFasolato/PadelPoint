@@ -151,7 +151,7 @@ type RankingEligibilityReason =
 type RankingEligibilityProgressParams = {
   userId: string;
   scope?: string;
-  category: string;
+  category?: string;
 };
 
 type RankingEligibilityProgressResult = {

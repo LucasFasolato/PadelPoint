@@ -104,7 +104,7 @@ export class RankingsController {
   @ApiQuery({
     name: 'category',
     type: String,
-    required: true,
+    required: false,
     description: 'Category filter. Supports 7, 7ma, 6ta.',
     examples: {
       numeric: { value: '7' },
