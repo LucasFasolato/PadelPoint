@@ -1,9 +1,15 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { categoryFromElo } from '../../competitive/utils/competitive.constants';
 import {
+  MatchRankingImpact,
   MatchResult,
   MatchResultStatus,
   WinnerTeam,
@@ -133,6 +139,39 @@ type MutablePlayerStats = {
   elo: number | null;
   opponentEloSum: number;
   opponentEloSamples: number;
+};
+
+type RankingEligibilityReason =
+  | 'NO_CITY'
+  | 'NO_CATEGORY'
+  | 'NOT_ENOUGH_MATCHES'
+  | 'ONLY_FRIENDLY'
+  | 'PENDING_CONFIRMATIONS';
+
+type RankingEligibilityProgressParams = {
+  userId: string;
+  scope?: string;
+  category: string;
+};
+
+type RankingEligibilityProgressResult = {
+  scope: RankingScope;
+  category: string;
+  requiredMatches: number;
+  playedValidMatches: number;
+  remaining: number;
+  eligible: boolean;
+  reasons: RankingEligibilityReason[];
+  lastValidMatchAt?: string;
+};
+
+type RawRankingEligibilityMatch = {
+  status: MatchResultStatus | string;
+  playedAt: Date | string | null;
+  matchType: MatchType | string | null;
+  impactRanking: boolean | null;
+  eloApplied: boolean | null;
+  rankingImpact: unknown;
 };
 
 @Injectable()
@@ -325,6 +364,124 @@ export class RankingsService {
     }
 
     return { items };
+  }
+
+  async getMyRankingEligibilityProgress(
+    params: RankingEligibilityProgressParams,
+  ): Promise<RankingEligibilityProgressResult> {
+    const scope = this.normalizeScope(params.scope);
+    const { categoryKey, categoryNumber } = normalizeCategoryFilter(
+      params.category,
+    );
+    const requiredMatches = this.rankingMinMatches;
+
+    const user = await this.userRepo.findOne({
+      where: { id: params.userId },
+      relations: ['city', 'city.province', 'competitiveProfile'],
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const reasons: RankingEligibilityReason[] = [];
+    const provinceCode = this.normalizeProvinceCode(user.city?.province?.code ?? null);
+    const missingScopeLocation =
+      (scope === RankingScope.CITY && !user.cityId) ||
+      (scope === RankingScope.PROVINCE && !provinceCode);
+    if (missingScopeLocation) {
+      reasons.push('NO_CITY');
+    }
+
+    const userElo =
+      typeof user.competitiveProfile?.elo === 'number'
+        ? user.competitiveProfile.elo
+        : null;
+    const userCategory =
+      typeof userElo === 'number' ? categoryFromElo(userElo) : null;
+    if (!this.isUserInCategory(userCategory, categoryKey, categoryNumber)) {
+      reasons.push('NO_CATEGORY');
+    }
+
+    const rows = await this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin('m.challenge', 'c')
+      .select('m.status', 'status')
+      .addSelect('m."playedAt"', 'playedAt')
+      .addSelect('m."matchType"', 'matchType')
+      .addSelect('m."impactRanking"', 'impactRanking')
+      .addSelect('m."eloApplied"', 'eloApplied')
+      .addSelect('m."rankingImpact"', 'rankingImpact')
+      .where(
+        `(c."teamA1Id" = :userId
+          OR c."teamA2Id" = :userId
+          OR c."teamB1Id" = :userId
+          OR c."teamB2Id" = :userId)`,
+        { userId: params.userId },
+      )
+      .andWhere('m.status IN (:...statuses)', {
+        statuses: [MatchResultStatus.CONFIRMED, MatchResultStatus.PENDING_CONFIRM],
+      })
+      .getRawMany<RawRankingEligibilityMatch>();
+
+    let playedValidMatches = 0;
+    let confirmedMatches = 0;
+    let confirmedCompetitiveOrImpactMatches = 0;
+    let pendingCompetitiveOrImpactMatches = 0;
+    let lastValidMatchAt: Date | null = null;
+
+    for (const row of rows) {
+      const status = String(row.status ?? '').trim().toLowerCase();
+      const isConfirmed = status === MatchResultStatus.CONFIRMED;
+      const isPending = status === MatchResultStatus.PENDING_CONFIRM;
+      const competitiveOrImpact = this.isCompetitiveOrImpactMatch(row);
+
+      if (isConfirmed) {
+        confirmedMatches += 1;
+        if (competitiveOrImpact) {
+          confirmedCompetitiveOrImpactMatches += 1;
+        }
+
+        if (this.isValidActivationMatch(row)) {
+          playedValidMatches += 1;
+          const playedAt = this.toDateOrNull(row.playedAt);
+          if (
+            playedAt &&
+            (!lastValidMatchAt || playedAt.getTime() > lastValidMatchAt.getTime())
+          ) {
+            lastValidMatchAt = playedAt;
+          }
+        }
+      } else if (isPending && competitiveOrImpact) {
+        pendingCompetitiveOrImpactMatches += 1;
+      }
+    }
+
+    const remaining = Math.max(0, requiredMatches - playedValidMatches);
+    if (remaining > 0) {
+      reasons.push('NOT_ENOUGH_MATCHES');
+      if (confirmedMatches > 0 && confirmedCompetitiveOrImpactMatches === 0) {
+        reasons.push('ONLY_FRIENDLY');
+      }
+      if (pendingCompetitiveOrImpactMatches > 0) {
+        reasons.push('PENDING_CONFIRMATIONS');
+      }
+    }
+
+    const response: RankingEligibilityProgressResult = {
+      scope,
+      category: categoryKey,
+      requiredMatches,
+      playedValidMatches,
+      remaining,
+      eligible: reasons.length === 0,
+      reasons,
+    };
+
+    if (lastValidMatchAt) {
+      response.lastValidMatchAt = lastValidMatchAt.toISOString();
+    }
+
+    return response;
   }
 
   parseScope(scope?: string): RankingScope {
@@ -932,6 +1089,111 @@ export class RankingsService {
       cityNameNormalized,
       dimensionKey: `CITY_NAME|${normalizedProvinceCode}|${cityNameNormalized}`,
     };
+  }
+
+  private isUserInCategory(
+    userCategory: number | null,
+    categoryKey: string,
+    categoryNumber: number | null,
+  ): boolean {
+    if (categoryKey === 'all') return true;
+    if (userCategory === null) return false;
+    if (categoryNumber !== null) {
+      return userCategory === categoryNumber;
+    }
+    return this.categoryToKey(userCategory) === categoryKey;
+  }
+
+  private isCompetitiveOrImpactMatch(
+    row: Pick<RawRankingEligibilityMatch, 'matchType' | 'impactRanking'>,
+  ): boolean {
+    const normalizedMatchType =
+      typeof row.matchType === 'string' ? row.matchType.trim().toUpperCase() : null;
+    return normalizedMatchType === MatchType.COMPETITIVE || row.impactRanking === true;
+  }
+
+  private isValidActivationMatch(
+    row: Pick<
+      RawRankingEligibilityMatch,
+      'matchType' | 'impactRanking' | 'eloApplied' | 'rankingImpact'
+    >,
+  ): boolean {
+    if (!this.isCompetitiveOrImpactMatch(row)) return false;
+
+    if (row.rankingImpact == null) {
+      return row.impactRanking === true && row.eloApplied === true;
+    }
+
+    const rankingImpact = this.parseRankingImpactForActivation(row.rankingImpact);
+    if (!rankingImpact || rankingImpact.applied !== true) {
+      return false;
+    }
+    if (rankingImpact.multiplier > 0) {
+      return true;
+    }
+
+    const deltaA = rankingImpact.finalDelta?.teamA ?? 0;
+    const deltaB = rankingImpact.finalDelta?.teamB ?? 0;
+    return deltaA !== 0 || deltaB !== 0;
+  }
+
+  private parseRankingImpactForActivation(
+    raw: unknown,
+  ): MatchRankingImpact | null {
+    if (raw == null) return null;
+    const parsed =
+      typeof raw === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          })()
+        : raw;
+
+    if (!parsed || typeof parsed !== 'object') return null;
+    const value = parsed as {
+      applied?: unknown;
+      multiplier?: unknown;
+      finalDelta?: unknown;
+    };
+    if (typeof value.applied !== 'boolean') return null;
+
+    const output: MatchRankingImpact = {
+      applied: value.applied,
+      multiplier: this.toNumberOrNull(value.multiplier) ?? 0,
+    };
+
+    const finalDelta = this.parseRankingDelta(value.finalDelta);
+    if (finalDelta) {
+      output.finalDelta = finalDelta;
+    }
+    return output;
+  }
+
+  private parseRankingDelta(
+    raw: unknown,
+  ): { teamA: number; teamB: number } | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const value = raw as { teamA?: unknown; teamB?: unknown };
+    const teamA = this.toNumberOrNull(value.teamA);
+    const teamB = this.toNumberOrNull(value.teamB);
+    if (teamA === null || teamB === null) return null;
+    return {
+      teamA: Math.trunc(teamA),
+      teamB: Math.trunc(teamB),
+    };
+  }
+
+  private toDateOrNull(value: unknown): Date | null {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+    if (typeof value !== 'string' || !value.trim().length) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
   }
 
   private normalizeScope(scope?: string): RankingScope {

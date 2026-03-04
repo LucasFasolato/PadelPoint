@@ -9,12 +9,20 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
 import { Roles } from '@/modules/core/auth/decorators/roles.decorator';
 import { UserRole } from '../../users/enums/user-role.enum';
 import { RankingsQueryDto } from '../dto/rankings-query.dto';
+import { RankingEligibilityProgressQueryDto } from '../dto/ranking-eligibility-progress-query.dto';
+import { RankingEligibilityProgressResponseDto } from '../dto/ranking-eligibility-progress-response.dto';
+import { RankingScope } from '../enums/ranking-scope.enum';
 import { RankingsService } from '../services/rankings.service';
 import { RankingsSnapshotSchedulerService } from '../services/rankings-snapshot-scheduler.service';
 import { RunRankingSnapshotsQueryDto } from '../dto/run-ranking-snapshots-query.dto';
@@ -27,6 +35,7 @@ type AuthUser = {
 };
 
 @ApiTags('rankings')
+@ApiBearerAuth()
 @Controller('rankings')
 @UseGuards(JwtAuthGuard)
 export class RankingsController {
@@ -86,6 +95,24 @@ export class RankingsController {
   getScopes(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.rankingsService.getAvailableScopes(user.userId);
+  }
+
+  @Get('me/progress')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiQuery({ name: 'scope', enum: RankingScope, required: true })
+  @ApiQuery({ name: 'category', type: String, required: true, example: '7ma' })
+  @ApiOkResponse({ type: RankingEligibilityProgressResponseDto })
+  getMyProgress(
+    @Req() req: Request,
+    @Query() query: RankingEligibilityProgressQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    return this.rankingsService.getMyRankingEligibilityProgress({
+      userId: user.userId,
+      scope: query.scope,
+      category: query.category,
+    });
   }
 
   @Post('snapshots/run')
