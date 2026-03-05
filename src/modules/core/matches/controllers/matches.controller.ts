@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiOkResponse } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { MatchesService } from '../services/matches.service';
@@ -30,6 +30,49 @@ export class MatchesController {
   constructor(private readonly service: MatchesService) {}
 
   @Get('me')
+  @ApiOperation({
+    summary:
+      'List current user matches. Canonical contract returns { items, nextCursor }.',
+  })
+  @ApiQuery({
+    name: 'legacy',
+    required: false,
+    type: String,
+    description:
+      'Compatibility flag. Use legacy=1 to return a plain array instead of the canonical wrapper.',
+    example: '1',
+  })
+  @ApiOkResponse({
+    description:
+      'Canonical wrapper by default. Legacy clients can request a plain array with legacy=1.',
+    schema: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: {
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: true,
+              },
+            },
+            nextCursor: {
+              type: 'string',
+              nullable: true,
+            },
+          },
+        },
+        {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+      ],
+    },
+  })
   async getMyMatches(
     @Req() req: Request,
     @Query('legacy') legacy?: string,

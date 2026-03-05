@@ -26,7 +26,8 @@ describe('User Notifications (e2e)', () => {
 
   beforeEach(async () => {
     notificationsService = {
-      list: jest.fn(),
+      listLegacyFromCanonical: jest.fn(),
+      listInboxCanonical: jest.fn(),
       markRead: jest.fn(),
       markAllRead: jest.fn(),
       getUnreadCount: jest.fn(),
@@ -94,7 +95,7 @@ describe('User Notifications (e2e)', () => {
         ],
         nextCursor: null,
       };
-      notificationsService.list.mockResolvedValue(result);
+      notificationsService.listLegacyFromCanonical.mockResolvedValue(result);
 
       const res = await request(app.getHttpServer())
         .get('/notifications')
@@ -105,14 +106,14 @@ describe('User Notifications (e2e)', () => {
       expect(res.body.nextCursor).toBeNull();
       expect(res.headers['cache-control']).toContain('no-store');
       expect(res.headers['pragma']).toBe('no-cache');
-      expect(notificationsService.list).toHaveBeenCalledWith(
+      expect(notificationsService.listLegacyFromCanonical).toHaveBeenCalledWith(
         FAKE_USER.userId,
         expect.any(Object),
       );
     });
 
     it('should accept cursor and limit query params', async () => {
-      notificationsService.list.mockResolvedValue({
+      notificationsService.listLegacyFromCanonical.mockResolvedValue({
         items: [],
         nextCursor: null,
       });
@@ -121,10 +122,58 @@ describe('User Notifications (e2e)', () => {
         .get('/notifications?cursor=2025-01-01T00:00:00.000Z&limit=10')
         .expect(200);
 
-      expect(notificationsService.list).toHaveBeenCalledWith(
+      expect(notificationsService.listLegacyFromCanonical).toHaveBeenCalledWith(
         FAKE_USER.userId,
         expect.objectContaining({
           cursor: '2025-01-01T00:00:00.000Z',
+          limit: 10,
+        }),
+      );
+    });
+  });
+
+  describe('GET /notifications/inbox', () => {
+    it('returns canonical actions inbox wrapper with unreadCount', async () => {
+      notificationsService.listInboxCanonical.mockResolvedValue({
+        items: [
+          {
+            id: 'n-inbox-1',
+            type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+            title: 'League invite',
+            body: null,
+            createdAt: '2025-06-01T12:00:00.000Z',
+            readAt: null,
+            canAct: true,
+            actionStatus: 'PENDING',
+            entityRefs: {
+              leagueId: 'league-1',
+              matchId: null,
+              challengeId: null,
+              inviteId: 'invite-1',
+            },
+            actions: [{ type: 'VIEW', label: 'Ver', href: '/leagues/invites/invite-1' }],
+            data: { inviteId: 'invite-1' },
+          },
+        ],
+        nextCursor: null,
+        unreadCount: 1,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/notifications/inbox?limit=10')
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          items: expect.any(Array),
+          nextCursor: null,
+          unreadCount: 1,
+        }),
+      );
+      expect(notificationsService.listInboxCanonical).toHaveBeenCalledWith(
+        FAKE_USER.userId,
+        expect.objectContaining({
+          cursor: undefined,
           limit: 10,
         }),
       );
@@ -166,7 +215,7 @@ describe('User Notifications (e2e)', () => {
 
   describe('Notification types in GET /notifications', () => {
     it('should return league invite notification for invited user', async () => {
-      notificationsService.list.mockResolvedValue({
+      notificationsService.listLegacyFromCanonical.mockResolvedValue({
         items: [
           {
             id: 'n-league-1',
@@ -191,7 +240,7 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should return challenge received notification for opponent', async () => {
-      notificationsService.list.mockResolvedValue({
+      notificationsService.listLegacyFromCanonical.mockResolvedValue({
         items: [
           {
             id: 'n-ch-1',
@@ -216,7 +265,7 @@ describe('User Notifications (e2e)', () => {
     });
 
     it('should return newest first (sort order)', async () => {
-      notificationsService.list.mockResolvedValue({
+      notificationsService.listLegacyFromCanonical.mockResolvedValue({
         items: [
           {
             id: 'n2',

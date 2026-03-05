@@ -35,7 +35,7 @@ describe('Me Inbox (e2e)', () => {
       listInbox: jest.fn(),
     };
     notificationsService = {
-      list: jest.fn(),
+      listLegacyFromCanonical: jest.fn(),
       markRead: jest.fn(),
       markAllRead: jest.fn(),
     };
@@ -91,7 +91,7 @@ describe('Me Inbox (e2e)', () => {
   });
 
   it('GET /me/notifications is a thin wrapper over notifications list', async () => {
-    notificationsService.list?.mockResolvedValue({
+    notificationsService.listLegacyFromCanonical?.mockResolvedValue({
       items: [],
       nextCursor: null,
     });
@@ -101,10 +101,13 @@ describe('Me Inbox (e2e)', () => {
       .expect(200);
 
     expect(res.body).toEqual({ items: [], nextCursor: null });
-    expect(notificationsService.list).toHaveBeenCalledWith(FAKE_USER.userId, {
-      cursor: undefined,
-      limit: 10,
-    });
+    expect(notificationsService.listLegacyFromCanonical).toHaveBeenCalledWith(
+      FAKE_USER.userId,
+      {
+        cursor: undefined,
+        limit: 10,
+      },
+    );
   });
 
   it('POST /me/notifications/:id/read marks one notification as read', async () => {

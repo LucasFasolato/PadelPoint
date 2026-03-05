@@ -10,11 +10,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiOkResponse } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { UserNotificationsService } from '../services/user-notifications.service';
 import { UserNotificationsQueryDto } from '../dto/user-notifications-query.dto';
-import { CanonicalNotificationsInboxResponseDto } from '../dto/notifications-inbox.dto';
+import {
+  CanonicalNotificationsInboxResponseDto,
+  LegacyNotificationsFeedResponseDto,
+} from '../dto/notifications-inbox.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -26,6 +29,11 @@ export class UserNotificationsController {
   @Get()
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOperation({
+    summary:
+      'General notifications feed (history). For actionable notifications, use /notifications/inbox.',
+  })
+  @ApiOkResponse({ type: LegacyNotificationsFeedResponseDto })
   list(@Req() req: Request, @Query() query: UserNotificationsQueryDto) {
     const user = req.user as AuthUser;
     // Compatibility alias for old clients; canonical endpoint is GET /notifications/inbox
@@ -38,6 +46,10 @@ export class UserNotificationsController {
   @Get('inbox')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOperation({
+    summary:
+      'Canonical actions inbox (invites, challenges, pending confirmations) with action metadata.',
+  })
   @ApiOkResponse({ type: CanonicalNotificationsInboxResponseDto })
   inbox(@Req() req: Request, @Query() query: UserNotificationsQueryDto) {
     const user = req.user as AuthUser;

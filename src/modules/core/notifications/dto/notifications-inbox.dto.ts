@@ -65,6 +65,12 @@ export class CanonicalNotificationInboxItemDto {
 
   @ApiPropertyOptional({ type: [CanonicalNotificationActionDto] })
   actions?: CanonicalNotificationActionDto[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Opaque payload preserved for backward compatibility.',
+  })
+  data?: Record<string, unknown> | null;
 }
 
 export class CanonicalNotificationsInboxResponseDto {
@@ -76,4 +82,48 @@ export class CanonicalNotificationsInboxResponseDto {
 
   @ApiProperty()
   unreadCount: number;
+}
+
+export class LegacyNotificationsFeedItemDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  type: string;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  body: string | null;
+
+  @ApiProperty()
+  createdAt: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  readAt: string | null;
+
+  @ApiPropertyOptional()
+  canAct?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'NOT_ACTIONABLE'],
+  })
+  actionStatus?:
+    | 'PENDING'
+    | 'ACCEPTED'
+    | 'REJECTED'
+    | 'EXPIRED'
+    | 'NOT_ACTIONABLE';
+
+  @ApiPropertyOptional({ nullable: true })
+  data?: Record<string, unknown> | null;
+}
+
+export class LegacyNotificationsFeedResponseDto {
+  @ApiProperty({ type: [LegacyNotificationsFeedItemDto] })
+  items: LegacyNotificationsFeedItemDto[];
+
+  @ApiPropertyOptional({ nullable: true })
+  nextCursor: string | null;
 }
