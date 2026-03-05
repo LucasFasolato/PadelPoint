@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RankingScope } from '../enums/ranking-scope.enum';
+import { SemanticErrorDto } from '@common/dto/semantic-error.dto';
 
 export class RankingEligibilityProgressResponseDto {
   @ApiProperty({ enum: RankingScope })
@@ -25,6 +26,12 @@ export class RankingEligibilityProgressResponseDto {
     example: ['NOT_ENOUGH_MATCHES', 'PENDING_CONFIRMATIONS'],
   })
   reasons!: string[];
+
+  @ApiPropertyOptional({
+    type: [SemanticErrorDto],
+    description: 'Structured semantic errors for UX messaging.',
+  })
+  reasonDetails?: SemanticErrorDto[];
 
   @ApiPropertyOptional({ example: '2026-03-01T18:45:11.000Z' })
   lastValidMatchAt?: string;

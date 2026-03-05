@@ -2295,6 +2295,13 @@
             "example": 2,
             "type": "number"
           },
+          "reasonDetails": {
+            "description": "Structured semantic errors for UX messaging.",
+            "items": {
+              "$ref": "#/components/schemas/SemanticErrorDto"
+            },
+            "type": "array"
+          },
           "reasons": {
             "example": [
               "NOT_ENOUGH_MATCHES",
@@ -2577,6 +2584,30 @@
       },
       "ResolveDisputeDto": {
         "properties": {},
+        "type": "object"
+      },
+      "SemanticErrorDto": {
+        "properties": {
+          "code": {
+            "example": "CITY_REQUIRED",
+            "type": "string"
+          },
+          "details": {
+            "description": "Optional context payload to make the error actionable.",
+            "example": {
+              "field": "cityId"
+            },
+            "type": "object"
+          },
+          "message": {
+            "example": "Set your city to use competitive features",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
         "type": "object"
       },
       "SetLeagueAvatarDto": {
@@ -4438,6 +4469,44 @@
               }
             },
             "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticErrorDto"
+                }
+              }
+            },
+            "description": "A competitive category is required for this matchmaking flow.",
+            "schema": {
+              "example": {
+                "code": "CATEGORY_REQUIRED",
+                "details": {
+                  "field": "category"
+                },
+                "message": "category is required when sameCategory=true"
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticErrorDto"
+                }
+              }
+            },
+            "description": "Current user must have a city configured to use this feature.",
+            "schema": {
+              "example": {
+                "code": "CITY_REQUIRED",
+                "details": {
+                  "field": "cityId"
+                },
+                "message": "Set your city to use competitive features"
+              }
+            }
           }
         },
         "summary": "Canonical matchmaking candidates endpoint",
@@ -4528,6 +4597,25 @@
               }
             },
             "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticErrorDto"
+                }
+              }
+            },
+            "description": "Current user must have a city configured to use this feature.",
+            "schema": {
+              "example": {
+                "code": "CITY_REQUIRED",
+                "details": {
+                  "field": "cityId"
+                },
+                "message": "Set your city to use competitive features"
+              }
+            }
           }
         },
         "summary": "Find suggested partners for current player (legacy endpoint)",
@@ -4618,6 +4706,25 @@
               }
             },
             "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticErrorDto"
+                }
+              }
+            },
+            "description": "Current user must have a city configured to use this feature.",
+            "schema": {
+              "example": {
+                "code": "CITY_REQUIRED",
+                "details": {
+                  "field": "cityId"
+                },
+                "message": "Set your city to use competitive features"
+              }
+            }
           }
         },
         "summary": "Find suggested rivals for current player (legacy endpoint)",

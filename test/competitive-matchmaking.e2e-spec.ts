@@ -1,4 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -30,6 +34,7 @@ describe('Competitive Matchmaking (e2e)', () => {
       getSkillRadar: jest.fn(),
       findRivalSuggestions: jest.fn(),
       findPartnerSuggestions: jest.fn(),
+      matchmakingCandidates: jest.fn(),
       discoverCandidates: jest.fn(),
     };
 
@@ -114,13 +119,13 @@ describe('Competitive Matchmaking (e2e)', () => {
       ).toBeUndefined();
     });
 
-    it('returns 409 CITY_REQUIRED when authenticated user has no cityId', async () => {
+    it('returns 403 CITY_REQUIRED when authenticated user has no cityId', async () => {
       const res = await request(app.getHttpServer())
         .get('/competitive/matchmaking/rivals')
         .set('x-test-no-city', '1')
-        .expect(409);
+        .expect(403);
 
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
         code: 'CITY_REQUIRED',
         message: 'Set your city to use competitive features',
       });
@@ -159,6 +164,27 @@ describe('Competitive Matchmaking (e2e)', () => {
       expect(
         res.body.items.some((i: any) => i.userId === excludedCandidateId),
       ).toBe(false);
+    });
+  });
+
+  describe('GET /competitive/matchmaking/candidates', () => {
+    it('returns 400 CATEGORY_REQUIRED when sameCategory=true and category is missing', async () => {
+      competitiveService.matchmakingCandidates.mockRejectedValue(
+        new BadRequestException({
+          code: 'CATEGORY_REQUIRED',
+          message: 'category is required when sameCategory=true',
+          details: { field: 'category' },
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/competitive/matchmaking/candidates?sameCategory=true')
+        .expect(400);
+
+      expect(res.body).toMatchObject({
+        code: 'CATEGORY_REQUIRED',
+        message: 'category is required when sameCategory=true',
+      });
     });
   });
 
@@ -291,7 +317,7 @@ describe('Competitive Matchmaking (e2e)', () => {
 
   describe('GET /competitive/discover/candidates', () => {
     it('returns candidates contract and forwards filters', async () => {
-      competitiveService.discoverCandidates.mockResolvedValue({
+      competitiveService.matchmakingCandidates.mockResolvedValue({
         items: [
           {
             userId: '00000000-0000-0000-0000-000000000210',
@@ -304,6 +330,17 @@ describe('Competitive Matchmaking (e2e)', () => {
             lastActiveAt: '2026-02-27T10:00:00.000Z',
           },
         ],
+        nextCursor: null,
+        appliedFilters: {
+          scope: 'CITY',
+          sameCategory: true,
+          category: '7ma',
+          categoryNumber: 7,
+          matchType: 'COMPETITIVE',
+          position: 'ANY',
+          positionStatus: 'IGNORED',
+          limit: 20,
+        },
       });
 
       const res = await request(app.getHttpServer())
@@ -321,14 +358,15 @@ describe('Competitive Matchmaking (e2e)', () => {
         ],
       });
 
-      expect(competitiveService.discoverCandidates).toHaveBeenCalledWith(
+      expect(competitiveService.matchmakingCandidates).toHaveBeenCalledWith(
         FAKE_USER.userId,
         expect.objectContaining({
-          mode: 'COMPETITIVE',
           scope: 'CITY',
           limit: 20,
           category: '7ma',
-          order: 'MOST_ACTIVE',
+          matchType: 'COMPETITIVE',
+          position: 'ANY',
+          sameCategory: true,
         }),
       );
     });

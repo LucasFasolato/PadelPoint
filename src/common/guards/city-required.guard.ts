@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SKIP_CITY_REQUIRED_KEY } from '@common/decorators/skip-city-required.decorator';
+import { semanticError } from '@common/errors/semantic-error.util';
 
-export const CITY_REQUIRED_ERROR = {
-  code: 'CITY_REQUIRED',
-  message: 'Set your city to use competitive features',
-} as const;
+export const CITY_REQUIRED_ERROR = semanticError(
+  'CITY_REQUIRED',
+  'Set your city to use competitive features',
+  { field: 'cityId' },
+);
 
 @Injectable()
 export class CityRequiredGuard implements CanActivate {
@@ -32,6 +34,6 @@ export class CityRequiredGuard implements CanActivate {
       return true;
     }
 
-    throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+    throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.FORBIDDEN);
   }
 }

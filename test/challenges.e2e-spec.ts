@@ -288,13 +288,13 @@ describe('Challenges (e2e)', () => {
       expect(inboxAfter.body).toEqual([]);
     });
 
-    it('returns 409 CITY_REQUIRED when cityId is missing', async () => {
+    it('returns 403 CITY_REQUIRED when cityId is missing', async () => {
       const res = await request(app.getHttpServer())
         .get('/challenges/inbox')
         .set('x-test-user', 'no-city')
-        .expect(409);
+        .expect(403);
 
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
         code: 'CITY_REQUIRED',
         message: 'Set your city to use competitive features',
       });

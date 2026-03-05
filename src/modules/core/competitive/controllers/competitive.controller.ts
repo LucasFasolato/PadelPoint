@@ -11,6 +11,8 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import {
+  ApiBadRequestResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -41,6 +43,7 @@ import {
 } from '../dto/matchmaking-candidates-query.dto';
 import { MatchmakingCandidatesResponseDto } from '../dto/matchmaking-candidates-response.dto';
 import { MatchType } from '../../matches/enums/match-type.enum';
+import { SemanticErrorDto } from '@common/dto/semantic-error.dto';
 
 type AuthUser = {
   userId: string;
@@ -48,6 +51,30 @@ type AuthUser = {
   role: string;
   cityId?: string | null;
 };
+
+const CITY_REQUIRED_SWAGGER = {
+  type: SemanticErrorDto,
+  description: 'Current user must have a city configured to use this feature.',
+  schema: {
+    example: {
+      code: 'CITY_REQUIRED',
+      message: 'Set your city to use competitive features',
+      details: { field: 'cityId' },
+    },
+  },
+} as const;
+
+const CATEGORY_REQUIRED_SWAGGER = {
+  type: SemanticErrorDto,
+  description: 'A competitive category is required for this matchmaking flow.',
+  schema: {
+    example: {
+      code: 'CATEGORY_REQUIRED',
+      message: 'category is required when sameCategory=true',
+      details: { field: 'category' },
+    },
+  },
+} as const;
 
 @UseGuards(JwtAuthGuard, CityRequiredGuard)
 @ApiTags('competitive')
@@ -98,6 +125,7 @@ export class CompetitiveController {
     deprecated: true,
   })
   @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
+  @ApiForbiddenResponse(CITY_REQUIRED_SWAGGER)
   matchmakingRivals(
     @Req() req: Request,
     @Query() q: MatchmakingRivalsQueryDto,
@@ -118,6 +146,7 @@ export class CompetitiveController {
     deprecated: true,
   })
   @ApiOkResponse({ type: MatchmakingRivalsResponseDto })
+  @ApiForbiddenResponse(CITY_REQUIRED_SWAGGER)
   matchmakingPartners(
     @Req() req: Request,
     @Query() q: MatchmakingRivalsQueryDto,
@@ -153,6 +182,8 @@ export class CompetitiveController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'cursor', required: false, type: String })
   @ApiOkResponse({ type: MatchmakingCandidatesResponseDto })
+  @ApiForbiddenResponse(CITY_REQUIRED_SWAGGER)
+  @ApiBadRequestResponse(CATEGORY_REQUIRED_SWAGGER)
   matchmakingCandidates(
     @Req() req: Request,
     @Query() q: MatchmakingCandidatesQueryDto,

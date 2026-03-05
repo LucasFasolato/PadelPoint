@@ -33,24 +33,26 @@ import {
   computeGlobalRankingRows,
   normalizeCategoryFilter,
 } from '../utils/ranking-computation.util';
+import { SemanticError } from '@common/dto/semantic-error.dto';
+import { semanticError } from '@common/errors/semantic-error.util';
 
-const PROVINCE_REQUIRED_ERROR = {
-  statusCode: 400,
-  code: 'PROVINCE_REQUIRED',
-  message: 'provinceCode is required for PROVINCE scope',
-};
+const PROVINCE_REQUIRED_ERROR = semanticError(
+  'PROVINCE_REQUIRED',
+  'provinceCode is required for PROVINCE scope',
+  { field: 'provinceCode' },
+);
 
-const CITY_REQUIRED_ERROR = {
-  statusCode: 400,
-  code: 'CITY_REQUIRED',
-  message: 'cityId or cityName + provinceCode is required for CITY scope',
-};
+const CITY_REQUIRED_ERROR = semanticError(
+  'CITY_REQUIRED',
+  'cityId or cityName + provinceCode is required for CITY scope',
+  { fields: ['cityId', 'cityName', 'provinceCode'] },
+);
 
-const INVALID_SCOPE_ERROR = {
-  statusCode: 400,
-  code: 'INVALID_SCOPE',
-  message: 'scope must be COUNTRY, PROVINCE or CITY',
-};
+const INVALID_SCOPE_ERROR = semanticError(
+  'INVALID_SCOPE',
+  'scope must be COUNTRY, PROVINCE or CITY',
+  { field: 'scope' },
+);
 
 type ScopeResolution = {
   scope: RankingScope;
@@ -162,6 +164,7 @@ type RankingEligibilityProgressResult = {
   remaining: number;
   eligible: boolean;
   reasons: RankingEligibilityReason[];
+  reasonDetails?: SemanticError[];
   lastValidMatchAt?: string;
 };
 
@@ -475,6 +478,12 @@ export class RankingsService {
       remaining,
       eligible: reasons.length === 0,
       reasons,
+      reasonDetails: this.toEligibilityReasonDetails(reasons, {
+        requiredMatches,
+        playedValidMatches,
+        remaining,
+        pendingConfirmations: pendingCompetitiveOrImpactMatches,
+      }),
     };
 
     if (lastValidMatchAt) {
@@ -1202,6 +1211,55 @@ export class RankingsService {
     if (value === RankingScope.PROVINCE) return RankingScope.PROVINCE;
     if (value === RankingScope.CITY) return RankingScope.CITY;
     throw new BadRequestException(INVALID_SCOPE_ERROR);
+  }
+
+  private toEligibilityReasonDetails(
+    reasons: RankingEligibilityReason[],
+    context: {
+      requiredMatches: number;
+      playedValidMatches: number;
+      remaining: number;
+      pendingConfirmations: number;
+    },
+  ): SemanticError[] {
+    return reasons.map((reason) => {
+      if (reason === 'NOT_ENOUGH_MATCHES') {
+        return semanticError(
+          reason,
+          'Not enough valid matches to be eligible for ranking',
+          {
+            requiredMatches: context.requiredMatches,
+            playedValidMatches: context.playedValidMatches,
+            remaining: context.remaining,
+          },
+        );
+      }
+      if (reason === 'PENDING_CONFIRMATIONS') {
+        return semanticError(
+          reason,
+          'You still have pending confirmations that may impact eligibility',
+          {
+            pendingConfirmations: context.pendingConfirmations,
+          },
+        );
+      }
+      if (reason === 'NO_CITY') {
+        return semanticError(
+          reason,
+          'City/province context is required for the selected scope',
+        );
+      }
+      if (reason === 'NO_CATEGORY') {
+        return semanticError(
+          reason,
+          'Your profile category does not match the selected ranking category',
+        );
+      }
+      return semanticError(
+        reason,
+        'Only friendly matches do not count for ranking eligibility',
+      );
+    });
   }
 
   private resolveMinMatches(): number {

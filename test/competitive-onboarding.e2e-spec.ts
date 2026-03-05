@@ -135,13 +135,13 @@ describe('Competitive Onboarding (e2e)', () => {
       );
     });
 
-    it('returns 409 CITY_REQUIRED when cityId is missing', async () => {
+    it('returns 403 CITY_REQUIRED when cityId is missing', async () => {
       const res = await request(app.getHttpServer())
         .get('/competitive/me')
         .set('x-city-missing', '1')
-        .expect(409);
+        .expect(403);
 
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
         code: 'CITY_REQUIRED',
         message: 'Set your city to use competitive features',
       });

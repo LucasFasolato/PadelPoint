@@ -76,6 +76,7 @@ import {
 } from '../dto/matchmaking-candidates-query.dto';
 import { MatchmakingPositionFilterStatus } from '../dto/matchmaking-candidates-response.dto';
 import { normalizeCategoryFilter } from '../../rankings/utils/ranking-computation.util';
+import { semanticError } from '@common/errors/semantic-error.util';
 
 const COMPETITIVE_PROFILE_USER_REL_CONSTRAINT =
   'REL_6a6e2e2804aaf5d2fa7d83f8fa';
@@ -638,11 +639,13 @@ export class CompetitiveService {
       : null;
 
     if (sameCategory && !categoryRaw) {
-      throw new BadRequestException({
-        statusCode: 400,
-        code: 'CATEGORY_REQUIRED',
-        message: 'category is required when sameCategory=true',
-      });
+      throw new BadRequestException(
+        semanticError(
+          'CATEGORY_REQUIRED',
+          'category is required when sameCategory=true',
+          { field: 'category' },
+        ),
+      );
     }
     if (sameCategory && categoryNumber == null) {
       throw new BadRequestException({
@@ -706,10 +709,11 @@ export class CompetitiveService {
         myCompetitiveProfile.initialCategory == null
       ) {
         throw new BadRequestException({
-          statusCode: 400,
-          code: 'CATEGORY_REQUIRED',
-          message:
+          ...semanticError(
+            'CATEGORY_REQUIRED',
             'Set your competitive category to use competitive matchmaking',
+            { field: 'competitiveProfile.initialCategory' },
+          ),
         });
       }
     }
@@ -719,10 +723,10 @@ export class CompetitiveService {
     const scopeCountryId = me.city?.province?.countryId ?? null;
 
     if (matchType === MatchType.COMPETITIVE && !scopeCityId) {
-      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.FORBIDDEN);
     }
     if (scope === MatchmakingCandidatesScope.CITY && !scopeCityId) {
-      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.FORBIDDEN);
     }
     if (scope === MatchmakingCandidatesScope.PROVINCE && !scopeProvinceId) {
       return {
@@ -1415,7 +1419,7 @@ export class CompetitiveService {
     );
     const scopeCityId = params.scopeCityId ?? me.user.cityId ?? null;
     if (!scopeCityId) {
-      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.CONFLICT);
+      throw new HttpException(CITY_REQUIRED_ERROR, HttpStatus.FORBIDDEN);
     }
 
     const limit = Math.max(1, Math.min(50, params.limit ?? 20));
