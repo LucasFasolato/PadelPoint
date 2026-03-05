@@ -16,6 +16,7 @@ import { UserNotificationsQueryDto } from '../dto/user-notifications-query.dto';
 import { MeInboxQueryDto } from '../dto/me-inbox-query.dto';
 import { InboxResponseDto } from '../dto/inbox.dto';
 import { InboxService } from '../services/inbox.service';
+import { LegacyNotificationsFeedResponseDto } from '../dto/notifications-inbox.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -28,8 +29,11 @@ export class MeInboxController {
   ) {}
 
   @Get('inbox')
-  // Deprecated - use GET /notifications/inbox
-  @ApiOperation({ deprecated: true })
+  @ApiOperation({
+    summary: 'Legacy inbox endpoint (deprecated)',
+    description: 'Use GET /notifications/inbox for the canonical actions inbox.',
+    deprecated: true,
+  })
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
   @ApiOkResponse({ type: InboxResponseDto })
@@ -39,10 +43,14 @@ export class MeInboxController {
   }
 
   @Get('notifications')
-  // Deprecated - use GET /notifications/inbox
-  @ApiOperation({ deprecated: true })
+  @ApiOperation({
+    summary: 'Legacy notifications feed endpoint (deprecated)',
+    description: 'Use GET /notifications for feed history or GET /notifications/inbox for actionable items.',
+    deprecated: true,
+  })
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: LegacyNotificationsFeedResponseDto })
   listNotifications(
     @Req() req: Request,
     @Query() query: UserNotificationsQueryDto,

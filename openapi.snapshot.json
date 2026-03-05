@@ -94,6 +94,256 @@
         "properties": {},
         "type": "object"
       },
+      "CanonicalNotificationActionDto": {
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "VIEW",
+              "ACCEPT",
+              "DECLINE"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "label"
+        ],
+        "type": "object"
+      },
+      "CanonicalNotificationEntityRefsDto": {
+        "properties": {
+          "challengeId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "inviteId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "leagueId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "matchId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CanonicalNotificationInboxItemDto": {
+        "properties": {
+          "actionStatus": {
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "REJECTED",
+              "EXPIRED",
+              "NOT_ACTIONABLE"
+            ],
+            "type": "string"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/CanonicalNotificationActionDto"
+            },
+            "type": "array"
+          },
+          "body": {
+            "nullable": true,
+            "type": "string"
+          },
+          "canAct": {
+            "description": "Whether the notification still supports actionable buttons (accept/decline).",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "data": {
+            "description": "Opaque payload preserved for backward compatibility.",
+            "nullable": true,
+            "type": "object"
+          },
+          "entityRefs": {
+            "$ref": "#/components/schemas/CanonicalNotificationEntityRefsDto"
+          },
+          "id": {
+            "type": "string"
+          },
+          "readAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "createdAt",
+          "canAct",
+          "actionStatus",
+          "entityRefs"
+        ],
+        "type": "object"
+      },
+      "CanonicalNotificationsInboxResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CanonicalNotificationInboxItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "unreadCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "unreadCount"
+        ],
+        "type": "object"
+      },
+      "ChallengeInboxItemDto": {
+        "properties": {
+          "cta": {
+            "properties": {
+              "href": {
+                "nullable": true,
+                "type": "string"
+              },
+              "primary": {
+                "enum": [
+                  "Ver",
+                  "Responder"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "opponentName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "opponentName",
+          "cta"
+        ],
+        "type": "object"
+      },
+      "ChallengesInboxSectionDto": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/InboxSectionErrorDto"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChallengeInboxItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "CommitmentBadgeDto": {
+        "properties": {
+          "competitiveConfirmedMatches30d": {
+            "type": "number"
+          },
+          "earned": {
+            "type": "boolean"
+          },
+          "endorsementsGiven30d": {
+            "type": "number"
+          },
+          "ratio30d": {
+            "description": "Range 0..1",
+            "type": "number"
+          },
+          "reason": {
+            "enum": [
+              "ENDORSEMENTS_30D",
+              "RATIO_30D"
+            ],
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "earned",
+          "ratio30d",
+          "endorsementsGiven30d",
+          "competitiveConfirmedMatches30d"
+        ],
+        "type": "object"
+      },
+      "ConfirmLeaguePendingConfirmationResponseDto": {
+        "properties": {
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recomputeTriggered": {
+            "description": "true when standings recompute was executed; false when skipped after non-blocking failure",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Final persisted status. Idempotent behavior: if already resolved, returns current final status.",
+            "enum": [
+              "CONFIRMED",
+              "REJECTED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "matchId"
+        ],
+        "type": "object"
+      },
       "CreateAvailabilityRuleDto": {
         "properties": {},
         "type": "object"
@@ -108,6 +358,57 @@
       },
       "CreateDirectChallengeDto": {
         "properties": {},
+        "type": "object"
+      },
+      "CreateDirectIntentDto": {
+        "properties": {
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
+          "opponentUserId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "opponentUserId",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "CreateFindPartnerIntentDto": {
+        "properties": {
+          "expiresInHours": {
+            "type": "number"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
         "type": "object"
       },
       "CreateHoldDto": {
@@ -163,8 +464,26 @@
         ],
         "type": "object"
       },
+      "CreateLeagueJoinRequestDto": {
+        "properties": {
+          "message": {
+            "description": "Optional message for league owner/admin",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateLeagueMatchDto": {
         "properties": {
+          "matchType": {
+            "default": "COMPETITIVE",
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
           "playedAt": {
             "format": "date-time",
             "type": "string"
@@ -207,12 +526,129 @@
         ],
         "type": "object"
       },
+      "CreateMatchEndorsementDto": {
+        "properties": {
+          "strengths": {
+            "example": [
+              "SMASH",
+              "DEFENSA"
+            ],
+            "items": {
+              "enum": [
+                "SMASH",
+                "BANDEJA",
+                "VIBORA",
+                "VOLEA",
+                "GLOBO",
+                "DEFENSA",
+                "RESILIENCIA",
+                "TACTICA",
+                "COMUNICACION",
+                "VELOCIDAD",
+                "PRECISION"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "toUserId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "toUserId",
+          "strengths"
+        ],
+        "type": "object"
+      },
+      "CreateMatchEndorsementResponseDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fromUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "strengths": {
+            "items": {
+              "enum": [
+                "SMASH",
+                "BANDEJA",
+                "VIBORA",
+                "VOLEA",
+                "GLOBO",
+                "DEFENSA",
+                "RESILIENCIA",
+                "TACTICA",
+                "COMUNICACION",
+                "VELOCIDAD",
+                "PRECISION"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "toUserId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "matchId",
+          "fromUserId",
+          "toUserId",
+          "strengths",
+          "createdAt"
+        ],
+        "type": "object"
+      },
       "CreateMiniLeagueDto": {
         "properties": {},
         "type": "object"
       },
       "CreateOpenChallengeDto": {
         "properties": {},
+        "type": "object"
+      },
+      "CreateOpenIntentDto": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "expiresInHours": {
+            "type": "number"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
         "type": "object"
       },
       "CreateOverrideDto": {
@@ -227,12 +663,500 @@
         "properties": {},
         "type": "object"
       },
+      "DiscoverCandidateItemDto": {
+        "properties": {
+          "categoryKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "elo": {
+            "nullable": true,
+            "type": "number"
+          },
+          "lastActiveAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "matchesPlayed30d": {
+            "nullable": true,
+            "type": "number"
+          },
+          "provinceCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "DiscoverCandidatesResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoverCandidateItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "DiscoverLeagueItemDto": {
+        "properties": {
+          "cityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "lastActivityAt": {
+            "description": "ISO timestamp",
+            "nullable": true,
+            "type": "string"
+          },
+          "membersCount": {
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "open",
+              "scheduled",
+              "mini"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provinceCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "finished"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "status",
+          "cityName",
+          "provinceCode",
+          "membersCount",
+          "lastActivityAt"
+        ],
+        "type": "object"
+      },
+      "DiscoverLeaguesResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoverLeagueItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "DisputeMatchDto": {
         "properties": {},
         "type": "object"
       },
+      "InboxResponseDto": {
+        "properties": {
+          "challenges": {
+            "$ref": "#/components/schemas/ChallengesInboxSectionDto"
+          },
+          "invites": {
+            "$ref": "#/components/schemas/InvitesInboxSectionDto"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationsInboxSectionDto"
+          },
+          "pendingConfirmations": {
+            "$ref": "#/components/schemas/PendingConfirmationsInboxSectionDto"
+          }
+        },
+        "required": [
+          "pendingConfirmations",
+          "challenges",
+          "invites",
+          "notifications"
+        ],
+        "type": "object"
+      },
+      "InboxSectionErrorDto": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "errorId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "errorId"
+        ],
+        "type": "object"
+      },
       "InitCompetitiveProfileDto": {
         "properties": {},
+        "type": "object"
+      },
+      "InsightsDto": {
+        "properties": {
+          "bestStreak": {
+            "type": "number"
+          },
+          "currentStreak": {
+            "type": "number"
+          },
+          "eloDelta": {
+            "type": "number"
+          },
+          "lastPlayedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "losses": {
+            "type": "number"
+          },
+          "matchesPlayed": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "mostPlayedOpponent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MostPlayedOpponentDto"
+              }
+            ],
+            "nullable": true
+          },
+          "neededForRanking": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NeededForRankingDto"
+              }
+            ],
+            "nullable": true
+          },
+          "timeframe": {
+            "type": "string"
+          },
+          "winRate": {
+            "description": "Range 0..1",
+            "type": "number"
+          },
+          "wins": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "timeframe",
+          "mode",
+          "matchesPlayed",
+          "wins",
+          "losses",
+          "winRate",
+          "eloDelta",
+          "currentStreak",
+          "bestStreak"
+        ],
+        "type": "object"
+      },
+      "InviteInboxItemDto": {
+        "properties": {
+          "cta": {
+            "properties": {
+              "href": {
+                "nullable": true,
+                "type": "string"
+              },
+              "primary": {
+                "enum": [
+                  "Ver"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "leagueId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "leagueName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "leagueName",
+          "status",
+          "cta"
+        ],
+        "type": "object"
+      },
+      "InvitesInboxSectionDto": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/InboxSectionErrorDto"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InviteInboxItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "LeagueJoinRequestApproveResponseDto": {
+        "properties": {
+          "member": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "request": {
+            "$ref": "#/components/schemas/LeagueJoinRequestItemDto"
+          }
+        },
+        "required": [
+          "request",
+          "member"
+        ],
+        "type": "object"
+      },
+      "LeagueJoinRequestItemDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterAvatarUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterCity": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterDisplayName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterProvince": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requesterUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "canceled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "userDisplayName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "leagueId",
+          "userId",
+          "requesterUserId",
+          "status",
+          "userDisplayName",
+          "requesterDisplayName",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "LeagueJoinRequestListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeagueJoinRequestItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "LeagueListItemDto": {
+        "properties": {
+          "cityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "computedStatus": {
+            "description": "Computed status that normalizes legacy rows using membersCount fallback.",
+            "enum": [
+              "UPCOMING",
+              "ACTIVE",
+              "FINISHED"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastActivityAt": {
+            "description": "ISO 8601 timestamp",
+            "nullable": true,
+            "type": "string"
+          },
+          "membersCount": {
+            "type": "number"
+          },
+          "mode": {
+            "deprecated": true,
+            "description": "Legacy mode field (kept for backward compatibility). Use modeKey.",
+            "enum": [
+              "OPEN",
+              "SCHEDULED",
+              "MINI"
+            ],
+            "type": "string"
+          },
+          "modeKey": {
+            "description": "Normalized league mode key",
+            "enum": [
+              "OPEN",
+              "SCHEDULED",
+              "MINI"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provinceCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "OWNER",
+              "ADMIN",
+              "MEMBER"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "deprecated": true,
+            "description": "Legacy status field (kept for backward compatibility). Use statusKey.",
+            "enum": [
+              "UPCOMING",
+              "ACTIVE",
+              "FINISHED"
+            ],
+            "type": "string"
+          },
+          "statusKey": {
+            "description": "Normalized league status key",
+            "enum": [
+              "UPCOMING",
+              "ACTIVE",
+              "FINISHED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "modeKey",
+          "status",
+          "statusKey",
+          "computedStatus"
+        ],
         "type": "object"
       },
       "LeagueMatchScoreDto": {
@@ -251,12 +1175,494 @@
         ],
         "type": "object"
       },
+      "LeaguePendingConfirmationItemDto": {
+        "properties": {
+          "confirmationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "V1 currently does not expire confirmations",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "impactRanking": {
+            "type": "boolean"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
+          "reportedByUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/LeaguePendingConfirmationSetDto"
+            },
+            "type": "array"
+          },
+          "teams": {
+            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamsDto"
+          }
+        },
+        "required": [
+          "confirmationId",
+          "leagueId",
+          "matchId",
+          "reportedByUserId",
+          "createdAt",
+          "matchType",
+          "impactRanking",
+          "teams",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "LeaguePendingConfirmationSetDto": {
+        "properties": {
+          "a": {
+            "example": 6,
+            "type": "number"
+          },
+          "b": {
+            "example": 4,
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "LeaguePendingConfirmationTeamDto": {
+        "properties": {
+          "player1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "player2Id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "player1Id"
+        ],
+        "type": "object"
+      },
+      "LeaguePendingConfirmationTeamsDto": {
+        "properties": {
+          "teamA": {
+            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamDto"
+          },
+          "teamB": {
+            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamDto"
+          }
+        },
+        "required": [
+          "teamA",
+          "teamB"
+        ],
+        "type": "object"
+      },
+      "LeaguePendingConfirmationsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeaguePendingConfirmationItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "LegacyNotificationsFeedItemDto": {
+        "properties": {
+          "actionStatus": {
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "REJECTED",
+              "EXPIRED",
+              "NOT_ACTIONABLE"
+            ],
+            "type": "string"
+          },
+          "body": {
+            "nullable": true,
+            "type": "string"
+          },
+          "canAct": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "data": {
+            "nullable": true,
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "readAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "LegacyNotificationsFeedResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LegacyNotificationsFeedItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "LinkLeagueChallengeMatchDto": {
         "properties": {},
         "type": "object"
       },
+      "ListLeaguesResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeagueListItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "LoginDto": {
         "properties": {},
+        "type": "object"
+      },
+      "MatchIntentCtaDto": {
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "primary": {
+            "enum": [
+              "Aceptar",
+              "Rechazar",
+              "Confirmar",
+              "Ver",
+              "Cargar resultado"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "primary"
+        ],
+        "type": "object"
+      },
+      "MatchIntentItemDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "cta": {
+            "$ref": "#/components/schemas/MatchIntentCtaDto"
+          },
+          "expiresAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "intentType": {
+            "enum": [
+              "DIRECT",
+              "OPEN",
+              "FIND_PARTNER",
+              "FIND_OPPONENT"
+            ],
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/MatchIntentLocationDto"
+          },
+          "matchId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
+          "myRole": {
+            "enum": [
+              "CREATOR",
+              "INVITEE"
+            ],
+            "type": "string"
+          },
+          "opponentName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "partnerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceType": {
+            "enum": [
+              "CHALLENGE",
+              "OPEN_CHALLENGE",
+              "PENDING_CONFIRMATION",
+              "FIND_PARTNER"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "ACCEPTED",
+              "DECLINED",
+              "EXPIRED",
+              "MATCH_CREATED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sourceType",
+          "intentType",
+          "mode",
+          "status",
+          "createdAt",
+          "cta"
+        ],
+        "type": "object"
+      },
+      "MatchIntentItemResponseDto": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/MatchIntentItemDto"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "MatchIntentLocationDto": {
+        "properties": {
+          "cityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "provinceCode": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MatchIntentsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MatchIntentItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "MatchmakingCandidateItemDto": {
+        "properties": {
+          "categoryKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cityName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "elo": {
+            "nullable": true,
+            "type": "number"
+          },
+          "lastActiveAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "matchesPlayed30d": {
+            "nullable": true,
+            "type": "number"
+          },
+          "preferredPosition": {
+            "enum": [
+              "LEFT",
+              "RIGHT",
+              "ANY"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "provinceCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "MatchmakingCandidatesAppliedFiltersDto": {
+        "properties": {
+          "category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "categoryNumber": {
+            "nullable": true,
+            "type": "number"
+          },
+          "limit": {
+            "maximum": 50,
+            "minimum": 1,
+            "type": "number"
+          },
+          "matchType": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "enum": [
+              "LEFT",
+              "RIGHT",
+              "ANY"
+            ],
+            "type": "string"
+          },
+          "positionStatus": {
+            "enum": [
+              "APPLIED",
+              "IGNORED",
+              "NOT_SUPPORTED"
+            ],
+            "type": "string"
+          },
+          "sameCategory": {
+            "type": "boolean"
+          },
+          "scope": {
+            "enum": [
+              "CITY",
+              "PROVINCE",
+              "COUNTRY"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "sameCategory",
+          "matchType",
+          "position",
+          "positionStatus",
+          "limit"
+        ],
+        "type": "object"
+      },
+      "MatchmakingCandidatesResponseDto": {
+        "properties": {
+          "appliedFilters": {
+            "$ref": "#/components/schemas/MatchmakingCandidatesAppliedFiltersDto"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MatchmakingCandidateItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "appliedFilters"
+        ],
         "type": "object"
       },
       "MatchmakingRivalItemDto": {
@@ -360,83 +1766,314 @@
         "properties": {},
         "type": "object"
       },
-      "PendingConfirmationDto": {
+      "MostPlayedOpponentDto": {
         "properties": {
-          "canConfirm": {
-            "description": "Always true for this endpoint — signals the front to show confirm/reject CTAs",
-            "type": "boolean"
+          "matches": {
+            "type": "number"
           },
-          "challengeId": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "matches"
+        ],
+        "type": "object"
+      },
+      "MyPendingConfirmationItemDto": {
+        "properties": {
+          "cta": {
+            "$ref": "#/components/schemas/PendingConfirmationCtaDto"
+          },
+          "id": {
             "type": "string"
           },
           "leagueId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "leagueName": {
+            "nullable": true,
             "type": "string"
           },
           "matchId": {
+            "type": "string"
+          },
+          "opponentAvatarUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "opponentName": {
+            "description": "Stable opponent display label. Never empty.",
             "type": "string"
           },
           "playedAt": {
             "description": "ISO 8601 timestamp when the match was played",
             "type": "string"
           },
-          "reportedBy": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PlayerRefDto"
-              }
-            ],
-            "description": "The player who originally reported this match"
-          },
           "score": {
-            "$ref": "#/components/schemas/ScoreDto"
+            "description": "Compact score label, ex: 6-4 6-2",
+            "nullable": true,
+            "type": "string"
           },
           "status": {
             "enum": [
-              "scheduled",
-              "pending_confirm",
-              "confirmed",
-              "rejected",
-              "disputed",
-              "resolved"
-            ],
-            "type": "string"
-          },
-          "teamA": {
-            "$ref": "#/components/schemas/TeamRefDto"
-          },
-          "teamB": {
-            "$ref": "#/components/schemas/TeamRefDto"
-          },
-          "winnerTeam": {
-            "enum": [
-              "A",
-              "B"
+              "PENDING_CONFIRMATION"
             ],
             "type": "string"
           }
         },
         "required": [
+          "id",
           "matchId",
           "status",
-          "score",
-          "teamA",
-          "teamB",
-          "reportedBy",
-          "canConfirm"
+          "opponentName",
+          "cta"
         ],
         "type": "object"
       },
-      "PendingConfirmationsResponseDto": {
+      "MyPendingConfirmationsResponseDto": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PendingConfirmationDto"
+              "$ref": "#/components/schemas/MyPendingConfirmationItemDto"
             },
             "type": "array"
           },
           "nextCursor": {
             "description": "Opaque cursor for the next page; null when no more items",
             "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "NeededForRankingDto": {
+        "properties": {
+          "current": {
+            "type": "number"
+          },
+          "remaining": {
+            "type": "number"
+          },
+          "required": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "required",
+          "current",
+          "remaining"
+        ],
+        "type": "object"
+      },
+      "NotificationInboxItemDto": {
+        "properties": {
+          "body": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "data": {
+            "nullable": true,
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "readAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "NotificationsInboxSectionDto": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/InboxSectionErrorDto"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationInboxItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PasswordResetConfirmDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "PasswordResetRequestDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "PendingConfirmationCtaDto": {
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "primary": {
+            "enum": [
+              "Confirmar",
+              "Ver"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "primary"
+        ],
+        "type": "object"
+      },
+      "PendingConfirmationInboxItemDto": {
+        "properties": {
+          "cta": {
+            "properties": {
+              "href": {
+                "nullable": true,
+                "type": "string"
+              },
+              "primary": {
+                "enum": [
+                  "Confirmar",
+                  "Ver"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "leagueId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "leagueName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "matchId": {
+            "type": "string"
+          },
+          "opponentAvatarUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "opponentName": {
+            "type": "string"
+          },
+          "playedAt": {
+            "type": "string"
+          },
+          "score": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING_CONFIRMATION"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "matchId",
+          "status",
+          "opponentName",
+          "cta"
+        ],
+        "type": "object"
+      },
+      "PendingConfirmationsInboxSectionDto": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/InboxSectionErrorDto"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingConfirmationInboxItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PendingEndorsementItemDto": {
+        "properties": {
+          "confirmationAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rivals": {
+            "items": {
+              "$ref": "#/components/schemas/PendingEndorsementRivalDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "matchId",
+          "confirmationAt",
+          "rivals"
+        ],
+        "type": "object"
+      },
+      "PendingEndorsementRivalDto": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "PendingEndorsementsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingEndorsementItemDto"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -636,20 +2273,64 @@
         ],
         "type": "object"
       },
-      "PlayerRefDto": {
+      "PublicNotificationsResendDto": {
+        "properties": {},
+        "type": "object"
+      },
+      "RankingEligibilityProgressResponseDto": {
         "properties": {
-          "displayName": {
-            "description": "Resolved display name; email prefix as fallback; never full email",
+          "category": {
+            "example": "7ma",
             "type": "string"
           },
-          "userId": {
+          "eligible": {
+            "example": false,
+            "type": "boolean"
+          },
+          "lastValidMatchAt": {
+            "example": "2026-03-01T18:45:11.000Z",
+            "type": "string"
+          },
+          "playedValidMatches": {
+            "example": 2,
+            "type": "number"
+          },
+          "reasons": {
+            "example": [
+              "NOT_ENOUGH_MATCHES",
+              "PENDING_CONFIRMATIONS"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "remaining": {
+            "example": 2,
+            "type": "number"
+          },
+          "requiredMatches": {
+            "example": 4,
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "COUNTRY",
+              "PROVINCE",
+              "CITY"
+            ],
             "type": "string"
           }
         },
-        "type": "object"
-      },
-      "PublicNotificationsResendDto": {
-        "properties": {},
+        "required": [
+          "scope",
+          "category",
+          "requiredMatches",
+          "playedValidMatches",
+          "remaining",
+          "eligible",
+          "reasons"
+        ],
         "type": "object"
       },
       "RegisterDto": {
@@ -658,6 +2339,39 @@
       },
       "RegisterMediaDto": {
         "properties": {},
+        "type": "object"
+      },
+      "RejectLeaguePendingConfirmationDto": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RejectLeaguePendingConfirmationResponseDto": {
+        "properties": {
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "recomputeTriggered": {
+            "description": "true when standings recompute was executed; false when skipped after non-blocking failure",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Final persisted status. Idempotent behavior: if already resolved, returns current final status.",
+            "enum": [
+              "CONFIRMED",
+              "REJECTED"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "matchId"
+        ],
         "type": "object"
       },
       "RejectMatchDto": {
@@ -670,6 +2384,14 @@
       },
       "ReportFromReservationDto": {
         "properties": {
+          "matchType": {
+            "default": "COMPETITIVE",
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
           "playedAt": {
             "format": "date-time",
             "type": "string"
@@ -715,11 +2437,20 @@
       },
       "ReportManualDto": {
         "properties": {
+          "matchType": {
+            "default": "COMPETITIVE",
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
           "playedAt": {
             "format": "date-time",
             "type": "string"
           },
           "sets": {
+            "description": "Best-of-3 score. 2 sets for straight wins (2-0), optional 3rd set when split (1-1).",
             "items": {
               "$ref": "#/components/schemas/ReportSetDto"
             },
@@ -732,6 +2463,7 @@
             "type": "string"
           },
           "teamA2Id": {
+            "description": "Optional for singles. For doubles, send both teamA2Id and teamB2Id.",
             "format": "uuid",
             "type": "string"
           },
@@ -740,15 +2472,14 @@
             "type": "string"
           },
           "teamB2Id": {
+            "description": "Optional for singles. For doubles, send both teamA2Id and teamB2Id.",
             "format": "uuid",
             "type": "string"
           }
         },
         "required": [
           "teamA1Id",
-          "teamA2Id",
           "teamB1Id",
-          "teamB2Id",
           "sets"
         ],
         "type": "object"
@@ -802,22 +2533,50 @@
         ],
         "type": "object"
       },
-      "ResolveDisputeDto": {
-        "properties": {},
-        "type": "object"
-      },
-      "ScoreDto": {
+      "ReputationInsightsDto": {
         "properties": {
-          "sets": {
-            "items": {
-              "$ref": "#/components/schemas/SetScoreDto"
-            },
-            "type": "array"
+          "givenCountLifetime": {
+            "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "topReceivedStrength": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TopReceivedStrengthDto"
+              }
+            ],
+            "nullable": true
+          },
+          "unlocked": {
+            "type": "boolean"
           }
         },
         "required": [
-          "sets"
+          "unlocked",
+          "givenCountLifetime",
+          "message"
         ],
+        "type": "object"
+      },
+      "ReputationResponseDto": {
+        "properties": {
+          "commitmentBadge": {
+            "$ref": "#/components/schemas/CommitmentBadgeDto"
+          },
+          "insights": {
+            "$ref": "#/components/schemas/ReputationInsightsDto"
+          }
+        },
+        "required": [
+          "commitmentBadge",
+          "insights"
+        ],
+        "type": "object"
+      },
+      "ResolveDisputeDto": {
+        "properties": {},
         "type": "object"
       },
       "SetLeagueAvatarDto": {
@@ -838,21 +2597,6 @@
             "type": "string"
           }
         },
-        "type": "object"
-      },
-      "SetScoreDto": {
-        "properties": {
-          "a": {
-            "type": "number"
-          },
-          "b": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "a",
-          "b"
-        ],
         "type": "object"
       },
       "SimulatePaymentDto": {
@@ -1020,6 +2764,57 @@
         ],
         "type": "object"
       },
+      "StrengthSummaryItemDto": {
+        "properties": {
+          "count": {
+            "type": "number"
+          },
+          "percent": {
+            "description": "Integer percentage 0..100",
+            "type": "number"
+          },
+          "strength": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/player_strength_enum"
+              }
+            ]
+          }
+        },
+        "required": [
+          "strength",
+          "count",
+          "percent"
+        ],
+        "type": "object"
+      },
+      "StrengthSummaryResponseDto": {
+        "properties": {
+          "days": {
+            "type": "number"
+          },
+          "strengths": {
+            "items": {
+              "$ref": "#/components/schemas/StrengthSummaryItemDto"
+            },
+            "type": "array"
+          },
+          "totalVotes": {
+            "type": "number"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "days",
+          "totalVotes",
+          "strengths"
+        ],
+        "type": "object"
+      },
       "SubmitLeagueMatchResultCanonicalBodyDto": {
         "properties": {
           "playedAt": {
@@ -1036,17 +2831,27 @@
         ],
         "type": "object"
       },
-      "TeamRefDto": {
+      "TopReceivedStrengthDto": {
         "properties": {
-          "player1": {
-            "$ref": "#/components/schemas/PlayerRefDto"
+          "count": {
+            "type": "number"
           },
-          "player2": {
-            "$ref": "#/components/schemas/PlayerRefDto"
+          "percent": {
+            "description": "Integer percentage 0..100",
+            "type": "number"
+          },
+          "strength": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/player_strength_enum"
+              }
+            ]
           }
         },
         "required": [
-          "player1"
+          "strength",
+          "count",
+          "percent"
         ],
         "type": "object"
       },
@@ -1082,10 +2887,6 @@
         },
         "type": "object"
       },
-      "UpdateLeagueSettingsDto": {
-        "properties": {},
-        "type": "object"
-      },
       "UpdateMemberRoleDto": {
         "properties": {},
         "type": "object"
@@ -1097,12 +2898,22 @@
             "nullable": true,
             "type": "string"
           },
+          "cityName": {
+            "maxLength": 80,
+            "nullable": true,
+            "type": "string"
+          },
           "country": {
             "maxLength": 80,
             "nullable": true,
             "type": "string"
           },
           "province": {
+            "maxLength": 80,
+            "nullable": true,
+            "type": "string"
+          },
+          "provinceCode": {
             "maxLength": 80,
             "nullable": true,
             "type": "string"
@@ -1188,6 +2999,22 @@
       "UpsertOnboardingDto": {
         "properties": {},
         "type": "object"
+      },
+      "player_strength_enum": {
+        "enum": [
+          "SMASH",
+          "BANDEJA",
+          "VIBORA",
+          "VOLEA",
+          "GLOBO",
+          "DEFENSA",
+          "RESILIENCIA",
+          "TACTICA",
+          "COMUNICACION",
+          "VELOCIDAD",
+          "PRECISION"
+        ],
+        "type": "string"
       }
     }
   },
@@ -1308,6 +3135,34 @@
         ]
       }
     },
+    "/auth/google": {
+      "get": {
+        "operationId": "AuthGoogleController_googleLogin",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AuthGoogle"
+        ]
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "operationId": "AuthGoogleController_googleCallback",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AuthGoogle"
+        ]
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "AuthController_login",
@@ -1323,7 +3178,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "description": ""
           }
         },
@@ -1347,7 +3202,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "description": ""
           }
         },
@@ -1356,22 +3211,12 @@
         ]
       }
     },
-    "/auth/login-user": {
+    "/auth/logout": {
       "post": {
-        "operationId": "AuthController_loginUser",
+        "operationId": "AuthController_logout",
         "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginDto"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
-          "201": {
+          "200": {
             "description": ""
           }
         },
@@ -1383,6 +3228,68 @@
     "/auth/me": {
       "get": {
         "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/password/reset/confirm": {
+      "post": {
+        "operationId": "AuthPasswordController_confirmReset",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AuthPassword"
+        ]
+      }
+    },
+    "/auth/password/reset/request": {
+      "post": {
+        "operationId": "AuthPasswordController_requestReset",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "AuthPassword"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
         "parameters": [],
         "responses": {
           "200": {
@@ -2347,8 +4254,201 @@
         ]
       }
     },
+    "/competitive/discover/candidates": {
+      "get": {
+        "deprecated": true,
+        "operationId": "CompetitiveController_discoverCandidates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "COMPETITIVE",
+              "enum": [
+                "COMPETITIVE",
+                "FRIENDLY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "CITY",
+              "enum": [
+                "CITY",
+                "PROVINCE"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Optional category filter (examples: 7, 7ma, 6ta)",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "MOST_ACTIVE",
+              "enum": [
+                "ELO_CLOSEST",
+                "MOST_ACTIVE"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverCandidatesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Discover candidate opponents for current player (legacy endpoint)",
+        "tags": [
+          "competitive"
+        ]
+      }
+    },
+    "/competitive/matchmaking/candidates": {
+      "get": {
+        "operationId": "CompetitiveController_matchmakingCandidates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "CITY",
+                "PROVINCE",
+                "COUNTRY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional category filter. Supports 7, 7ma, 6ta.",
+            "examples": {
+              "canonical": {
+                "value": "6ta"
+              },
+              "numeric": {
+                "value": "7"
+              },
+              "ordinal": {
+                "value": "7ma"
+              }
+            },
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "matchType",
+            "required": false,
+            "schema": {
+              "enum": [
+                "COMPETITIVE",
+                "FRIENDLY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "position",
+            "required": false,
+            "schema": {
+              "enum": [
+                "LEFT",
+                "RIGHT",
+                "ANY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sameCategory",
+            "required": false,
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchmakingCandidatesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Canonical matchmaking candidates endpoint",
+        "tags": [
+          "competitive"
+        ]
+      }
+    },
     "/competitive/matchmaking/partners": {
       "get": {
+        "deprecated": true,
         "operationId": "CompetitiveController_matchmakingPartners",
         "parameters": [
           {
@@ -2430,7 +4530,7 @@
             "description": ""
           }
         },
-        "summary": "Find suggested partners for current player",
+        "summary": "Find suggested partners for current player (legacy endpoint)",
         "tags": [
           "competitive"
         ]
@@ -2438,6 +4538,7 @@
     },
     "/competitive/matchmaking/rivals": {
       "get": {
+        "deprecated": true,
         "operationId": "CompetitiveController_matchmakingRivals",
         "parameters": [
           {
@@ -2519,7 +4620,7 @@
             "description": ""
           }
         },
-        "summary": "Find suggested rivals for current player",
+        "summary": "Find suggested rivals for current player (legacy endpoint)",
         "tags": [
           "competitive"
         ]
@@ -2805,11 +4906,23 @@
         "parameters": [],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListLeaguesResponseDto"
+                }
+              }
+            },
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       },
       "post": {
@@ -2830,8 +4943,104 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
+        ]
+      }
+    },
+    "/leagues/discover": {
+      "get": {
+        "operationId": "LeaguesController_discover",
+        "parameters": [
+          {
+            "description": "Search by league name (ILIKE)",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "scheduled",
+                "mini"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "draft",
+                "active",
+                "finished"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Opaque pagination cursor",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverLeaguesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
         ]
       }
     },
@@ -2853,8 +5062,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -2876,8 +5090,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -2899,8 +5118,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -2923,8 +5147,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3000,8 +5229,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       },
       "get": {
@@ -3021,8 +5255,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       },
       "patch": {
@@ -3052,8 +5291,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3082,8 +5326,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3115,8 +5364,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3148,8 +5402,234 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/join-requests": {
+      "get": {
+        "operationId": "LeaguesController_listJoinRequests",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "canceled"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueJoinRequestListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
+        ]
+      },
+      "post": {
+        "operationId": "LeaguesController_createJoinRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeagueJoinRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueJoinRequestItemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/join-requests/{requestId}": {
+      "delete": {
+        "operationId": "LeaguesController_cancelJoinRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueJoinRequestItemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/join-requests/{requestId}/approve": {
+      "post": {
+        "operationId": "LeaguesController_approveJoinRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueJoinRequestApproveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
+        ]
+      }
+    },
+    "/leagues/{id}/join-requests/{requestId}/reject": {
+      "post": {
+        "operationId": "LeaguesController_rejectJoinRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueJoinRequestItemDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
         ]
       }
     },
@@ -3189,8 +5669,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3212,62 +5697,13 @@
             "description": ""
           }
         },
-        "tags": [
-          "Leagues"
-        ]
-      }
-    },
-    "/leagues/{id}/settings": {
-      "get": {
-        "operationId": "LeaguesController_getSettings",
-        "parameters": [
+        "security": [
           {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
+            "bearer": []
           }
         ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
         "tags": [
-          "Leagues"
-        ]
-      },
-      "patch": {
-        "operationId": "LeaguesController_updateSettings",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLeagueSettingsDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3331,8 +5767,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3354,8 +5795,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3404,8 +5850,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3434,8 +5885,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3457,8 +5913,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3488,8 +5949,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3511,8 +5977,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "Leagues"
+          "leagues"
         ]
       }
     },
@@ -3588,8 +6059,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
         ]
       }
     },
@@ -3611,8 +6087,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
         ]
       },
       "post": {
@@ -3642,8 +6123,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
         ]
       }
     },
@@ -3684,8 +6170,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
         ]
       }
     },
@@ -3727,15 +6218,226 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingConfirmationsResponseDto"
+                  "$ref": "#/components/schemas/LeaguePendingConfirmationsResponseDto"
                 }
               }
             },
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/pending-confirmations/{confirmationId}/confirm": {
+      "patch": {
+        "deprecated": true,
+        "operationId": "LeagueMatchesController_confirmLeaguePendingConfirmationPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "confirmationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmLeaguePendingConfirmationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Pending confirmation is not in a confirmable state"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm league pending confirmation (compat PATCH alias)",
+        "tags": [
+          "league-matches"
+        ]
+      },
+      "post": {
+        "operationId": "LeagueMatchesController_confirmLeaguePendingConfirmation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "confirmationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmLeaguePendingConfirmationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Pending confirmation is not in a confirmable state"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm league pending confirmation (canonical)",
+        "tags": [
+          "league-matches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/pending-confirmations/{confirmationId}/reject": {
+      "patch": {
+        "deprecated": true,
+        "operationId": "LeagueMatchesController_rejectLeaguePendingConfirmationPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "confirmationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectLeaguePendingConfirmationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectLeaguePendingConfirmationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Pending confirmation is not in a rejectable state"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reject league pending confirmation (compat PATCH alias)",
+        "tags": [
+          "league-matches"
+        ]
+      },
+      "post": {
+        "operationId": "LeagueMatchesController_rejectLeaguePendingConfirmation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "confirmationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectLeaguePendingConfirmationDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectLeaguePendingConfirmationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Pending confirmation is not in a rejectable state"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reject league pending confirmation (canonical)",
+        "tags": [
+          "league-matches"
         ]
       }
     },
@@ -3767,8 +6469,13 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
         ]
       }
     },
@@ -3788,11 +6495,54 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "examples": {
+                "doubles": {
+                  "summary": "Doubles (2v2)",
+                  "value": {
+                    "sets": [
+                      {
+                        "a": 6,
+                        "b": 4
+                      },
+                      {
+                        "a": 3,
+                        "b": 6
+                      },
+                      {
+                        "a": 7,
+                        "b": 6
+                      }
+                    ],
+                    "teamA1Id": "11111111-1111-4111-8111-111111111111",
+                    "teamA2Id": "33333333-3333-4333-8333-333333333333",
+                    "teamB1Id": "22222222-2222-4222-8222-222222222222",
+                    "teamB2Id": "44444444-4444-4444-8444-444444444444"
+                  }
+                },
+                "singles": {
+                  "summary": "Singles (1v1)",
+                  "value": {
+                    "sets": [
+                      {
+                        "a": 6,
+                        "b": 4
+                      },
+                      {
+                        "a": 6,
+                        "b": 4
+                      }
+                    ],
+                    "teamA1Id": "11111111-1111-4111-8111-111111111111",
+                    "teamB1Id": "22222222-2222-4222-8222-222222222222"
+                  }
+                }
+              },
               "schema": {
                 "$ref": "#/components/schemas/ReportManualDto"
               }
             }
           },
+          "description": "Supports singles (1v1) and doubles (2v2). For doubles, provide both teamA2Id and teamB2Id. For singles, omit both.",
           "required": true
         },
         "responses": {
@@ -3800,8 +6550,306 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
-          "LeagueMatches"
+          "league-matches"
+        ]
+      }
+    },
+    "/leagues/{leagueId}/settings": {
+      "get": {
+        "operationId": "LeaguesController_getSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "drawPoints": {
+                      "example": 1,
+                      "maximum": 10,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "includeSources": {
+                      "example": [
+                        "manual",
+                        "reservation"
+                      ],
+                      "items": {
+                        "enum": [
+                          "manual",
+                          "reservation"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "lossPoints": {
+                      "example": 0,
+                      "maximum": 10,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "tieBreakers": {
+                      "example": [
+                        "points",
+                        "wins",
+                        "setsDiff",
+                        "gamesDiff"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "winPoints": {
+                      "example": 3,
+                      "maximum": 10,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "winPoints",
+                    "drawPoints",
+                    "lossPoints",
+                    "tieBreakers",
+                    "includeSources"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
+        ]
+      },
+      "patch": {
+        "operationId": "LeaguesController_updateSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "leagueId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "partialUpdate": {
+                  "summary": "Update parcial",
+                  "value": {
+                    "drawPoints": 2,
+                    "includeSources": [
+                      "manual"
+                    ],
+                    "tieBreakers": [
+                      "points",
+                      "setsDiff",
+                      "gamesDiff"
+                    ]
+                  }
+                },
+                "resetDefaults": {
+                  "summary": "Reset a defaults",
+                  "value": {}
+                }
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "drawPoints": {
+                    "maximum": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "includeSources": {
+                    "items": {
+                      "enum": [
+                        "manual",
+                        "reservation"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "lossPoints": {
+                    "maximum": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "tieBreakers": {
+                    "items": {
+                      "enum": [
+                        "points",
+                        "wins",
+                        "setsDiff",
+                        "gamesDiff"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "winPoints": {
+                    "maximum": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "Partial update. Send an empty object {} to restore default league settings.",
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "recomputeTriggered": {
+                      "example": true,
+                      "type": "boolean"
+                    },
+                    "settings": {
+                      "properties": {
+                        "drawPoints": {
+                          "example": 1,
+                          "maximum": 10,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "includeSources": {
+                          "example": [
+                            "manual",
+                            "reservation"
+                          ],
+                          "items": {
+                            "enum": [
+                              "manual",
+                              "reservation"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "lossPoints": {
+                          "example": 0,
+                          "maximum": 10,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "tieBreakers": {
+                          "example": [
+                            "points",
+                            "wins",
+                            "setsDiff",
+                            "gamesDiff"
+                          ],
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "winPoints": {
+                          "example": 3,
+                          "maximum": 10,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "winPoints",
+                        "drawPoints",
+                        "lossPoints",
+                        "tieBreakers",
+                        "includeSources"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "recomputeTriggered"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "example": "SETTINGS_INVALID_POINTS_ORDER",
+                      "type": "string"
+                    },
+                    "message": {
+                      "example": "Invalid points order: winPoints must be >= drawPoints >= lossPoints",
+                      "type": "string"
+                    },
+                    "statusCode": {
+                      "example": 400,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "statusCode",
+                    "code",
+                    "message"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Settings validation failed"
+          },
+          "403": {
+            "description": "Only owner/admin can update settings"
+          },
+          "404": {
+            "description": "League not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "leagues"
         ]
       }
     },
@@ -3853,12 +6901,55 @@
     "/matches/me": {
       "get": {
         "operationId": "MatchesController_getMyMatches",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "Compatibility flag. Use legacy=1 to return a plain array instead of the canonical wrapper.",
+            "in": "query",
+            "name": "legacy",
+            "required": false,
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": ""
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "nextCursor": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "items": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Canonical wrapper by default. Legacy clients can request a plain array with legacy=1."
           }
         },
+        "summary": "List current user matches. Canonical contract returns { items, nextCursor }.",
         "tags": [
           "Matches"
         ]
@@ -3894,7 +6985,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingConfirmationsResponseDto"
+                  "$ref": "#/components/schemas/MyPendingConfirmationsResponseDto"
                 }
               }
             },
@@ -4097,6 +7188,411 @@
         ]
       }
     },
+    "/matches/{matchId}/endorsements": {
+      "post": {
+        "operationId": "MatchEndorsementsController_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "matchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMatchEndorsementDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateMatchEndorsementResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "endorsements"
+        ]
+      }
+    },
+    "/me/activity": {
+      "get": {
+        "operationId": "MeActivityController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeActivity"
+        ]
+      }
+    },
+    "/me/endorsements/pending": {
+      "get": {
+        "operationId": "MeReputationController_getPendingEndorsements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingEndorsementsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "endorsements"
+        ]
+      }
+    },
+    "/me/inbox": {
+      "get": {
+        "deprecated": true,
+        "description": "Use GET /notifications/inbox for the canonical actions inbox.",
+        "operationId": "MeInboxController_listInbox",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Legacy inbox endpoint (deprecated)",
+        "tags": [
+          "MeInbox"
+        ]
+      }
+    },
+    "/me/insights": {
+      "get": {
+        "operationId": "MeInsightsController_getInsights",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timeframe",
+            "required": false,
+            "schema": {
+              "default": "CURRENT_SEASON",
+              "enum": [
+                "LAST_30D",
+                "CURRENT_SEASON"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "ALL",
+              "enum": [
+                "ALL",
+                "COMPETITIVE",
+                "FRIENDLY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeInsights"
+        ]
+      }
+    },
+    "/me/intents": {
+      "get": {
+        "operationId": "MeIntentsController_listIntents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "ACTIVE",
+              "enum": [
+                "ACTIVE",
+                "HISTORY"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "default": "ALL",
+              "enum": [
+                "ALL",
+                "DIRECT",
+                "OPEN",
+                "FIND_PARTNER",
+                "FIND_OPPONENT"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "ALL",
+              "enum": [
+                "ALL",
+                "COMPETITIVE",
+                "FRIENDLY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchIntentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeIntents"
+        ]
+      }
+    },
+    "/me/intents/direct": {
+      "post": {
+        "operationId": "MeIntentsController_createDirect",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDirectIntentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchIntentItemResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeIntents"
+        ]
+      }
+    },
+    "/me/intents/find-partner": {
+      "post": {
+        "operationId": "MeIntentsController_createFindPartner",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFindPartnerIntentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchIntentItemResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeIntents"
+        ]
+      }
+    },
+    "/me/intents/open": {
+      "post": {
+        "operationId": "MeIntentsController_createOpen",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOpenIntentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchIntentItemResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "MeIntents"
+        ]
+      }
+    },
+    "/me/notifications": {
+      "get": {
+        "deprecated": true,
+        "description": "Use GET /notifications for feed history or GET /notifications/inbox for actionable items.",
+        "operationId": "MeInboxController_listNotifications",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyNotificationsFeedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Legacy notifications feed endpoint (deprecated)",
+        "tags": [
+          "MeInbox"
+        ]
+      }
+    },
+    "/me/notifications/read-all": {
+      "post": {
+        "deprecated": true,
+        "operationId": "MeInboxController_markAllRead",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "",
+        "tags": [
+          "MeInbox"
+        ]
+      }
+    },
+    "/me/notifications/{id}/read": {
+      "post": {
+        "deprecated": true,
+        "operationId": "MeInboxController_markRead",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "",
+        "tags": [
+          "MeInbox"
+        ]
+      }
+    },
     "/me/profile": {
       "get": {
         "operationId": "MeProfileController_getProfile",
@@ -4130,6 +7626,32 @@
         },
         "tags": [
           "MeProfile"
+        ]
+      }
+    },
+    "/me/reputation": {
+      "get": {
+        "operationId": "MeReputationController_getMyReputation",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReputationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "endorsements"
         ]
       }
     },
@@ -4286,9 +7808,39 @@
         "parameters": [],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyNotificationsFeedResponseDto"
+                }
+              }
+            },
             "description": ""
           }
         },
+        "summary": "General notifications feed (history). For actionable notifications, use /notifications/inbox.",
+        "tags": [
+          "UserNotifications"
+        ]
+      }
+    },
+    "/notifications/inbox": {
+      "get": {
+        "operationId": "UserNotificationsController_inbox",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonicalNotificationsInboxResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Canonical actions inbox (invites, challenges, pending confirmations) with action metadata.",
         "tags": [
           "UserNotifications"
         ]
@@ -4323,6 +7875,27 @@
       }
     },
     "/notifications/{id}/read": {
+      "patch": {
+        "operationId": "UserNotificationsController_markReadPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserNotifications"
+        ]
+      },
       "post": {
         "operationId": "UserNotificationsController_markRead",
         "parameters": [
@@ -4793,6 +8366,53 @@
         ]
       }
     },
+    "/players/{userId}/strengths/summary": {
+      "get": {
+        "operationId": "PlayerStrengthsController_getSummary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rolling window in days",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 3650,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrengthSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "endorsements"
+        ]
+      }
+    },
     "/public/clubs": {
       "get": {
         "operationId": "PublicClubsController_findAll",
@@ -5048,7 +8668,7 @@
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5071,7 +8691,7 @@
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5094,7 +8714,7 @@
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5117,7 +8737,7 @@
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5140,7 +8760,7 @@
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5159,11 +8779,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "User avatar media asset"
+          },
+          "204": {
+            "description": "No avatar available for this user"
           }
         },
         "tags": [
-          "PublicMedia"
+          "public-media"
         ]
       }
     },
@@ -5317,6 +8940,123 @@
         },
         "tags": [
           "PublicReservations"
+        ]
+      }
+    },
+    "/rankings": {
+      "get": {
+        "operationId": "RankingsController_getRankings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/rankings/me/progress": {
+      "get": {
+        "operationId": "RankingsController_getMyProgress",
+        "parameters": [
+          {
+            "description": "Category filter. Supports 7, 7ma, 6ta.",
+            "examples": {
+              "canonical": {
+                "value": "6ta"
+              },
+              "numeric": {
+                "value": "7"
+              },
+              "ordinal": {
+                "value": "7ma"
+              }
+            },
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "COUNTRY",
+                "PROVINCE",
+                "CITY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankingEligibilityProgressResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/rankings/scopes": {
+      "get": {
+        "operationId": "RankingsController_getScopes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/rankings/snapshots/run": {
+      "post": {
+        "operationId": "RankingsController_runSnapshots",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
         ]
       }
     },
