@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { MatchType } from '../enums/match-type.enum';
+import { ScoreDto, SetDto } from './score.dto';
 
 export class LeaguePendingConfirmationTeamDto {
   @ApiProperty({ format: 'uuid' })
@@ -18,15 +19,30 @@ export class LeaguePendingConfirmationTeamsDto {
   teamB!: LeaguePendingConfirmationTeamDto;
 }
 
-export class LeaguePendingConfirmationSetDto {
-  @ApiProperty({ example: 6 })
-  a!: number;
+export class LeaguePendingConfirmationParticipantDto {
+  @ApiProperty({ format: 'uuid' })
+  userId!: string;
 
-  @ApiProperty({ example: 4 })
-  b!: number;
+  @ApiProperty({
+    description: 'Display name for UI labels. Never a raw email.',
+    example: 'Lucas Fasolato',
+  })
+  displayName!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Optional avatar URL if available',
+  })
+  avatarUrl?: string | null;
 }
 
 export class LeaguePendingConfirmationItemDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Canonical pending confirmation id.',
+  })
+  id!: string;
+
   @ApiProperty({ format: 'uuid' })
   confirmationId!: string;
 
@@ -58,8 +74,22 @@ export class LeaguePendingConfirmationItemDto {
   @ApiProperty({ type: LeaguePendingConfirmationTeamsDto })
   teams!: LeaguePendingConfirmationTeamsDto;
 
-  @ApiProperty({ type: [LeaguePendingConfirmationSetDto] })
-  sets!: LeaguePendingConfirmationSetDto[];
+  @ApiProperty({
+    type: [LeaguePendingConfirmationParticipantDto],
+    description:
+      'Resolved participants in display order (teamA then teamB), for stable UI rendering.',
+  })
+  participants!: LeaguePendingConfirmationParticipantDto[];
+
+  @ApiProperty({ type: ScoreDto })
+  score!: ScoreDto;
+
+  @ApiPropertyOptional({
+    type: [SetDto],
+    description: 'Legacy field kept for backward compatibility. Use score.sets.',
+    deprecated: true,
+  })
+  sets?: SetDto[];
 }
 
 export class LeaguePendingConfirmationsResponseDto {
@@ -77,6 +107,9 @@ export class LeaguePendingConfirmationActionResponseDto {
       'Final persisted status. Idempotent behavior: if already resolved, returns current final status.',
   })
   status!: 'CONFIRMED' | 'REJECTED';
+
+  @ApiProperty({ format: 'uuid' })
+  confirmationId!: string;
 
   @ApiProperty({ format: 'uuid' })
   matchId!: string;

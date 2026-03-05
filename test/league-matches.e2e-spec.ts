@@ -83,6 +83,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
   beforeEach(async () => {
     matchesService = {
+      listLeagueMatches: jest.fn(),
       reportFromReservation: jest.fn(),
       reportManual: jest.fn(),
       getEligibleReservations: jest.fn(),
@@ -366,17 +367,28 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       matchesService.getLeaguePendingConfirmations!.mockResolvedValue({
         items: [
           {
+            id: MATCH_ID,
+            confirmationId: MATCH_ID,
             matchId: MATCH_ID,
-            challengeId: 'challenge-1',
             leagueId: LEAGUE_ID,
-            status: 'pending_confirm',
-            playedAt: '2025-06-10T10:00:00.000Z',
-            score: { sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }] },
-            winnerTeam: 'A',
-            teamA: { player1: { userId: 'u1', displayName: 'A1' }, player2: null },
-            teamB: { player1: { userId: 'u2', displayName: 'B1' }, player2: null },
-            reportedBy: { userId: 'u1', displayName: 'A1' },
-            canConfirm: true,
+            reportedByUserId: FAKE_MEMBER.userId,
+            createdAt: '2025-06-10T10:00:00.000Z',
+            expiresAt: null,
+            matchType: 'COMPETITIVE',
+            impactRanking: true,
+            teams: {
+              teamA: { player1Id: 'u1', player2Id: null },
+              teamB: { player1Id: 'u2', player2Id: null },
+            },
+            participants: [
+              { userId: 'u1', displayName: 'A1', avatarUrl: null },
+              { userId: 'u2', displayName: 'B1', avatarUrl: null },
+            ],
+            score: {
+              summary: '6-4 6-2',
+              sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
+            },
+            sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
           },
         ],
         nextCursor: null,
@@ -387,7 +399,8 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         .expect(200);
 
       expect(res.body.items).toHaveLength(1);
-      expect(res.body.items[0].canConfirm).toBe(true);
+      expect(res.body.items[0].score.summary).toBe('6-4 6-2');
+      expect(res.body.items[0].participants[0].displayName).toBe('A1');
       expect(matchesService.getLeaguePendingConfirmations).toHaveBeenCalledWith(
         FAKE_MEMBER.userId,
         LEAGUE_ID,
@@ -396,10 +409,61 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     });
   });
 
+  describe('GET /leagues/:leagueId/matches', () => {
+    it('returns stable teams, participants and score summary', async () => {
+      matchesService.listLeagueMatches!.mockResolvedValue([
+        {
+          id: MATCH_ID,
+          leagueId: LEAGUE_ID,
+          challengeId: 'challenge-1',
+          matchType: 'COMPETITIVE',
+          impactRanking: true,
+          status: 'confirmed',
+          scheduledAt: null,
+          playedAt: '2025-06-10T10:00:00.000Z',
+          teams: {
+            teamA: { player1Id: 'u1', player2Id: 'u3' },
+            teamB: { player1Id: 'u2', player2Id: 'u4' },
+          },
+          participants: [
+            { userId: 'u1', displayName: 'Lucas', avatarUrl: null },
+            { userId: 'u3', displayName: 'Emi', avatarUrl: null },
+            { userId: 'u2', displayName: 'Juan', avatarUrl: null },
+            { userId: 'u4', displayName: 'Pedro', avatarUrl: null },
+          ],
+          score: {
+            summary: '6-4 6-2',
+            sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
+          },
+          teamA1Id: 'u1',
+          teamA2Id: 'u3',
+          teamB1Id: 'u2',
+          teamB2Id: 'u4',
+          createdAt: '2025-06-10T11:00:00.000Z',
+          updatedAt: '2025-06-10T12:00:00.000Z',
+        },
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/matches`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].teams.teamA.player1Id).toBe('u1');
+      expect(res.body[0].participants[0].displayName).toBe('Lucas');
+      expect(res.body[0].score.summary).toBe('6-4 6-2');
+      expect(matchesService.listLeagueMatches).toHaveBeenCalledWith(
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+      );
+    });
+  });
+
   describe('POST/PATCH /leagues/:leagueId/pending-confirmations/:id/{confirm|reject}', () => {
     it('uses the same service method for confirm with POST and PATCH', async () => {
       matchesService.confirmLeaguePendingConfirmation!.mockResolvedValue({
         status: 'CONFIRMED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
         recomputeTriggered: true,
       });
@@ -415,11 +479,13 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
       expect(postRes.body).toEqual({
         status: 'CONFIRMED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
         recomputeTriggered: true,
       });
       expect(patchRes.body).toEqual({
         status: 'CONFIRMED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
         recomputeTriggered: true,
       });
@@ -434,6 +500,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     it('uses the same service method for reject with POST and PATCH', async () => {
       matchesService.rejectLeaguePendingConfirmation!.mockResolvedValue({
         status: 'REJECTED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
       });
 
@@ -450,10 +517,12 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
       expect(postRes.body).toEqual({
         status: 'REJECTED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
       });
       expect(patchRes.body).toEqual({
         status: 'REJECTED',
+        confirmationId: MATCH_ID,
         matchId: MATCH_ID,
       });
       expect(

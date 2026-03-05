@@ -38,6 +38,7 @@ import {
   RejectLeaguePendingConfirmationDto,
   RejectLeaguePendingConfirmationResponseDto,
 } from '../dto/league-pending-confirmations.dto';
+import { LeagueMatchResponseDto } from '../dto/league-match-response.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -51,6 +52,7 @@ export class LeagueMatchesController {
   @Get(':leagueId/matches')
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   @Header('Pragma', 'no-cache')
+  @ApiOkResponse({ type: LeagueMatchResponseDto, isArray: true })
   listLeagueMatches(
     @Req() req: Request,
     @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,

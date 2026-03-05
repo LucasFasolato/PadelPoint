@@ -1466,11 +1466,106 @@ describe('MatchesService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toEqual(
         expect.objectContaining({
+          id: 'match-pending-1',
           confirmationId: 'match-pending-1',
           matchId: 'match-pending-1',
           leagueId: 'league-1',
+          participants: [
+            expect.objectContaining({
+              userId: USER_A1,
+              displayName: 'A1',
+            }),
+            expect.objectContaining({
+              userId: USER_B1,
+              displayName: 'B1',
+            }),
+          ],
+          score: expect.objectContaining({
+            summary: '6-4',
+            sets: [{ a: 6, b: 4 }],
+          }),
         }),
       );
+    });
+
+    it('parses scoreSummary from activity payload when legacy rows have no set columns', async () => {
+      const dsMemberRepo = createMockRepo<LeagueMember>();
+      dsMemberRepo.findOne.mockResolvedValue({
+        id: 'm1',
+        leagueId: 'league-1',
+        userId: USER_B1,
+      });
+      const dsActivityRepo = createMockRepo<any>();
+      dsActivityRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            entityId: 'match-pending-legacy',
+            payload: { scoreSummary: '6-3 / 6-4' },
+          },
+        ]),
+      } as any);
+
+      dataSource.getRepository.mockImplementation((entity: any) => {
+        if (entity === LeagueMember) return dsMemberRepo;
+        if ((entity as { name?: string }).name === 'LeagueActivity') {
+          return dsActivityRepo;
+        }
+        return createMockRepo();
+      });
+
+      const qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            matchId: 'match-pending-legacy',
+            leagueId: 'league-1',
+            matchType: MatchType.COMPETITIVE,
+            createdAt: new Date().toISOString(),
+            sortDate: new Date().toISOString(),
+            impactRanking: true,
+            reportedByUserId: USER_A1,
+            teamASet1: null,
+            teamBSet1: null,
+            teamASet2: null,
+            teamBSet2: null,
+            teamASet3: null,
+            teamBSet3: null,
+            teamA1Id: USER_A1,
+            teamA2Id: null,
+            teamB1Id: USER_B1,
+            teamB2Id: null,
+          },
+        ]),
+      };
+      matchRepo.createQueryBuilder.mockReturnValue(qb as any);
+      userRepo.find.mockResolvedValue([
+        { id: USER_A1, displayName: 'A1', email: 'a1@test.com' } as any,
+        { id: USER_B1, displayName: 'B1', email: 'b1@test.com' } as any,
+      ]);
+
+      const result = await service.getLeaguePendingConfirmations(USER_B1, 'league-1', {
+        limit: 10,
+      });
+
+      expect(result.items[0].score).toEqual({
+        summary: '6-3 / 6-4',
+        sets: [
+          { a: 6, b: 3 },
+          { a: 6, b: 4 },
+        ],
+      });
     });
   });
 
@@ -1501,6 +1596,7 @@ describe('MatchesService', () => {
 
       expect(result).toEqual({
         status: 'CONFIRMED',
+        confirmationId: 'match-1',
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
@@ -1532,6 +1628,7 @@ describe('MatchesService', () => {
 
       expect(result).toEqual({
         status: 'REJECTED',
+        confirmationId: 'match-1',
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
@@ -1563,6 +1660,7 @@ describe('MatchesService', () => {
 
       expect(result).toEqual({
         status: 'CONFIRMED',
+        confirmationId: 'match-1',
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
@@ -1594,9 +1692,59 @@ describe('MatchesService', () => {
 
       expect(result).toEqual({
         status: 'REJECTED',
+        confirmationId: 'match-1',
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('confirmLeaguePendingConfirmation confirms pending match and triggers standings recompute', async () => {
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+      } as LeagueMember);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            id: 'match-pending-1',
+            challengeId: 'challenge-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.PENDING_CONFIRM,
+            reportedByUserId: USER_A1,
+            confirmedByUserId: null,
+          }),
+        ),
+      } as any);
+      txChallengeRepo.findOne.mockResolvedValue(fakeChallenge());
+      txMatchRepo.save.mockImplementation(async (entity: MatchResult) => entity);
+
+      const result = await service.confirmLeaguePendingConfirmation(
+        USER_B1,
+        'league-1',
+        'match-pending-1',
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'CONFIRMED',
+          confirmationId: 'match-pending-1',
+          matchId: 'match-pending-1',
+        }),
+      );
+      expect(txMatchRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'match-pending-1',
+          status: MatchResultStatus.CONFIRMED,
+          confirmedByUserId: USER_B1,
+        }),
+      );
+      expect(leagueStandingsService.recomputeForMatch).toHaveBeenCalledWith(
+        expect.any(Object),
+        'match-pending-1',
+      );
     });
   });
 

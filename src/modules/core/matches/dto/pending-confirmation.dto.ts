@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MatchResultStatus, WinnerTeam } from '../entities/match-result.entity';
+import { ScoreDto } from './score.dto';
 
 export class PlayerRefDto {
   @ApiPropertyOptional()
@@ -15,19 +16,6 @@ export class TeamRefDto {
 
   @ApiPropertyOptional({ type: PlayerRefDto })
   player2: PlayerRefDto | null;
-}
-
-export class SetScoreDto {
-  @ApiProperty()
-  a: number;
-
-  @ApiProperty()
-  b: number;
-}
-
-export class ScoreDto {
-  @ApiProperty({ type: [SetScoreDto] })
-  sets: SetScoreDto[];
 }
 
 export class PendingConfirmationDto {

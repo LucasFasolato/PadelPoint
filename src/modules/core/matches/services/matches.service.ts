@@ -50,8 +50,10 @@ import { MatchType } from '../enums/match-type.enum';
 import { LeagueRole } from '../../leagues/enums/league-role.enum';
 import { LeagueActivityService } from '../../leagues/services/league-activity.service';
 import { LeagueActivityType } from '../../leagues/enums/league-activity-type.enum';
+import { LeagueActivity } from '../../leagues/entities/league-activity.entity';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
+import { buildScoreSummary, parseScoreSummary } from '../utils/score-summary';
 
 const TZ = 'America/Argentina/Cordoba';
 
@@ -117,7 +119,10 @@ type PendingConfirmationView = {
   impactRanking: boolean;
   status: MatchResultStatus;
   playedAt: string | null;
-  score: { sets: Array<{ a: number; b: number }> };
+  score: {
+    summary: string;
+    sets: Array<{ a: number; b: number; tbA?: number; tbB?: number }>;
+  };
   winnerTeam: WinnerTeam | null;
   teamA: { player1: PlayerRef; player2: PlayerRef | null };
   teamB: { player1: PlayerRef; player2: PlayerRef | null };
@@ -147,6 +152,7 @@ type LeaguePendingConfirmationRawRow = {
 };
 
 type LeaguePendingConfirmationItem = {
+  id: string;
   confirmationId: string;
   leagueId: string;
   matchId: string;
@@ -159,7 +165,16 @@ type LeaguePendingConfirmationItem = {
     teamA: { player1Id: string; player2Id?: string | null };
     teamB: { player1Id: string; player2Id?: string | null };
   };
-  sets: Array<{ a: number; b: number }>;
+  participants: Array<{
+    userId: string;
+    displayName: string;
+    avatarUrl?: string | null;
+  }>;
+  score: {
+    summary: string;
+    sets: Array<{ a: number; b: number; tbA?: number; tbB?: number }>;
+  };
+  sets: Array<{ a: number; b: number; tbA?: number; tbB?: number }>;
 };
 
 type LeaguePendingConfirmationFinalStatus = 'CONFIRMED' | 'REJECTED';
@@ -773,17 +788,143 @@ export class MatchesService {
     return normalized;
   }
 
-  private toLeagueMatchView(match: MatchResult) {
+  private extractSetScores(score: {
+    teamASet1: number | null;
+    teamBSet1: number | null;
+    teamASet2: number | null;
+    teamBSet2: number | null;
+    teamASet3: number | null;
+    teamBSet3: number | null;
+  }): Array<{ a: number; b: number }> {
     const sets: Array<{ a: number; b: number }> = [];
-    if (match.teamASet1 != null && match.teamBSet1 != null) {
-      sets.push({ a: match.teamASet1, b: match.teamBSet1 });
+    if (score.teamASet1 != null && score.teamBSet1 != null) {
+      sets.push({ a: score.teamASet1, b: score.teamBSet1 });
     }
-    if (match.teamASet2 != null && match.teamBSet2 != null) {
-      sets.push({ a: match.teamASet2, b: match.teamBSet2 });
+    if (score.teamASet2 != null && score.teamBSet2 != null) {
+      sets.push({ a: score.teamASet2, b: score.teamBSet2 });
     }
-    if (match.teamASet3 != null && match.teamBSet3 != null) {
-      sets.push({ a: match.teamASet3, b: match.teamBSet3 });
+    if (score.teamASet3 != null && score.teamBSet3 != null) {
+      sets.push({ a: score.teamASet3, b: score.teamBSet3 });
     }
+    return sets;
+  }
+
+  private getOrderedParticipantIds(input: Array<string | null | undefined>): string[] {
+    return [...new Set(input.filter((id): id is string => !!id))];
+  }
+
+  private async resolveUserDisplayNames(userIds: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(userIds.filter((id) => typeof id === 'string' && id.length > 0))];
+    if (unique.length === 0) return new Map();
+
+    const users = await this.userRepo.find({
+      where: { id: In(unique) },
+      select: ['id', 'displayName', 'email'],
+    });
+
+    const displayMap = new Map<string, string>();
+    for (const user of users) {
+      const display =
+        (user.displayName ?? '').trim() ||
+        (user.email ? user.email.split('@')[0]?.trim() : '') ||
+        'Jugador';
+      displayMap.set(user.id, display);
+    }
+    return displayMap;
+  }
+
+  private async resolveScoreSummaryByMatchIds(
+    matchIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueMatchIds = [...new Set(matchIds.filter(Boolean))];
+    if (uniqueMatchIds.length === 0) return new Map();
+
+    try {
+      const rows = await this.dataSource
+        .getRepository(LeagueActivity)
+        .createQueryBuilder('a')
+        .select('a."entityId"', 'entityId')
+        .addSelect('a.payload', 'payload')
+        .where('a.type = :type', { type: LeagueActivityType.MATCH_REPORTED })
+        .andWhere('a."entityId" IN (:...entityIds)', { entityIds: uniqueMatchIds })
+        .orderBy('a."createdAt"', 'DESC')
+        .getRawMany<{ entityId: string; payload: Record<string, unknown> | null }>();
+
+      const summaryByMatchId = new Map<string, string>();
+      for (const row of rows) {
+        if (!row?.entityId || summaryByMatchId.has(row.entityId)) continue;
+        const scoreSummary = this.extractScoreSummaryFromPayload(row.payload);
+        if (scoreSummary) summaryByMatchId.set(row.entityId, scoreSummary);
+      }
+
+      return summaryByMatchId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown';
+      this.logger.warn(
+        `resolveScoreSummaryByMatchIds fallback without activity summaries: ${message}`,
+      );
+      return new Map();
+    }
+  }
+
+  private extractScoreSummaryFromPayload(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const summary = (payload as Record<string, unknown>).scoreSummary;
+    if (typeof summary !== 'string') return null;
+    const normalized = summary.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private buildScoreView(
+    score: {
+      teamASet1: number | null;
+      teamBSet1: number | null;
+      teamASet2: number | null;
+      teamBSet2: number | null;
+      teamASet3: number | null;
+      teamBSet3: number | null;
+    },
+    fallbackSummary?: string | null,
+  ): {
+    summary: string;
+    sets: Array<{ a: number; b: number; tbA?: number; tbB?: number }>;
+  } {
+    const setsFromColumns = this.extractSetScores(score);
+    const sets =
+      setsFromColumns.length > 0 ? setsFromColumns : parseScoreSummary(fallbackSummary);
+    const normalizedFallback = (fallbackSummary ?? '').trim();
+    const summary =
+      normalizedFallback.length > 0 ? normalizedFallback : buildScoreSummary(sets);
+
+    return { summary, sets };
+  }
+
+  private buildParticipantsView(
+    participantIds: string[],
+    displayMap: Map<string, string>,
+  ): Array<{ userId: string; displayName: string; avatarUrl: null }> {
+    return participantIds.map((participantId) => ({
+      userId: participantId,
+      displayName: displayMap.get(participantId) ?? 'Jugador',
+      avatarUrl: null,
+    }));
+  }
+
+  private toLeagueMatchView(
+    match: MatchResult,
+    displayMap: Map<string, string> = new Map(),
+    scoreSummaryFallback?: string | null,
+  ) {
+    const teamA1Id = match.challenge?.teamA1Id ?? null;
+    const teamA2Id = match.challenge?.teamA2Id ?? null;
+    const teamB1Id = match.challenge?.teamB1Id ?? null;
+    const teamB2Id = match.challenge?.teamB2Id ?? null;
+    const participants = this.buildParticipantsView(
+      this.getOrderedParticipantIds([teamA1Id, teamA2Id, teamB1Id, teamB2Id]),
+      displayMap,
+    );
+    const score = this.buildScoreView(match, scoreSummaryFallback);
+    const hasScore = score.summary.length > 0 || score.sets.length > 0;
 
     return {
       id: match.id,
@@ -794,11 +935,22 @@ export class MatchesService {
       status: match.status,
       scheduledAt: match.scheduledAt ? match.scheduledAt.toISOString() : null,
       playedAt: match.playedAt ? match.playedAt.toISOString() : null,
-      teamA1Id: match.challenge?.teamA1Id ?? null,
-      teamA2Id: match.challenge?.teamA2Id ?? null,
-      teamB1Id: match.challenge?.teamB1Id ?? null,
-      teamB2Id: match.challenge?.teamB2Id ?? null,
-      score: sets.length > 0 ? { sets } : null,
+      teams: {
+        teamA: {
+          player1Id: teamA1Id,
+          player2Id: teamA2Id,
+        },
+        teamB: {
+          player1Id: teamB1Id,
+          player2Id: teamB2Id,
+        },
+      },
+      participants,
+      teamA1Id,
+      teamA2Id,
+      teamB1Id,
+      teamB2Id,
+      score: hasScore ? score : null,
       createdAt: match.createdAt.toISOString(),
       updatedAt: match.updatedAt.toISOString(),
     };
@@ -1580,7 +1732,26 @@ export class MatchesService {
       .addOrderBy('m.id', 'DESC')
       .getMany();
 
-    return matches.map((m) => this.toLeagueMatchView(m));
+    const participantIds = matches.flatMap((match) =>
+      this.getOrderedParticipantIds([
+        match.challenge?.teamA1Id,
+        match.challenge?.teamA2Id,
+        match.challenge?.teamB1Id,
+        match.challenge?.teamB2Id,
+      ]),
+    );
+    const [displayMap, scoreSummaryByMatchId] = await Promise.all([
+      this.resolveUserDisplayNames(participantIds),
+      this.resolveScoreSummaryByMatchIds(matches.map((match) => match.id)),
+    ]);
+
+    return matches.map((match) =>
+      this.toLeagueMatchView(
+        match,
+        displayMap,
+        scoreSummaryByMatchId.get(match.id) ?? null,
+      ),
+    );
   }
 
   async getMyMatches(userId: string) {
@@ -1815,17 +1986,33 @@ export class MatchesService {
           })()
         : null;
 
+    const participantIds = pagedRows.flatMap((row) =>
+      this.getOrderedParticipantIds([
+        row.teamA1Id,
+        row.teamA2Id,
+        row.teamB1Id,
+        row.teamB2Id,
+      ]),
+    );
+    const [displayMap, scoreSummaryByMatchId] = await Promise.all([
+      this.resolveUserDisplayNames(participantIds),
+      this.resolveScoreSummaryByMatchIds(pagedRows.map((row) => row.matchId)),
+    ]);
+
     const items: LeaguePendingConfirmationItem[] = pagedRows.map((row) => {
-      const sets: Array<{ a: number; b: number }> = [];
-      if (row.teamASet1 != null && row.teamBSet1 != null) {
-        sets.push({ a: row.teamASet1, b: row.teamBSet1 });
-      }
-      if (row.teamASet2 != null && row.teamBSet2 != null) {
-        sets.push({ a: row.teamASet2, b: row.teamBSet2 });
-      }
-      if (row.teamASet3 != null && row.teamBSet3 != null) {
-        sets.push({ a: row.teamASet3, b: row.teamBSet3 });
-      }
+      const score = this.buildScoreView(
+        row,
+        scoreSummaryByMatchId.get(row.matchId) ?? null,
+      );
+      const participants = this.buildParticipantsView(
+        this.getOrderedParticipantIds([
+          row.teamA1Id,
+          row.teamA2Id,
+          row.teamB1Id,
+          row.teamB2Id,
+        ]),
+        displayMap,
+      );
 
       const matchType = this.normalizeMatchType(row.matchType ?? undefined);
       const impactRanking =
@@ -1834,6 +2021,7 @@ export class MatchesService {
           : this.impactRankingForMatchType(matchType);
 
       return {
+        id: row.matchId,
         confirmationId: row.matchId,
         leagueId: row.leagueId,
         matchId: row.matchId,
@@ -1853,7 +2041,9 @@ export class MatchesService {
             player2Id: row.teamB2Id ?? null,
           },
         },
-        sets,
+        participants,
+        score,
+        sets: score.sets,
       };
     });
 
@@ -1870,6 +2060,7 @@ export class MatchesService {
     confirmationId: string,
   ): Promise<{
     status: LeaguePendingConfirmationFinalStatus;
+    confirmationId: string;
     matchId: string;
     recomputeTriggered?: boolean;
   }> {
@@ -1909,12 +2100,14 @@ export class MatchesService {
       ) {
         return {
           status: 'CONFIRMED',
+          confirmationId: match.id,
           matchId: match.id,
         };
       }
       if (match.status === MatchResultStatus.REJECTED) {
         return {
           status: 'REJECTED',
+          confirmationId: match.id,
           matchId: match.id,
         };
       }
@@ -1976,6 +2169,7 @@ export class MatchesService {
 
       return {
         status: 'CONFIRMED',
+        confirmationId: match.id,
         matchId: match.id,
         recomputeTriggered,
       };
@@ -1989,6 +2183,7 @@ export class MatchesService {
     reason?: string,
   ): Promise<{
     status: LeaguePendingConfirmationFinalStatus;
+    confirmationId: string;
     matchId: string;
   }> {
     return this.dataSource.transaction(async (manager) => {
@@ -2027,12 +2222,14 @@ export class MatchesService {
       ) {
         return {
           status: 'CONFIRMED',
+          confirmationId: match.id,
           matchId: match.id,
         };
       }
       if (match.status === MatchResultStatus.REJECTED) {
         return {
           status: 'REJECTED',
+          confirmationId: match.id,
           matchId: match.id,
         };
       }
@@ -2084,7 +2281,11 @@ export class MatchesService {
         { participantIds: participants.all },
       );
 
-      return { status: 'REJECTED', matchId: match.id };
+      return {
+        status: 'REJECTED',
+        confirmationId: match.id,
+        matchId: match.id,
+      };
     });
   }
 
@@ -2899,13 +3100,7 @@ export class MatchesService {
 
     return items.map((m) => {
       const ch = challengeMap.get(m.challengeId ?? '');
-      const sets: Array<{ a: number; b: number }> = [];
-      if (m.teamASet1 != null && m.teamBSet1 != null)
-        sets.push({ a: m.teamASet1, b: m.teamBSet1 });
-      if (m.teamASet2 != null && m.teamBSet2 != null)
-        sets.push({ a: m.teamASet2, b: m.teamBSet2 });
-      if (m.teamASet3 != null && m.teamBSet3 != null)
-        sets.push({ a: m.teamASet3, b: m.teamBSet3 });
+      const score = this.buildScoreView(m);
 
       return {
         matchId: m.id,
@@ -2915,7 +3110,7 @@ export class MatchesService {
         impactRanking: this.shouldImpactRanking(m),
         status: m.status,
         playedAt: m.playedAt ? m.playedAt.toISOString() : null,
-        score: { sets },
+        score,
         winnerTeam: m.winnerTeam ?? null,
         teamA: {
           player1: resolvePlayer(ch?.teamA1Id),
