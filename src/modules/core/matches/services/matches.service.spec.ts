@@ -1386,6 +1386,7 @@ describe('MatchesService', () => {
 
       const qb = {
         innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
@@ -1418,6 +1419,7 @@ describe('MatchesService', () => {
 
       const qb = {
         innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
@@ -1464,11 +1466,137 @@ describe('MatchesService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toEqual(
         expect.objectContaining({
+          confirmationId: 'match-pending-1',
           matchId: 'match-pending-1',
           leagueId: 'league-1',
-          canConfirm: true,
         }),
       );
+    });
+  });
+
+  describe('league pending confirmations idempotency', () => {
+    it('confirmLeaguePendingConfirmation returns CONFIRMED when already confirmed', async () => {
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+      } as LeagueMember);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            id: 'match-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.CONFIRMED,
+          }),
+        ),
+      } as any);
+
+      const result = await service.confirmLeaguePendingConfirmation(
+        USER_B1,
+        'league-1',
+        'match-1',
+      );
+
+      expect(result).toEqual({
+        status: 'CONFIRMED',
+        matchId: 'match-1',
+      });
+      expect(txMatchRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('confirmLeaguePendingConfirmation returns REJECTED when already rejected', async () => {
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+      } as LeagueMember);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            id: 'match-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.REJECTED,
+          }),
+        ),
+      } as any);
+
+      const result = await service.confirmLeaguePendingConfirmation(
+        USER_B1,
+        'league-1',
+        'match-1',
+      );
+
+      expect(result).toEqual({
+        status: 'REJECTED',
+        matchId: 'match-1',
+      });
+      expect(txMatchRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejectLeaguePendingConfirmation returns CONFIRMED when already confirmed', async () => {
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+      } as LeagueMember);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            id: 'match-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.CONFIRMED,
+          }),
+        ),
+      } as any);
+
+      const result = await service.rejectLeaguePendingConfirmation(
+        USER_B1,
+        'league-1',
+        'match-1',
+      );
+
+      expect(result).toEqual({
+        status: 'CONFIRMED',
+        matchId: 'match-1',
+      });
+      expect(txMatchRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejectLeaguePendingConfirmation returns REJECTED when already rejected', async () => {
+      txMemberRepo.findOne.mockResolvedValue({
+        leagueId: 'league-1',
+        userId: USER_B1,
+      } as LeagueMember);
+      txMatchRepo.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(
+          fakeMatch({
+            id: 'match-1',
+            leagueId: 'league-1',
+            status: MatchResultStatus.REJECTED,
+          }),
+        ),
+      } as any);
+
+      const result = await service.rejectLeaguePendingConfirmation(
+        USER_B1,
+        'league-1',
+        'match-1',
+      );
+
+      expect(result).toEqual({
+        status: 'REJECTED',
+        matchId: 'match-1',
+      });
+      expect(txMatchRepo.save).not.toHaveBeenCalled();
     });
   });
 

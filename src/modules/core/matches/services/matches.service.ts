@@ -162,6 +162,8 @@ type LeaguePendingConfirmationItem = {
   sets: Array<{ a: number; b: number }>;
 };
 
+type LeaguePendingConfirmationFinalStatus = 'CONFIRMED' | 'REJECTED';
+
 type ParticipantIds = {
   teamA: string[];
   teamB: string[];
@@ -1867,7 +1869,7 @@ export class MatchesService {
     leagueId: string,
     confirmationId: string,
   ): Promise<{
-    status: 'CONFIRMED';
+    status: LeaguePendingConfirmationFinalStatus;
     matchId: string;
     recomputeTriggered?: boolean;
   }> {
@@ -1905,18 +1907,16 @@ export class MatchesService {
         match.status === MatchResultStatus.CONFIRMED ||
         match.status === MatchResultStatus.RESOLVED
       ) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_ALREADY_CONFIRMED',
-          message: 'This pending confirmation was already confirmed',
-        });
+        return {
+          status: 'CONFIRMED',
+          matchId: match.id,
+        };
       }
       if (match.status === MatchResultStatus.REJECTED) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_ALREADY_REJECTED',
-          message: 'This pending confirmation was already rejected',
-        });
+        return {
+          status: 'REJECTED',
+          matchId: match.id,
+        };
       }
       if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
         throw new ConflictException({
@@ -1987,7 +1987,10 @@ export class MatchesService {
     leagueId: string,
     confirmationId: string,
     reason?: string,
-  ): Promise<{ status: 'REJECTED' }> {
+  ): Promise<{
+    status: LeaguePendingConfirmationFinalStatus;
+    matchId: string;
+  }> {
     return this.dataSource.transaction(async (manager) => {
       this.assertLeagueIdRequired(leagueId);
 
@@ -2022,18 +2025,16 @@ export class MatchesService {
         match.status === MatchResultStatus.CONFIRMED ||
         match.status === MatchResultStatus.RESOLVED
       ) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_ALREADY_CONFIRMED',
-          message: 'This pending confirmation was already confirmed',
-        });
+        return {
+          status: 'CONFIRMED',
+          matchId: match.id,
+        };
       }
       if (match.status === MatchResultStatus.REJECTED) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_ALREADY_REJECTED',
-          message: 'This pending confirmation was already rejected',
-        });
+        return {
+          status: 'REJECTED',
+          matchId: match.id,
+        };
       }
       if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
         throw new ConflictException({
@@ -2083,7 +2084,7 @@ export class MatchesService {
         { participantIds: participants.all },
       );
 
-      return { status: 'REJECTED' };
+      return { status: 'REJECTED', matchId: match.id };
     });
   }
 

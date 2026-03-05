@@ -88,6 +88,8 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       getEligibleReservations: jest.fn(),
       submitLeagueMatchResult: jest.fn(),
       getLeaguePendingConfirmations: jest.fn(),
+      confirmLeaguePendingConfirmation: jest.fn(),
+      rejectLeaguePendingConfirmation: jest.fn(),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -390,6 +392,87 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         FAKE_MEMBER.userId,
         LEAGUE_ID,
         { cursor: undefined, limit: 10 },
+      );
+    });
+  });
+
+  describe('POST/PATCH /leagues/:leagueId/pending-confirmations/:id/{confirm|reject}', () => {
+    it('uses the same service method for confirm with POST and PATCH', async () => {
+      matchesService.confirmLeaguePendingConfirmation!.mockResolvedValue({
+        status: 'CONFIRMED',
+        matchId: MATCH_ID,
+        recomputeTriggered: true,
+      });
+
+      const postRes = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/confirm`)
+        .expect(201);
+      const patchRes = await request(app.getHttpServer())
+        .patch(
+          `/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/confirm`,
+        )
+        .expect(200);
+
+      expect(postRes.body).toEqual({
+        status: 'CONFIRMED',
+        matchId: MATCH_ID,
+        recomputeTriggered: true,
+      });
+      expect(patchRes.body).toEqual({
+        status: 'CONFIRMED',
+        matchId: MATCH_ID,
+        recomputeTriggered: true,
+      });
+      expect(
+        matchesService.confirmLeaguePendingConfirmation,
+      ).toHaveBeenNthCalledWith(1, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID);
+      expect(
+        matchesService.confirmLeaguePendingConfirmation,
+      ).toHaveBeenNthCalledWith(2, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID);
+    });
+
+    it('uses the same service method for reject with POST and PATCH', async () => {
+      matchesService.rejectLeaguePendingConfirmation!.mockResolvedValue({
+        status: 'REJECTED',
+        matchId: MATCH_ID,
+      });
+
+      const postRes = await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`)
+        .send({ reason: 'Wrong score' })
+        .expect(201);
+      const patchRes = await request(app.getHttpServer())
+        .patch(
+          `/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`,
+        )
+        .send({ reason: 'Wrong score' })
+        .expect(200);
+
+      expect(postRes.body).toEqual({
+        status: 'REJECTED',
+        matchId: MATCH_ID,
+      });
+      expect(patchRes.body).toEqual({
+        status: 'REJECTED',
+        matchId: MATCH_ID,
+      });
+      expect(
+        matchesService.rejectLeaguePendingConfirmation,
+      ).toHaveBeenNthCalledWith(
+        1,
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+        MATCH_ID,
+        'Wrong score',
+      );
+      expect(
+        matchesService.rejectLeaguePendingConfirmation,
+      ).toHaveBeenNthCalledWith(
+        2,
+        FAKE_MEMBER.userId,
+        LEAGUE_ID,
+        MATCH_ID,
+        'Wrong score',
       );
     });
   });

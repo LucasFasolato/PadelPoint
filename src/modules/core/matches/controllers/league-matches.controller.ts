@@ -28,6 +28,7 @@ import {
   ApiBody,
   ApiConflictResponse,
   ApiOkResponse,
+  ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query.dto';
@@ -79,14 +80,98 @@ export class LeagueMatchesController {
   }
 
   @Post(':leagueId/pending-confirmations/:confirmationId/confirm')
+  @ApiOperation({
+    summary: 'Confirm league pending confirmation (canonical)',
+  })
   @ApiOkResponse({ type: ConfirmLeaguePendingConfirmationResponseDto })
   @ApiConflictResponse({
-    description: 'Pending confirmation already resolved or no longer pending',
+    description: 'Pending confirmation is not in a confirmable state',
   })
   confirmLeaguePendingConfirmation(
     @Req() req: Request,
     @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
     @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
+    confirmationId: string,
+  ) {
+    return this.confirmLeaguePendingConfirmationAction(
+      req,
+      leagueId,
+      confirmationId,
+    );
+  }
+
+  @Patch(':leagueId/pending-confirmations/:confirmationId/confirm')
+  @ApiOperation({
+    summary: 'Confirm league pending confirmation (compat PATCH alias)',
+    deprecated: true,
+  })
+  @ApiOkResponse({ type: ConfirmLeaguePendingConfirmationResponseDto })
+  @ApiConflictResponse({
+    description: 'Pending confirmation is not in a confirmable state',
+  })
+  confirmLeaguePendingConfirmationPatch(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
+    confirmationId: string,
+  ) {
+    return this.confirmLeaguePendingConfirmationAction(
+      req,
+      leagueId,
+      confirmationId,
+    );
+  }
+
+  @Post(':leagueId/pending-confirmations/:confirmationId/reject')
+  @ApiOperation({
+    summary: 'Reject league pending confirmation (canonical)',
+  })
+  @ApiOkResponse({ type: RejectLeaguePendingConfirmationResponseDto })
+  @ApiConflictResponse({
+    description: 'Pending confirmation is not in a rejectable state',
+  })
+  rejectLeaguePendingConfirmation(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
+    confirmationId: string,
+    @Body() dto: RejectLeaguePendingConfirmationDto,
+  ) {
+    return this.rejectLeaguePendingConfirmationAction(
+      req,
+      leagueId,
+      confirmationId,
+      dto,
+    );
+  }
+
+  @Patch(':leagueId/pending-confirmations/:confirmationId/reject')
+  @ApiOperation({
+    summary: 'Reject league pending confirmation (compat PATCH alias)',
+    deprecated: true,
+  })
+  @ApiOkResponse({ type: RejectLeaguePendingConfirmationResponseDto })
+  @ApiConflictResponse({
+    description: 'Pending confirmation is not in a rejectable state',
+  })
+  rejectLeaguePendingConfirmationPatch(
+    @Req() req: Request,
+    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
+    @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
+    confirmationId: string,
+    @Body() dto: RejectLeaguePendingConfirmationDto,
+  ) {
+    return this.rejectLeaguePendingConfirmationAction(
+      req,
+      leagueId,
+      confirmationId,
+      dto,
+    );
+  }
+
+  private confirmLeaguePendingConfirmationAction(
+    req: Request,
+    leagueId: string,
     confirmationId: string,
   ) {
     const user = req.user as AuthUser;
@@ -97,17 +182,11 @@ export class LeagueMatchesController {
     );
   }
 
-  @Post(':leagueId/pending-confirmations/:confirmationId/reject')
-  @ApiOkResponse({ type: RejectLeaguePendingConfirmationResponseDto })
-  @ApiConflictResponse({
-    description: 'Pending confirmation already resolved or no longer pending',
-  })
-  rejectLeaguePendingConfirmation(
-    @Req() req: Request,
-    @Param('leagueId', new ParseRequiredUuidPipe('leagueId')) leagueId: string,
-    @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
+  private rejectLeaguePendingConfirmationAction(
+    req: Request,
+    leagueId: string,
     confirmationId: string,
-    @Body() dto: RejectLeaguePendingConfirmationDto,
+    dto: RejectLeaguePendingConfirmationDto,
   ) {
     const user = req.user as AuthUser;
     return this.matchesService.rejectLeaguePendingConfirmation(

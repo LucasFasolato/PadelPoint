@@ -70,13 +70,13 @@ export class LeaguePendingConfirmationsResponseDto {
   nextCursor?: string | null;
 }
 
-export class ConfirmLeaguePendingConfirmationResponseDto {
+export class LeaguePendingConfirmationActionResponseDto {
   @ApiProperty({
-    enum: ['CONFIRMED'],
+    enum: ['CONFIRMED', 'REJECTED'],
     description:
-      'V1 rule: a single opponent confirmation is enough to finalize the match',
+      'Final persisted status. Idempotent behavior: if already resolved, returns current final status.',
   })
-  status!: 'CONFIRMED';
+  status!: 'CONFIRMED' | 'REJECTED';
 
   @ApiProperty({ format: 'uuid' })
   matchId!: string;
@@ -88,6 +88,8 @@ export class ConfirmLeaguePendingConfirmationResponseDto {
   recomputeTriggered?: boolean;
 }
 
+export class ConfirmLeaguePendingConfirmationResponseDto extends LeaguePendingConfirmationActionResponseDto {}
+
 export class RejectLeaguePendingConfirmationDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -96,7 +98,4 @@ export class RejectLeaguePendingConfirmationDto {
   reason?: string;
 }
 
-export class RejectLeaguePendingConfirmationResponseDto {
-  @ApiProperty({ enum: ['REJECTED'] })
-  status!: 'REJECTED';
-}
+export class RejectLeaguePendingConfirmationResponseDto extends LeaguePendingConfirmationActionResponseDto {}
