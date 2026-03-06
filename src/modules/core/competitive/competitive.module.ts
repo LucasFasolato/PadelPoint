@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CompetitiveController } from './controllers/competitive.controller';
+import { CompetitiveOnboardingCompatController } from './controllers/competitive-onboarding-compat.controller';
 import { CompetitiveService } from './services/competitive.service';
 import { CompetitiveProfile } from './entities/competitive-profile.entity';
 import { EloHistory } from './entities/elo-history.entity';
@@ -34,7 +35,7 @@ import { CityRequiredGuard } from '@common/guards/city-required.guard';
       City,
     ]),
   ],
-  controllers: [CompetitiveController],
+  controllers: [CompetitiveController, CompetitiveOnboardingCompatController],
   providers: [CompetitiveService, EloService, CityRequiredGuard],
   exports: [CompetitiveService, EloService],
 })
