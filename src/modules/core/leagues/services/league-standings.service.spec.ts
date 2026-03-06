@@ -1,6 +1,7 @@
 import { EntityManager, Repository } from 'typeorm';
 import { LeagueStandingsService } from './league-standings.service';
 import { League } from '../entities/league.entity';
+import { LeagueStandingsCache } from '../entities/league-standings-cache.entity';
 import { LeagueMember } from '../entities/league-member.entity';
 import { LeagueStandingsSnapshot } from '../entities/league-standings-snapshot.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
@@ -58,6 +59,7 @@ function fakeMember(
 }
 
 function fakeMatchResult(opts: {
+  leagueId?: string;
   teamA1: string;
   teamA2: string;
   teamB1: string;
@@ -65,6 +67,7 @@ function fakeMatchResult(opts: {
   winner: 'A' | 'B';
   playedAt: string;
   sets?: { a: number; b: number }[];
+  impactRanking?: boolean;
 }) {
   const sets = opts.sets ?? [
     { a: 6, b: 3 },
@@ -72,7 +75,9 @@ function fakeMatchResult(opts: {
   ];
   return {
     id: `match-${Math.random().toString(36).slice(2, 8)}`,
+    leagueId: opts.leagueId ?? 'league-1',
     status: MatchResultStatus.CONFIRMED,
+    impactRanking: opts.impactRanking ?? true,
     winnerTeam: opts.winner === 'A' ? WinnerTeam.A : WinnerTeam.B,
     playedAt: new Date(opts.playedAt),
     teamASet1: sets[0]?.a ?? 0,
@@ -99,6 +104,7 @@ function createMockManager(data: {
 }): EntityManager {
   const savedMembers: LeagueMember[] = [];
   const snapshots: Array<Record<string, unknown>> = [];
+  const cacheRows: Array<Record<string, unknown>> = [];
 
   const getRepository = jest.fn().mockImplementation((entity: any) => {
     const entityName =
@@ -190,12 +196,41 @@ function createMockManager(data: {
       };
     }
 
+    if (entity === LeagueStandingsCache || entityName === 'LeagueStandingsCache') {
+      return {
+        delete: jest.fn().mockImplementation(async ({ leagueId }: { leagueId: string }) => {
+          for (let index = cacheRows.length - 1; index >= 0; index--) {
+            if (cacheRows[index].leagueId === leagueId) {
+              cacheRows.splice(index, 1);
+            }
+          }
+          return { affected: 0 };
+        }),
+        create: jest
+          .fn()
+          .mockImplementation((input: Record<string, unknown>) => input),
+        save: jest.fn().mockImplementation(async (items: Record<string, unknown>[]) => {
+          const arr = Array.isArray(items) ? items : [items];
+          for (const item of arr) {
+            cacheRows.push({
+              id: `cache-${cacheRows.length + 1}`,
+              updatedAt: new Date(),
+              ...item,
+            });
+          }
+          return arr;
+        }),
+      };
+    }
+
     return {};
   });
 
   return {
     getRepository,
     query: jest.fn().mockResolvedValue(undefined),
+    __snapshots: snapshots,
+    __cacheRows: cacheRows,
   } as unknown as EntityManager;
 }
 
@@ -222,6 +257,7 @@ describe('LeagueStandingsService', () => {
     service = new LeagueStandingsService(
       {} as Repository<League>,
       {} as Repository<LeagueMember>,
+      {} as any,
       {} as any,
       {} as any,
       noopUserRepo,
@@ -637,47 +673,215 @@ describe('LeagueStandingsService', () => {
     });
   });
 
-  describe('getStandingsWithMovement — displayName fallback', () => {
-    it('returns "Jugador {position}" when user is not found in userRepo', async () => {
-      const snapshotRow = {
-        userId: uid(1),
-        points: 6,
-        wins: 2,
-        losses: 0,
-        draws: 0,
-        setsDiff: 4,
-        gamesDiff: 6,
-        position: 1,
-      };
-
-      const fakeSnapshot = {
-        id: 'snap-1',
-        leagueId: 'league-1',
-        version: 1,
-        computedAt: new Date('2025-06-20T12:00:00.000Z'),
-        rows: [snapshotRow],
-      };
-
-      // snapshotRepo QBmock: first .getOne() returns the latest snapshot,
-      // second .getOne() (previous) returns null
-      let getOneCallCount = 0;
-      const makeQb = () => ({
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        addOrderBy: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockImplementation(() => {
-          getOneCallCount++;
-          // First call: return latest snapshot; second call: no previous snapshot
-          return Promise.resolve(getOneCallCount === 1 ? fakeSnapshot : null);
+  describe('standings cache read model', () => {
+    it('persists snapshot history and current cache on recompute', async () => {
+      const league = fakeLeague();
+      const members = [
+        fakeMember(league.id, uid(1)),
+        fakeMember(league.id, uid(2)),
+        fakeMember(league.id, uid(3)),
+        fakeMember(league.id, uid(4)),
+      ];
+      const matches = [
+        fakeMatchResult({
+          leagueId: league.id,
+          teamA1: uid(1),
+          teamA2: uid(2),
+          teamB1: uid(3),
+          teamB2: uid(4),
+          winner: 'A',
+          playedAt: '2025-06-10',
         }),
+      ];
+      const telemetry = { track: jest.fn() } as any;
+      const testService = new LeagueStandingsService(
+        {} as Repository<League>,
+        {} as Repository<LeagueMember>,
+        {} as any,
+        {} as any,
+        {} as any,
+        { find: jest.fn().mockResolvedValue([]) } as any,
+        { create: jest.fn().mockResolvedValue(undefined) } as any,
+        {
+          hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
+          create: jest.fn().mockResolvedValue(undefined),
+        } as any,
+        telemetry,
+      );
+      const manager = createMockManager({ league, members, matches }) as any;
+
+      await testService.recomputeLeague(manager, league.id, {
+        requestId: 'req-snapshot-1',
       });
 
-      const mockSnapshotRepo = {
-        createQueryBuilder: jest.fn().mockImplementation(() => makeQb()),
+      expect(manager.__snapshots).toHaveLength(1);
+      expect(manager.__cacheRows).toHaveLength(4);
+      expect(manager.__cacheRows[0]).toEqual(
+        expect.objectContaining({
+          leagueId: league.id,
+          snapshotVersion: 1,
+          played: expect.any(Number),
+        }),
+      );
+      expect(telemetry.track).toHaveBeenCalledWith(
+        'league_standings_snapshot_persisted',
+        expect.objectContaining({
+          requestId: 'req-snapshot-1',
+          leagueId: league.id,
+          totalRows: 4,
+          snapshotVersion: 1,
+          outcome: 'SUCCESS',
+        }),
+      );
+    });
+
+    it('uses standings cache when present without recompute', async () => {
+      const mockCacheRepo = {
+        find: jest.fn().mockResolvedValue([
+          {
+            userId: uid(1),
+            leagueId: 'league-1',
+            position: 1,
+            played: 2,
+            wins: 2,
+            losses: 0,
+            draws: 0,
+            points: 6,
+            setsDiff: 4,
+            gamesDiff: 8,
+            lastWinAt: new Date('2025-06-20T12:00:00.000Z'),
+            delta: 1,
+            oldPosition: 2,
+            movementType: 'UP',
+            snapshotVersion: 3,
+            snapshotComputedAt: new Date('2025-06-20T12:00:00.000Z'),
+            updatedAt: new Date('2025-06-20T12:00:00.000Z'),
+          },
+        ]),
+      } as any;
+      const testService = new LeagueStandingsService(
+        {} as Repository<League>,
+        {} as Repository<LeagueMember>,
+        {} as any,
+        mockCacheRepo,
+        { manager: { transaction: jest.fn() } } as any,
+        {
+          find: jest.fn().mockResolvedValue([
+            { id: uid(1), displayName: 'Player One', email: null },
+          ]),
+        } as any,
+        { create: jest.fn().mockResolvedValue(undefined) } as any,
+        {
+          hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
+          create: jest.fn(),
+        } as any,
+        { track: jest.fn() } as any,
+      );
+      const recomputeSpy = jest.spyOn(testService, 'recomputeLeague');
+
+      const result = await testService.getStandingsWithMovement('league-1');
+
+      expect(recomputeSpy).not.toHaveBeenCalled();
+      expect(result.snapshotVersion).toBe(3);
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({
+          userId: uid(1),
+          displayName: 'Player One',
+          delta: 1,
+          oldPosition: 2,
+          movementType: 'UP',
+        }),
+      );
+      expect(result.movement[uid(1)]).toEqual({ delta: 1 });
+    });
+
+    it('falls back to recompute when standings cache is missing', async () => {
+      const mockCacheRepo = {
+        find: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              userId: uid(1),
+              leagueId: 'league-1',
+              position: 1,
+              played: 1,
+              wins: 1,
+              losses: 0,
+              draws: 0,
+              points: 3,
+              setsDiff: 2,
+              gamesDiff: 5,
+              lastWinAt: null,
+              delta: 0,
+              oldPosition: 1,
+              movementType: 'SAME',
+              snapshotVersion: 1,
+              snapshotComputedAt: new Date('2025-06-21T12:00:00.000Z'),
+              updatedAt: new Date('2025-06-21T12:00:00.000Z'),
+            },
+          ]),
+      } as any;
+      const transaction = jest.fn().mockImplementation(async (callback) => {
+        await callback({} as EntityManager);
+      });
+      const testService = new LeagueStandingsService(
+        {} as Repository<League>,
+        {} as Repository<LeagueMember>,
+        {} as any,
+        mockCacheRepo,
+        { manager: { transaction } } as any,
+        {
+          find: jest.fn().mockResolvedValue([
+            { id: uid(1), displayName: 'Player One', email: null },
+          ]),
+        } as any,
+        { create: jest.fn().mockResolvedValue(undefined) } as any,
+        {
+          hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
+          create: jest.fn(),
+        } as any,
+        { track: jest.fn() } as any,
+      );
+      const recomputeSpy = jest
+        .spyOn(testService, 'recomputeLeague')
+        .mockResolvedValue([]);
+
+      const result = await testService.getStandingsWithMovement('league-1');
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(recomputeSpy).toHaveBeenCalledTimes(1);
+      expect(result.rows).toHaveLength(1);
+      expect(result.snapshotVersion).toBe(1);
+    });
+  });
+
+  describe('getStandingsWithMovement fallback display name', () => {
+    it('returns "Jugador {position}" when user is not found in userRepo', async () => {
+      const mockCacheRepo = {
+        find: jest.fn().mockResolvedValue([
+          {
+            userId: uid(1),
+            leagueId: 'league-1',
+            position: 1,
+            played: 2,
+            wins: 2,
+            losses: 0,
+            draws: 0,
+            points: 6,
+            setsDiff: 4,
+            gamesDiff: 6,
+            lastWinAt: null,
+            delta: 0,
+            oldPosition: 1,
+            movementType: 'SAME',
+            snapshotVersion: 1,
+            snapshotComputedAt: new Date('2025-06-20T12:00:00.000Z'),
+            updatedAt: new Date('2025-06-20T12:00:00.000Z'),
+          },
+        ]),
       } as any;
 
-      // userRepo returns empty → user not found → must use positional fallback
       const emptyUserRepo = {
         find: jest.fn().mockResolvedValue([]),
       } as any;
@@ -686,7 +890,8 @@ describe('LeagueStandingsService', () => {
         {} as Repository<League>,
         {} as Repository<LeagueMember>,
         {} as any,
-        mockSnapshotRepo,
+        mockCacheRepo,
+        { manager: { transaction: jest.fn() } } as any,
         emptyUserRepo,
         { create: jest.fn().mockResolvedValue(undefined) } as any,
         {
@@ -703,3 +908,4 @@ describe('LeagueStandingsService', () => {
     });
   });
 });
+

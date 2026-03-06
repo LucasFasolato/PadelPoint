@@ -46,6 +46,18 @@ export class StandingsWithMovementDto {
   @ApiPropertyOptional({ description: 'ISO 8601 timestamp of the last computed snapshot; null if no snapshot yet' })
   computedAt: string | null;
 
+  @ApiPropertyOptional({
+    description:
+      'Current standings read-model version; additive metadata for clients that want cache freshness.',
+  })
+  snapshotVersion?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'ISO 8601 timestamp of the latest standings cache row update.',
+  })
+  lastUpdatedAt?: string | null;
+
   @ApiProperty({ type: [StandingsRowDto] })
   rows: StandingsRowDto[];
 

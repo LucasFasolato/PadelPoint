@@ -15,7 +15,7 @@ Scope:
 
 Constraints honored by this audit:
 
-- No underlying table changes
+- Storage changes are additive only
 - Existing API contracts remain backward compatible
 - Legacy `mode`/`status` fields remain; normalized `modeKey`/`statusKey` are additive
 
@@ -53,7 +53,18 @@ Constraints honored by this audit:
   - Unique (`leagueId`, `version`)
 - Row payload includes ranking metrics and movement metadata (`delta`, `oldPosition`, `movementType`) when available
 
-5. `league_activity` (`LeagueActivity`)
+5. `league_standings_cache` (`LeagueStandingsCache`)
+
+- Purpose:
+  - Persisted current read model for fast standings reads
+- Key fields:
+  - `id`, `leagueId`, `userId`, `position`, `played`, `wins`, `losses`, `draws`, `points`, `setsDiff`, `gamesDiff`, `lastWinAt`, `delta`, `oldPosition`, `movementType`, `snapshotVersion`, `snapshotComputedAt`, `updatedAt`
+- Constraints / indexes:
+  - Unique (`leagueId`, `userId`)
+  - Read index on (`leagueId`, `position`)
+  - Read index on (`leagueId`, `snapshotVersion`)
+
+6. `league_activity` (`LeagueActivity`)
 
 - Key fields: `id`, `leagueId`, `type`, `actorId`, `entityId`, `payload`, `createdAt`
 - Types currently in enum:
@@ -62,7 +73,7 @@ Constraints honored by this audit:
   - `challenge_created`, `challenge_accepted`, `challenge_declined`, `challenge_expired`
   - `rankings_updated`
 
-6. `league_challenges` (`LeagueChallenge`)
+7. `league_challenges` (`LeagueChallenge`)
 
 - Key fields: `id`, `leagueId`, `createdById`, `opponentId`, `status`, `message`, `expiresAt`, `acceptedAt`, `completedAt`, `matchId`, `createdAt`
 - Enums:
@@ -70,13 +81,13 @@ Constraints honored by this audit:
 - Constraints:
   - Partial unique pair index for active challenges (`PENDING`, `ACCEPTED`) per league
 
-7. `match_results` (`MatchResult`) linkage
+8. `match_results` (`MatchResult`) linkage
 
 - `match_results.leagueId` is nullable FK to `leagues`
 - `match_results.challengeId` links to generic `challenges`
 - League linkage for standings/activity is driven by `match_results.leagueId`
 
-8. Generic `challenges` (`Challenge`) linkage
+9. Generic `challenges` (`Challenge`) linkage
 
 - No native `leagueId` column in entity/table
 - League-scoped challenge lifecycle exists separately in `league_challenges`
@@ -300,11 +311,16 @@ All endpoints below require JWT auth unless prefixed with `/public`.
 
 - Behavior:
   - Member-only
+  - Reads from `league_standings_cache` when present
+  - Falls back to `recomputeLeague()` + cache persistence when cache is missing
   - Returns latest rows + movement map
+  - Additive metadata: `snapshotVersion`, `lastUpdatedAt`
 
 ```json
 {
   "computedAt": "2026-02-27T18:00:00.000Z",
+  "snapshotVersion": 12,
+  "lastUpdatedAt": "2026-02-27T18:00:00.000Z",
   "rows": [
     {
       "userId": "uuid",
@@ -350,6 +366,25 @@ All endpoints below require JWT auth unless prefixed with `/public`.
 - Behavior:
   - Member check first
   - Manual recompute trigger
+
+### 2.3.1 Standings source of truth and read model
+
+- Source of truth:
+  - `match_results` linked by `match_results.leagueId`
+  - Only matches that are `confirmed` and `impactRanking = true` are counted
+- Optimized read model:
+  - `league_standings_cache` stores the latest per-player standings rows for a league
+  - `league_standings_snapshots` remains the historical/versioned snapshot store
+- Recompute strategy:
+  - Confirming a ranking-impacting league match recomputes standings and persists:
+    - a new historical snapshot in `league_standings_snapshots`
+    - the latest current cache rows in `league_standings_cache`
+  - Rejecting a match does not recompute standings
+  - Idempotent confirm/reject operations short-circuit with no new snapshot/cache write
+- Performance notes:
+  - League standings reads no longer depend on historical snapshot scans for the common path
+  - `recomputeForMatch()` short-circuits directly to `match_results.leagueId` when present instead of scanning active leagues
+  - The standings recompute query is indexed on `match_results(leagueId, status, impactRanking, playedAt)`
 
 ### 2.4 League activity endpoints
 
@@ -599,6 +634,7 @@ The backend emits structured internal telemetry logs for:
 - `league_pending_confirmation_fetched`
 - `inbox_pending_confirmation_opened`
 - `league_standings_recomputed`
+- `league_standings_snapshot_persisted`
 
 Recommended metadata captured per event when applicable:
 
@@ -608,6 +644,8 @@ Recommended metadata captured per event when applicable:
 - `matchId`
 - `confirmationId`
 - `durationMs`
+- `totalRows`
+- `snapshotVersion`
 - `outcome`
 
 ### 8.3 Canon vs legacy

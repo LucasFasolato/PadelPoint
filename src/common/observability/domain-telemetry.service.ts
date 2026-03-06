@@ -7,7 +7,8 @@ export type DomainTelemetryEvent =
   | 'league_match_rejected'
   | 'league_pending_confirmation_fetched'
   | 'inbox_pending_confirmation_opened'
-  | 'league_standings_recomputed';
+  | 'league_standings_recomputed'
+  | 'league_standings_snapshot_persisted';
 
 export type DomainTelemetryPayload = {
   requestId?: string | null;

@@ -5,6 +5,7 @@ import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { League } from '../entities/league.entity';
 import { LeagueMember } from '../entities/league-member.entity';
+import { LeagueStandingsCache } from '../entities/league-standings-cache.entity';
 import {
   LeagueStandingsSnapshot,
   LeagueStandingsSnapshotRow,
@@ -38,6 +39,12 @@ export type EnrichedStandingsRow = LeagueStandingsSnapshotRow & {
   displayName: string | null;
 };
 
+type StandingsCacheMetadata = {
+  computedAt: string | null;
+  snapshotVersion: number | null;
+  lastUpdatedAt: string | null;
+};
+
 type RequestContextInput = {
   requestId?: string;
 };
@@ -55,6 +62,8 @@ export class LeagueStandingsService {
     private readonly memberRepo: Repository<LeagueMember>,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
+    @InjectRepository(LeagueStandingsCache)
+    private readonly standingsCacheRepo: Repository<LeagueStandingsCache>,
     @InjectRepository(LeagueStandingsSnapshot)
     private readonly snapshotRepo: Repository<LeagueStandingsSnapshot>,
     @InjectRepository(User)
@@ -79,6 +88,16 @@ export class LeagueStandingsService {
       .findOne({ where: { id: matchId }, relations: ['challenge'] });
 
     if (!match?.challenge) return;
+    if (match.leagueId) {
+      const league = await manager.getRepository(League).findOne({
+        where: { id: match.leagueId, status: LeagueStatus.ACTIVE },
+      });
+      if (league) {
+        await this.recomputeLeague(manager, league.id, context);
+      }
+      this.debugLog(`recomputeForMatch: done matchId=${matchId}`);
+      return;
+    }
 
     const ch = match.challenge;
     const playerIds = [ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id];
@@ -147,7 +166,13 @@ export class LeagueStandingsService {
       .getRepository(MatchResult)
       .createQueryBuilder('mr')
       .innerJoinAndSelect('mr.challenge', 'c')
-      .where('mr.status = :status', { status: MatchResultStatus.CONFIRMED });
+      .where('mr."leagueId" = :leagueId', { leagueId })
+      .andWhere('mr.status = :status', {
+        status: MatchResultStatus.CONFIRMED,
+      })
+      .andWhere('mr."impactRanking" = :impactRanking', {
+        impactRanking: true,
+      });
 
     if (
       league.mode === LeagueMode.SCHEDULED &&
@@ -352,6 +377,9 @@ export class LeagueStandingsService {
       snapshotRows,
       leagueMatches.length,
     );
+    await this.persistCurrentStandingsCache(manager, leagueId, snapshot, {
+      requestId,
+    });
 
     this.logger.log(
       `standings recomputed: leagueId=${leagueId} members=${ranked.length} totalMatchesFetched=${totalMatchesFetched} totalMatchesUsed=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum} executionTimeMs=${Date.now() - startMs}`,
@@ -397,42 +425,37 @@ export class LeagueStandingsService {
     computedAt: string | null;
     rows: EnrichedStandingsRow[];
     movement: Record<string, { delta: number }>;
+    snapshotVersion?: number | null;
+    lastUpdatedAt?: string | null;
   }> {
-    const latest = await this.snapshotRepo
-      .createQueryBuilder('s')
-      .where('s."leagueId" = :leagueId', { leagueId })
-      .orderBy('s.version', 'DESC')
-      .addOrderBy('s."computedAt"', 'DESC')
-      .getOne();
+    let cachedRows = await this.getCurrentCachedRows(leagueId);
+    if (cachedRows.length === 0) {
+      await this.snapshotRepo.manager.transaction(async (manager) => {
+        await this.recomputeLeague(manager, leagueId);
+      });
+      cachedRows = await this.getCurrentCachedRows(leagueId);
+    }
 
-    let rows: LeagueStandingsSnapshotRow[];
-    let movement: Record<string, { delta: number }>;
-
-    if (!latest) {
-      rows = await this.getCurrentRowsFromMembers(leagueId);
-      movement = this.computeMovement(rows, null);
+    if (cachedRows.length === 0) {
+      const rows = await this.getCurrentRowsFromMembers(leagueId);
       return {
         computedAt: null,
         rows: await this.enrichRowsWithUsers(rows),
-        movement,
+        movement: this.computeMovement(rows, null),
+        snapshotVersion: null,
+        lastUpdatedAt: null,
       };
     }
 
-    const previous = await this.snapshotRepo
-      .createQueryBuilder('s')
-      .where('s."leagueId" = :leagueId', { leagueId })
-      .andWhere('s.version < :version', { version: latest.version })
-      .orderBy('s.version', 'DESC')
-      .addOrderBy('s."computedAt"', 'DESC')
-      .getOne();
-
-    rows = latest.rows ?? [];
-    movement = this.computeMovement(rows, previous?.rows ?? null);
-
+    const rows = cachedRows.map((row) => this.mapCacheRowToSnapshotRow(row));
+    const movement = this.buildMovementFromRows(rows);
+    const metadata = this.getCacheMetadata(cachedRows);
     return {
-      computedAt: latest.computedAt.toISOString(),
+      computedAt: metadata.computedAt,
       rows: await this.enrichRowsWithUsers(rows),
       movement,
+      snapshotVersion: metadata.snapshotVersion,
+      lastUpdatedAt: metadata.lastUpdatedAt,
     };
   }
 
@@ -651,6 +674,67 @@ export class LeagueStandingsService {
     );
   }
 
+  private async persistCurrentStandingsCache(
+    manager: EntityManager,
+    leagueId: string,
+    snapshot: LeagueStandingsSnapshot & {
+      checksum?: string;
+      movements?: StandingsMovement[];
+    },
+    context: RequestContextInput = {},
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const cacheRepo = manager.getRepository(LeagueStandingsCache);
+    const rows = [...(snapshot.rows ?? [])].sort(
+      (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
+    );
+
+    await cacheRepo.delete({ leagueId });
+    if (rows.length > 0) {
+      await cacheRepo.save(
+        rows.map((row) =>
+          cacheRepo.create({
+            leagueId,
+            userId: row.userId,
+            position: row.position,
+            played: row.wins + row.losses + row.draws,
+            wins: row.wins,
+            losses: row.losses,
+            draws: row.draws,
+            points: row.points,
+            setsDiff: row.setsDiff,
+            gamesDiff: row.gamesDiff,
+            lastWinAt: row.lastWinAt ? new Date(row.lastWinAt) : null,
+            delta: row.delta ?? null,
+            oldPosition: row.oldPosition ?? null,
+            movementType: row.movementType ?? null,
+            snapshotVersion: snapshot.version,
+            snapshotComputedAt: snapshot.computedAt,
+          }),
+        ),
+      );
+    }
+
+    const durationMs = Date.now() - startedAt;
+    this.telemetry.track('league_standings_snapshot_persisted', {
+      requestId: context.requestId,
+      leagueId,
+      durationMs,
+      totalRows: rows.length,
+      snapshotVersion: snapshot.version,
+      outcome: 'SUCCESS',
+    });
+    logStructured(this.logger, 'log', {
+      event: 'league.standings.snapshot_persisted',
+      requestId: context.requestId,
+      leagueId,
+      durationMs,
+      totalRows: rows.length,
+      snapshotVersion: snapshot.version,
+      outcome: 'SUCCESS',
+    });
+  }
+
   private async pruneSnapshots(
     manager: EntityManager,
     leagueId: string,
@@ -690,6 +774,70 @@ export class LeagueStandingsService {
       gamesDiff: m.gamesDiff ?? 0,
       position: m.position ?? index + 1,
     }));
+  }
+
+  private async getCurrentCachedRows(
+    leagueId: string,
+  ): Promise<LeagueStandingsCache[]> {
+    return this.standingsCacheRepo.find({
+      where: { leagueId },
+      order: { position: 'ASC', userId: 'ASC' },
+    });
+  }
+
+  private mapCacheRowToSnapshotRow(
+    row: LeagueStandingsCache,
+  ): LeagueStandingsSnapshotRow {
+    return {
+      userId: row.userId,
+      points: row.points,
+      wins: row.wins,
+      losses: row.losses,
+      draws: row.draws,
+      setsDiff: row.setsDiff,
+      gamesDiff: row.gamesDiff,
+      position: row.position,
+      ...(row.lastWinAt ? { lastWinAt: row.lastWinAt.toISOString() } : {}),
+      ...(row.delta !== null ? { delta: row.delta } : {}),
+      ...(row.oldPosition !== null ? { oldPosition: row.oldPosition } : {}),
+      ...(row.movementType
+        ? { movementType: row.movementType as LeagueStandingsSnapshotRow['movementType'] }
+        : {}),
+    };
+  }
+
+  private getCacheMetadata(
+    rows: LeagueStandingsCache[],
+  ): StandingsCacheMetadata {
+    if (rows.length === 0) {
+      return {
+        computedAt: null,
+        snapshotVersion: null,
+        lastUpdatedAt: null,
+      };
+    }
+
+    const newestUpdatedAt = rows.reduce(
+      (current, row) =>
+        row.updatedAt && row.updatedAt > current ? row.updatedAt : current,
+      rows[0].updatedAt,
+    );
+
+    return {
+      computedAt: rows[0].snapshotComputedAt.toISOString(),
+      snapshotVersion: rows[0].snapshotVersion,
+      lastUpdatedAt: newestUpdatedAt.toISOString(),
+    };
+  }
+
+  private buildMovementFromRows(
+    rows: LeagueStandingsSnapshotRow[],
+  ): Record<string, { delta: number }> {
+    const movement: Record<string, { delta: number }> = {};
+    for (const row of rows) {
+      movement[row.userId] = { delta: row.delta ?? 0 };
+    }
+    return movement;
   }
 
   private computeMovement(

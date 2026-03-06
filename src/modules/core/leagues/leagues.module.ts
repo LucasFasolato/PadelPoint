@@ -4,6 +4,7 @@ import { League } from './entities/league.entity';
 import { LeagueMember } from './entities/league-member.entity';
 import { LeagueInvite } from './entities/league-invite.entity';
 import { LeagueActivity } from './entities/league-activity.entity';
+import { LeagueStandingsCache } from './entities/league-standings-cache.entity';
 import { LeagueStandingsSnapshot } from './entities/league-standings-snapshot.entity';
 import { LeagueChallenge } from './entities/league-challenge.entity';
 import { LeagueJoinRequest } from './entities/league-join-request.entity';
@@ -27,6 +28,7 @@ import { NotificationsModule } from '@/modules/core/notifications/notifications.
       LeagueMember,
       LeagueInvite,
       LeagueActivity,
+      LeagueStandingsCache,
       LeagueStandingsSnapshot,
       LeagueChallenge,
       LeagueJoinRequest,

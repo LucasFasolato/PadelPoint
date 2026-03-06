@@ -139,6 +139,8 @@ describe('Leagues (e2e)', () => {
     };
     notificationsService = {
       list: jest.fn(),
+      listLegacyFromCanonical: jest.fn(),
+      listInboxCanonical: jest.fn(),
       getUnreadCount: jest.fn(),
       markRead: jest.fn(),
       markAllRead: jest.fn(),
@@ -620,7 +622,7 @@ describe('Leagues (e2e)', () => {
           expiresAt: '2025-01-08T12:00:00.000Z',
         },
       ]);
-      notificationsService.list.mockResolvedValue({
+      notificationsService.listLegacyFromCanonical.mockResolvedValue({
         items: [
           {
             id: 'notif-invite-1',

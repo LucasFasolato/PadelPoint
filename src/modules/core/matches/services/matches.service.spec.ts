@@ -1760,6 +1760,7 @@ describe('MatchesService', () => {
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
     it('rejectLeaguePendingConfirmation returns REJECTED when already rejected', async () => {
@@ -1792,6 +1793,7 @@ describe('MatchesService', () => {
         matchId: 'match-1',
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
     it('confirmLeaguePendingConfirmation confirms pending match and triggers standings recompute', async () => {
@@ -1904,6 +1906,7 @@ describe('MatchesService', () => {
           entityId: 'match-pending-2',
         }),
       );
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
       expect(telemetry.track).toHaveBeenCalledWith(
         'league_match_rejected',
         expect.objectContaining({
