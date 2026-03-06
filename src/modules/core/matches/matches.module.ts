@@ -13,9 +13,12 @@ import { LeagueMember } from '../leagues/entities/league-member.entity';
 import { Reservation } from '@legacy/reservations/reservation.entity';
 import { Court } from '@legacy/courts/court.entity';
 import { CompetitiveModule } from '../competitive/competitive.module';
+import { CompetitiveProfile } from '../competitive/entities/competitive-profile.entity';
+import { EloHistory } from '../competitive/entities/elo-history.entity';
 import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '@/modules/core/notifications/notifications.module';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
+import { GlobalRankingSnapshot } from '../rankings/entities/global-ranking-snapshot.entity';
 
 @Module({
   imports: [
@@ -29,6 +32,9 @@ import { CityRequiredGuard } from '@common/guards/city-required.guard';
       LeagueMember,
       Reservation,
       Court,
+      CompetitiveProfile,
+      EloHistory,
+      GlobalRankingSnapshot,
     ]),
     CompetitiveModule,
     LeaguesModule,

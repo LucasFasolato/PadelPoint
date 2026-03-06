@@ -80,14 +80,6 @@ export class MatchEndorsementsService {
         });
       }
 
-      if (!match.impactRanking) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'ENDORSE_NOT_ALLOWED_FOR_FRIENDLY',
-          message: 'Endorsements are only available for competitive matches',
-        });
-      }
-
       if (match.status !== MatchResultStatus.CONFIRMED) {
         throw new ConflictException({
           statusCode: 409,
@@ -299,7 +291,6 @@ export class MatchEndorsementsService {
         'c."teamB2Id" AS "teamB2Id"',
       ])
       .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
-      .andWhere('m."impactRanking" = true')
       .andWhere('m."updatedAt" >= :since', { since })
       .andWhere(
         '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
@@ -316,20 +307,25 @@ export class MatchEndorsementsService {
 
     const matchIds = [...new Set(matches.map((row) => row.matchId))];
 
-    const existingByMatchRaw = await this.endorsementsRepo
+    const existingEndorsementsRaw = await this.endorsementsRepo
       .createQueryBuilder('e')
       .select('e."matchId"', 'matchId')
-      .addSelect('COUNT(*)', 'count')
+      .addSelect('e."toUserId"', 'toUserId')
       .where('e."fromUserId" = :userId', { userId })
       .andWhere('e."matchId" IN (:...matchIds)', { matchIds })
-      .groupBy('e."matchId"')
-      .getRawMany<{ matchId?: string; count?: string | number }>();
+      .getRawMany<{
+        matchId?: string;
+        toUserId?: string;
+      }>();
 
-    const alreadyEndorsedMatchIds = new Set(
-      existingByMatchRaw
-        .filter((row) => Number(row.count ?? 0) > 0)
-        .map((row) => row.matchId ?? '')
-        .filter((id) => id.length > 0),
+    const endorsedPairs = new Set(
+      existingEndorsementsRaw
+        .map((row) => {
+          const matchId = (row.matchId ?? '').trim();
+          const toUserId = (row.toUserId ?? '').trim();
+          return matchId && toUserId ? `${matchId}:${toUserId}` : '';
+        })
+        .filter((value) => value.length > 0),
     );
 
     const rivalIds = new Set<string>();
@@ -358,15 +354,15 @@ export class MatchEndorsementsService {
 
     const items: PendingEndorsementsResponseDto['items'] = [];
     for (const row of matches) {
-      if (alreadyEndorsedMatchIds.has(row.matchId)) continue;
-
       const confirmationAt = new Date(row.confirmedAt);
       if (Number.isNaN(confirmationAt.getTime())) continue;
 
-      const pendingRivals = this.resolveRivalIds(row, userId).map((rivalId) => ({
-        userId: rivalId,
-        displayName: rivalById.get(rivalId) ?? 'Rival',
-      }));
+      const pendingRivals = this.resolveRivalIds(row, userId)
+        .filter((rivalId) => !endorsedPairs.has(`${row.matchId}:${rivalId}`))
+        .map((rivalId) => ({
+          userId: rivalId,
+          displayName: rivalById.get(rivalId) ?? 'Rival',
+        }));
 
       if (pendingRivals.length === 0) continue;
 

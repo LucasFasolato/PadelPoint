@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { ApiOkResponse, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
+import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
 import { MatchesService } from '../services/matches.service';
 import { ReportMatchDto, RejectMatchDto } from '../dto/report-match.dto';
 import { DisputeMatchDto } from '../dto/dispute-match.dto';
@@ -22,6 +23,7 @@ import { UserRole } from '../../users/enums/user-role.enum';
 import { MyPendingConfirmationsResponseDto } from '../dto/my-pending-confirmation.dto';
 import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query.dto';
 import { ensureRequestContext } from '@/common/observability/request-context.util';
+import { MatchRankingImpactResponseDto } from '../dto/match-ranking-impact-response.dto';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -160,6 +162,22 @@ export class MatchesController {
   resolveConfirmAsIs(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.service.resolveConfirmAsIs(user.userId, id);
+  }
+
+  @Get(':id/ranking-impact')
+  @ApiOperation({
+    summary: 'Get ranking impact for the authenticated player',
+    description:
+      'Returns the competitive impact of a confirmed match from the authenticated participant perspective. ' +
+      'Position fields are only populated when exact snapshot context exists; otherwise they are null.',
+  })
+  @ApiOkResponse({ type: MatchRankingImpactResponseDto })
+  getRankingImpact(
+    @Req() req: Request,
+    @Param('id', new ParseRequiredUuidPipe('id')) id: string,
+  ) {
+    const user = req.user as AuthUser;
+    return this.service.getRankingImpact(id, user.userId);
   }
 
   @Get(':id')

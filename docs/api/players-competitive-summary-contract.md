@@ -151,6 +151,8 @@ Aggregates all relevant data in a single request — no need to combine endpoint
 | `endorsementCount` | int | never | Total received strength votes (all-time) |
 | `items` | `{ key, count }[]` | never | Sorted DESC by count; empty if none |
 
+This section is fed by post-match endorsements created through `POST /matches/:id/endorsements` and can also be queried directly via `GET /players/:id/strengths`.
+
 Strength keys are `PlayerStrength` enum values: `SMASH`, `BANDEJA`, `VIBORA`, `VOLEA`, `GLOBO`, `DEFENSA`, `RESILIENCIA`, `TACTICA`, `COMUNICACION`, `VELOCIDAD`, `PRECISION`.
 
 ### `recentMatches`

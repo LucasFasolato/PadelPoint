@@ -52,11 +52,20 @@ import { LeagueRole } from '../../leagues/enums/league-role.enum';
 import { LeagueActivityService } from '../../leagues/services/league-activity.service';
 import { LeagueActivityType } from '../../leagues/enums/league-activity-type.enum';
 import { LeagueActivity } from '../../leagues/entities/league-activity.entity';
+import { CompetitiveProfile } from '../../competitive/entities/competitive-profile.entity';
+import {
+  EloHistory,
+  EloHistoryReason,
+} from '../../competitive/entities/elo-history.entity';
+import { categoryFromElo } from '../../competitive/utils/competitive.constants';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
 import { buildScoreSummary, parseScoreSummary } from '../utils/score-summary';
 import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
 import { logStructured } from '@/common/observability/structured-log.util';
+import { GlobalRankingSnapshot } from '../../rankings/entities/global-ranking-snapshot.entity';
+import { RankingTimeframe } from '../../rankings/enums/ranking-timeframe.enum';
+import { RankingMode } from '../../rankings/enums/ranking-mode.enum';
 
 const TZ = 'America/Argentina/Cordoba';
 
@@ -220,12 +229,27 @@ type NormalizedManualRoster = {
   playerIds: string[];
 };
 
+type MatchImpactResult = 'WIN' | 'LOSS' | 'DRAW';
+
+type MatchImpactEloHistoryRow = {
+  eloBefore: number;
+  eloAfter: number;
+  delta: number;
+};
+
+type MatchImpactPositionContext = {
+  positionBefore: number | null;
+  positionAfter: number | null;
+  positionDelta: number;
+};
+
 class SafePendingConfirmationsFallbackError extends Error {}
 
 @Injectable()
 export class MatchesService {
   private readonly logger = new Logger(MatchesService.name);
   private readonly disputeWindowHours: number;
+  private readonly rankingMinMatches: number;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -241,6 +265,12 @@ export class MatchesService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(Reservation)
     private readonly reservationRepo: Repository<Reservation>,
+    @InjectRepository(CompetitiveProfile)
+    private readonly competitiveProfileRepo: Repository<CompetitiveProfile>,
+    @InjectRepository(EloHistory)
+    private readonly eloHistoryRepo: Repository<EloHistory>,
+    @InjectRepository(GlobalRankingSnapshot)
+    private readonly rankingSnapshotRepo: Repository<GlobalRankingSnapshot>,
     private readonly eloService: EloService,
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly leagueActivityService: LeagueActivityService,
@@ -249,6 +279,7 @@ export class MatchesService {
     config: ConfigService,
   ) {
     this.disputeWindowHours = config.get<number>('DISPUTE_WINDOW_HOURS') ?? 48;
+    this.rankingMinMatches = this.resolveRankingMinMatches(config);
   }
 
   private trackDomainEvent(
@@ -776,6 +807,275 @@ export class MatchesService {
   ): boolean {
     if (typeof match.impactRanking === 'boolean') return match.impactRanking;
     return this.impactRankingForMatchType(match.matchType);
+  }
+
+  private parseMatchRankingImpact(
+    raw: MatchResult['rankingImpact'] | unknown,
+  ): MatchResult['rankingImpact'] | null {
+    if (raw == null) return null;
+    const parsed =
+      typeof raw === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          })()
+        : raw;
+
+    if (!parsed || typeof parsed !== 'object') return null;
+    const value = parsed as {
+      applied?: unknown;
+      multiplier?: unknown;
+      reason?: unknown;
+      baseDelta?: unknown;
+      finalDelta?: unknown;
+      computedAt?: unknown;
+    };
+
+    if (typeof value.applied !== 'boolean') return null;
+
+    const response: NonNullable<MatchResult['rankingImpact']> = {
+      applied: value.applied,
+      multiplier:
+        typeof value.multiplier === 'number' && Number.isFinite(value.multiplier)
+          ? value.multiplier
+          : 0,
+    };
+
+    if (typeof value.reason === 'string' && value.reason.trim().length > 0) {
+      response.reason = value.reason as NonNullable<
+        MatchResult['rankingImpact']
+      >['reason'];
+    }
+
+    const baseDelta = this.parseRankingImpactDelta(value.baseDelta);
+    const finalDelta = this.parseRankingImpactDelta(value.finalDelta);
+    const computedAt = this.toIsoString(value.computedAt as any);
+
+    if (baseDelta) response.baseDelta = baseDelta;
+    if (finalDelta) response.finalDelta = finalDelta;
+    if (computedAt) response.computedAt = computedAt;
+
+    return response;
+  }
+
+  private parseRankingImpactDelta(
+    raw: unknown,
+  ): { teamA: number; teamB: number } | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const value = raw as { teamA?: unknown; teamB?: unknown };
+    const teamA = this.toIntegerOrNull(value.teamA);
+    const teamB = this.toIntegerOrNull(value.teamB);
+    if (teamA === null || teamB === null) return null;
+    return { teamA, teamB };
+  }
+
+  private resolveViewerMatchResult(
+    winnerTeam: WinnerTeam | null,
+    viewerTeam: WinnerTeam,
+  ): MatchImpactResult {
+    if (!winnerTeam) return 'DRAW';
+    if (winnerTeam === viewerTeam) return 'WIN';
+    return 'LOSS';
+  }
+
+  private didMatchActuallyImpactRanking(args: {
+    match: Pick<MatchResult, 'matchType' | 'impactRanking' | 'rankingImpact'>;
+    viewerTeam: WinnerTeam;
+    history: MatchImpactEloHistoryRow | null;
+  }): boolean {
+    if (args.history) return true;
+    if (!this.shouldImpactRanking(args.match)) return false;
+
+    const rankingImpact = this.parseMatchRankingImpact(args.match.rankingImpact);
+    if (!rankingImpact || rankingImpact.applied !== true) {
+      return false;
+    }
+
+    if (rankingImpact.multiplier > 0) {
+      return true;
+    }
+
+    const finalDelta =
+      args.viewerTeam === WinnerTeam.A
+        ? rankingImpact.finalDelta?.teamA ?? 0
+        : rankingImpact.finalDelta?.teamB ?? 0;
+    return finalDelta !== 0;
+  }
+
+  private toVisibleSnapshotRows(
+    rows: Array<{
+      userId?: string;
+      matchesPlayed?: number;
+      position?: number;
+      oldPosition?: number | null;
+      delta?: number | null;
+    }>,
+  ): Array<{
+    userId: string;
+    position: number;
+    oldPosition: number | null;
+    delta: number | null;
+  }> {
+    return rows
+      .filter((row) => this.toIntegerOrNull(row.matchesPlayed) !== null)
+      .filter(
+        (row) => (this.toIntegerOrNull(row.matchesPlayed) ?? 0) >= this.rankingMinMatches,
+      )
+      .map((row, index) => ({
+        userId: String(row.userId ?? ''),
+        position: index + 1,
+        oldPosition: this.toIntegerOrNull(row.oldPosition),
+        delta: this.toIntegerOrNull(row.delta),
+      }))
+      .filter((row) => row.userId.length > 0);
+  }
+
+  private async getViewerMatchEloHistory(
+    viewerUserId: string,
+    matchId: string,
+  ): Promise<MatchImpactEloHistoryRow | null> {
+    const profile = await this.competitiveProfileRepo.findOne({
+      where: { userId: viewerUserId },
+      select: ['id'],
+    });
+    if (!profile) return null;
+
+    const row = await this.eloHistoryRepo
+      .createQueryBuilder('h')
+      .select('h."eloBefore"', 'eloBefore')
+      .addSelect('h."eloAfter"', 'eloAfter')
+      .addSelect('h.delta', 'delta')
+      .where('h."profileId" = :profileId', { profileId: profile.id })
+      .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+      .andWhere('h."refId" = :matchId', { matchId })
+      .orderBy('h."createdAt"', 'DESC')
+      .addOrderBy('h.id', 'DESC')
+      .getRawOne<{
+        eloBefore?: string | number | null;
+        eloAfter?: string | number | null;
+        delta?: string | number | null;
+      }>();
+
+    const eloBefore = this.toIntegerOrNull(row?.eloBefore);
+    const eloAfter = this.toIntegerOrNull(row?.eloAfter);
+    const delta = this.toIntegerOrNull(row?.delta);
+    if (eloBefore === null || eloAfter === null || delta === null) {
+      return null;
+    }
+
+    return { eloBefore, eloAfter, delta };
+  }
+
+  private async getViewerPositionImpact(
+    match: Pick<MatchResult, 'playedAt' | 'updatedAt' | 'createdAt'>,
+    viewerUserId: string,
+  ): Promise<MatchImpactPositionContext> {
+    const anchor = match.updatedAt ?? match.playedAt ?? match.createdAt ?? null;
+    if (!anchor) {
+      return {
+        positionBefore: null,
+        positionAfter: null,
+        positionDelta: 0,
+      };
+    }
+
+    const snapshots = await this.rankingSnapshotRepo
+      .createQueryBuilder('s')
+      .where('s."dimensionKey" = :dimensionKey', { dimensionKey: 'COUNTRY' })
+      .andWhere('s."categoryKey" = :categoryKey', { categoryKey: 'all' })
+      .andWhere('s.timeframe = :timeframe', {
+        timeframe: RankingTimeframe.CURRENT_SEASON,
+      })
+      .andWhere('s."modeKey" = :modeKey', { modeKey: RankingMode.COMPETITIVE })
+      .andWhere('s."computedAt" >= :anchor', { anchor })
+      .orderBy('s."computedAt"', 'ASC')
+      .addOrderBy('s.version', 'ASC')
+      .take(25)
+      .getMany();
+
+    for (const snapshot of snapshots) {
+      const visibleRows = this.toVisibleSnapshotRows(snapshot.rows ?? []);
+      const row = visibleRows.find((item) => item.userId === viewerUserId);
+      if (!row) continue;
+
+      const positionAfter = row.position;
+      const positionBefore =
+        row.oldPosition ??
+        (typeof row.delta === 'number' ? positionAfter + row.delta : null);
+
+      return {
+        positionBefore,
+        positionAfter,
+        positionDelta:
+          positionBefore !== null ? positionBefore - positionAfter : 0,
+      };
+    }
+
+    return {
+      positionBefore: null,
+      positionAfter: null,
+      positionDelta: 0,
+    };
+  }
+
+  private buildRankingImpactSummary(args: {
+    impactRanking: boolean;
+    result: MatchImpactResult;
+    eloDelta: number;
+    positionDelta: number;
+    positionAfter: number | null;
+  }): { title: string; subtitle: string } {
+    if (!args.impactRanking) {
+      return {
+        title: 'Partido sin impacto competitivo',
+        subtitle: 'Este partido no afecto tu ranking competitivo',
+      };
+    }
+
+    if (args.positionDelta > 0) {
+      const plural = args.positionDelta === 1 ? '' : 'es';
+      return {
+        title: `${this.resultLabel(args.result)} y subiste ${args.positionDelta} posicion${plural}`,
+        subtitle: `${this.signedDelta(args.eloDelta)} ELO despues de este partido`,
+      };
+    }
+
+    if (args.positionDelta < 0) {
+      const dropped = Math.abs(args.positionDelta);
+      const plural = dropped === 1 ? '' : 'es';
+      return {
+        title: `${this.resultLabel(args.result)} y bajaste ${dropped} posicion${plural}`,
+        subtitle: `${this.signedDelta(args.eloDelta)} ELO despues de este partido`,
+      };
+    }
+
+    if (args.eloDelta !== 0) {
+      return {
+        title: `${this.resultLabel(args.result)} y ${args.eloDelta > 0 ? 'sumaste' : 'perdiste'} ${Math.abs(args.eloDelta)} ELO`,
+        subtitle: `${this.signedDelta(args.eloDelta)} ELO despues de este partido`,
+      };
+    }
+
+    return {
+      title: 'Sin cambios competitivos relevantes',
+      subtitle:
+        args.positionAfter !== null
+          ? `Terminaste en la posicion ${args.positionAfter} despues de este partido`
+          : 'Impacto competitivo registrado despues de este partido',
+    };
+  }
+
+  private resultLabel(result: MatchImpactResult): string {
+    if (result === 'WIN') return 'Ganaste';
+    if (result === 'LOSS') return 'Perdiste';
+    return 'Empataste';
+  }
+
+  private signedDelta(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value}`;
   }
 
   private async applyEloIfCompetitive(
@@ -3497,6 +3797,18 @@ export class MatchesService {
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
+  private toIntegerOrNull(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.trunc(numeric) : null;
+  }
+
+  private resolveRankingMinMatches(config: ConfigService): number {
+    const configured = config.get<number>('ranking.minMatches', 4);
+    const numeric = Number(configured);
+    return Number.isFinite(numeric) ? Math.max(1, Math.trunc(numeric)) : 4;
+  }
+
   private async toPendingConfirmationViews(
     items: MatchResult[],
     challengeMap: Map<string, Challenge>,
@@ -3715,6 +4027,91 @@ export class MatchesService {
   // ------------------------
   // queries
   // ------------------------
+
+  async getRankingImpact(matchId: string, viewerUserId: string) {
+    const match = await this.matchRepo.findOne({
+      where: { id: matchId },
+      relations: ['challenge'],
+    });
+
+    if (!match) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'MATCH_NOT_FOUND',
+        message: 'Match result not found',
+      });
+    }
+
+    const challenge =
+      match.challenge ??
+      (await this.challengeRepo.findOne({
+        where: { id: match.challengeId },
+      }));
+    if (!challenge) {
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'MATCH_NOT_FOUND',
+        message: 'Match result not found',
+      });
+    }
+
+    const participants = this.getParticipantsOrThrow(challenge);
+    if (!participants.all.includes(viewerUserId)) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'MATCH_FORBIDDEN',
+        message: 'Only match participants can view ranking impact',
+      });
+    }
+
+    const viewerTeam = participants.teamA.includes(viewerUserId)
+      ? WinnerTeam.A
+      : WinnerTeam.B;
+    const result = this.resolveViewerMatchResult(match.winnerTeam, viewerTeam);
+    const eloHistory = await this.getViewerMatchEloHistory(viewerUserId, matchId);
+    const impactRanking = this.didMatchActuallyImpactRanking({
+      match,
+      viewerTeam,
+      history: eloHistory,
+    });
+    const positionImpact = impactRanking
+      ? await this.getViewerPositionImpact(match, viewerUserId)
+      : {
+          positionBefore: null,
+          positionAfter: null,
+          positionDelta: 0,
+        };
+
+    const eloBefore = eloHistory?.eloBefore ?? null;
+    const eloAfter = eloHistory?.eloAfter ?? null;
+    const eloDelta = eloHistory?.delta ?? 0;
+    const categoryBefore =
+      typeof eloBefore === 'number' ? categoryFromElo(eloBefore) : null;
+    const categoryAfter =
+      typeof eloAfter === 'number' ? categoryFromElo(eloAfter) : null;
+
+    return {
+      matchId: match.id,
+      viewerUserId,
+      result,
+      eloBefore,
+      eloAfter,
+      eloDelta,
+      positionBefore: positionImpact.positionBefore,
+      positionAfter: positionImpact.positionAfter,
+      positionDelta: positionImpact.positionDelta,
+      categoryBefore,
+      categoryAfter,
+      impactRanking,
+      summary: this.buildRankingImpactSummary({
+        impactRanking,
+        result,
+        eloDelta,
+        positionDelta: positionImpact.positionDelta,
+        positionAfter: positionImpact.positionAfter,
+      }),
+    };
+  }
 
   async getById(id: string, userId?: string) {
     const m = await this.matchRepo.findOne({

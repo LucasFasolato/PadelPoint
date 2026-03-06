@@ -43,6 +43,9 @@ import {
   createMockDataSource,
   MockDataSource,
 } from '@/test-utils/mock-datasource';
+import { CompetitiveProfile } from '../../competitive/entities/competitive-profile.entity';
+import { EloHistory } from '../../competitive/entities/elo-history.entity';
+import { GlobalRankingSnapshot } from '../../rankings/entities/global-ranking-snapshot.entity';
 
 const USER_A1 = 'a1111111-1111-4111-a111-111111111111';
 const USER_A2 = 'a2222222-2222-4222-a222-222222222222';
@@ -102,6 +105,9 @@ describe('MatchesService', () => {
   let auditRepo: MockRepo<MatchAuditLog>;
   let userRepo: MockRepo<User>;
   let reservationRepo: MockRepo<Reservation>;
+  let competitiveProfileRepo: MockRepo<CompetitiveProfile>;
+  let eloHistoryRepo: MockRepo<EloHistory>;
+  let rankingSnapshotRepo: MockRepo<GlobalRankingSnapshot>;
   let userNotifications: { create: jest.Mock };
   let leagueStandingsService: { recomputeForMatch: jest.Mock };
   let leagueActivityService: { create: jest.Mock };
@@ -124,6 +130,9 @@ describe('MatchesService', () => {
     auditRepo = createMockRepo<MatchAuditLog>();
     userRepo = createMockRepo<User>();
     reservationRepo = createMockRepo<Reservation>();
+    competitiveProfileRepo = createMockRepo<CompetitiveProfile>();
+    eloHistoryRepo = createMockRepo<EloHistory>();
+    rankingSnapshotRepo = createMockRepo<GlobalRankingSnapshot>();
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
     leagueStandingsService = { recomputeForMatch: jest.fn() };
     leagueActivityService = { create: jest.fn().mockResolvedValue({}) };
@@ -179,6 +188,15 @@ describe('MatchesService', () => {
         { provide: getRepositoryToken(MatchAuditLog), useValue: auditRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(Reservation), useValue: reservationRepo },
+        {
+          provide: getRepositoryToken(CompetitiveProfile),
+          useValue: competitiveProfileRepo,
+        },
+        { provide: getRepositoryToken(EloHistory), useValue: eloHistoryRepo },
+        {
+          provide: getRepositoryToken(GlobalRankingSnapshot),
+          useValue: rankingSnapshotRepo,
+        },
         { provide: EloService, useValue: { applyForMatchTx: jest.fn() } },
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
         { provide: LeagueActivityService, useValue: leagueActivityService },
@@ -186,7 +204,13 @@ describe('MatchesService', () => {
         { provide: DomainTelemetryService, useValue: telemetry },
         {
           provide: ConfigService,
-          useValue: { get: jest.fn().mockReturnValue(48) },
+          useValue: {
+            get: jest.fn().mockImplementation((key: string, fallback?: unknown) => {
+              if (key === 'DISPUTE_WINDOW_HOURS') return 48;
+              if (key === 'ranking.minMatches') return 4;
+              return fallback;
+            }),
+          },
         },
       ],
     }).compile();
@@ -196,6 +220,197 @@ describe('MatchesService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getRankingImpact', () => {
+    function mockEloHistoryRow(
+      row: { eloBefore?: number; eloAfter?: number; delta?: number } | null,
+    ) {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(row),
+      };
+      eloHistoryRepo.createQueryBuilder.mockReturnValue(qb as any);
+      return qb;
+    }
+
+    function mockSnapshots(rows: Array<Record<string, unknown>>) {
+      const qb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(rows),
+      };
+      rankingSnapshotRepo.createQueryBuilder.mockReturnValue(qb as any);
+      return qb;
+    }
+
+    it('returns WIN impact with positive elo and position delta', async () => {
+      matchRepo.findOne.mockResolvedValue(
+        fakeMatch({
+          challenge: fakeChallenge(),
+          winnerTeam: WinnerTeam.A,
+          rankingImpact: {
+            applied: true,
+            multiplier: 1,
+            finalDelta: { teamA: 20, teamB: -20 },
+          } as any,
+          updatedAt: new Date('2026-03-01T12:00:00.000Z'),
+        }),
+      );
+      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      mockEloHistoryRow({ eloBefore: 1450, eloAfter: 1470, delta: 20 });
+      mockSnapshots([
+        {
+          rows: [
+            ...Array.from({ length: 13 }, (_, index) => ({
+              userId: `u-${index + 1}`,
+              matchesPlayed: 6,
+            })),
+            {
+              userId: USER_A1,
+              matchesPlayed: 6,
+              oldPosition: 16,
+              delta: 2,
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getRankingImpact('match-1', USER_A1);
+
+      expect(result).toEqual({
+        matchId: 'match-1',
+        viewerUserId: USER_A1,
+        result: 'WIN',
+        eloBefore: 1450,
+        eloAfter: 1470,
+        eloDelta: 20,
+        positionBefore: 16,
+        positionAfter: 14,
+        positionDelta: 2,
+        categoryBefore: 4,
+        categoryAfter: 4,
+        impactRanking: true,
+        summary: {
+          title: 'Ganaste y subiste 2 posiciones',
+          subtitle: '+20 ELO despues de este partido',
+        },
+      });
+    });
+
+    it('returns LOSS impact with negative elo delta', async () => {
+      matchRepo.findOne.mockResolvedValue(
+        fakeMatch({
+          challenge: fakeChallenge(),
+          winnerTeam: WinnerTeam.B,
+          rankingImpact: {
+            applied: true,
+            multiplier: 1,
+            finalDelta: { teamA: -16, teamB: 16 },
+          } as any,
+        }),
+      );
+      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      mockEloHistoryRow({ eloBefore: 1470, eloAfter: 1454, delta: -16 });
+      mockSnapshots([]);
+
+      const result = await service.getRankingImpact('match-1', USER_A1);
+
+      expect(result.result).toBe('LOSS');
+      expect(result.eloDelta).toBe(-16);
+      expect(result.impactRanking).toBe(true);
+      expect(result.summary.subtitle).toBe('-16 ELO despues de este partido');
+    });
+
+    it('returns stable no-impact shape for non-ranking matches', async () => {
+      matchRepo.findOne.mockResolvedValue(
+        fakeMatch({
+          challenge: fakeChallenge(),
+          matchType: MatchType.FRIENDLY,
+          impactRanking: false,
+          rankingImpact: null,
+        }),
+      );
+      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      mockEloHistoryRow(null);
+
+      const result = await service.getRankingImpact('match-1', USER_A1);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          impactRanking: false,
+          eloBefore: null,
+          eloAfter: null,
+          eloDelta: 0,
+          positionBefore: null,
+          positionAfter: null,
+          positionDelta: 0,
+          categoryBefore: null,
+          categoryAfter: null,
+          summary: {
+            title: 'Partido sin impacto competitivo',
+            subtitle: 'Este partido no afecto tu ranking competitivo',
+          },
+        }),
+      );
+      expect(rankingSnapshotRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('throws MATCH_FORBIDDEN for non-participant viewers', async () => {
+      matchRepo.findOne.mockResolvedValue(
+        fakeMatch({
+          challenge: fakeChallenge(),
+        }),
+      );
+
+      await expect(
+        service.getRankingImpact('match-1', OUTSIDER),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'MATCH_FORBIDDEN',
+        }),
+      });
+    });
+
+    it('returns partial ranking data without inventing missing previous position', async () => {
+      matchRepo.findOne.mockResolvedValue(
+        fakeMatch({
+          challenge: fakeChallenge(),
+          rankingImpact: {
+            applied: true,
+            multiplier: 1,
+            finalDelta: { teamA: 12, teamB: -12 },
+          } as any,
+        }),
+      );
+      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      mockEloHistoryRow({ eloBefore: 1430, eloAfter: 1442, delta: 12 });
+      mockSnapshots([
+        {
+          rows: [
+            {
+              userId: USER_A1,
+              matchesPlayed: 8,
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getRankingImpact('match-1', USER_A1);
+
+      expect(result.positionBefore).toBeNull();
+      expect(result.positionAfter).toBe(1);
+      expect(result.positionDelta).toBe(0);
+      expect(result.impactRanking).toBe(true);
+    });
   });
 
   // ── disputeMatch ────────────────────────────────────────────────
@@ -910,6 +1125,15 @@ describe('MatchesService', () => {
             provide: getRepositoryToken(Reservation),
             useValue: reservationRepo,
           },
+          {
+            provide: getRepositoryToken(CompetitiveProfile),
+            useValue: competitiveProfileRepo,
+          },
+          { provide: getRepositoryToken(EloHistory), useValue: eloHistoryRepo },
+          {
+            provide: getRepositoryToken(GlobalRankingSnapshot),
+            useValue: rankingSnapshotRepo,
+          },
           { provide: EloService, useValue: eloService },
           { provide: LeagueStandingsService, useValue: leagueStandingsService },
           { provide: LeagueActivityService, useValue: leagueActivityService },
@@ -917,7 +1141,13 @@ describe('MatchesService', () => {
           { provide: DomainTelemetryService, useValue: telemetry },
           {
             provide: ConfigService,
-            useValue: { get: jest.fn().mockReturnValue(48) },
+            useValue: {
+              get: jest.fn().mockImplementation((key: string, fallback?: unknown) => {
+                if (key === 'DISPUTE_WINDOW_HOURS') return 48;
+                if (key === 'ranking.minMatches') return 4;
+                return fallback;
+              }),
+            },
           },
         ],
       }).compile();

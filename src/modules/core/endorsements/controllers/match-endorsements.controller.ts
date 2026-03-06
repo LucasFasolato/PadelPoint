@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@core/auth/guards/jwt-auth.guard';
@@ -22,6 +23,12 @@ export class MatchEndorsementsController {
   constructor(private readonly service: MatchEndorsementsService) {}
 
   @Post(':matchId/endorsements')
+  @ApiOperation({
+    summary: 'Create post-match endorsement for a rival',
+    description:
+      'Lets an authenticated participant optionally endorse one rival from a confirmed match with up to 2 strengths. ' +
+      'Each rival can only be endorsed once per match.',
+  })
   @ApiCreatedResponse({ type: CreateMatchEndorsementResponseDto })
   create(
     @Req() req: Request,

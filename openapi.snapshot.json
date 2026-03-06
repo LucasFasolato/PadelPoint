@@ -1757,6 +1757,99 @@
         ],
         "type": "object"
       },
+      "MatchRankingImpactResponseDto": {
+        "properties": {
+          "categoryAfter": {
+            "example": 6,
+            "nullable": true,
+            "type": "number"
+          },
+          "categoryBefore": {
+            "example": 6,
+            "nullable": true,
+            "type": "number"
+          },
+          "eloAfter": {
+            "example": 1470,
+            "nullable": true,
+            "type": "number"
+          },
+          "eloBefore": {
+            "example": 1450,
+            "nullable": true,
+            "type": "number"
+          },
+          "eloDelta": {
+            "example": 20,
+            "type": "number"
+          },
+          "impactRanking": {
+            "example": true,
+            "type": "boolean"
+          },
+          "matchId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "positionAfter": {
+            "example": 14,
+            "nullable": true,
+            "type": "number"
+          },
+          "positionBefore": {
+            "example": 16,
+            "nullable": true,
+            "type": "number"
+          },
+          "positionDelta": {
+            "example": 2,
+            "type": "number"
+          },
+          "result": {
+            "enum": [
+              "WIN",
+              "LOSS",
+              "DRAW"
+            ],
+            "example": "WIN",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/MatchRankingImpactSummaryDto"
+          },
+          "viewerUserId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matchId",
+          "viewerUserId",
+          "result",
+          "eloDelta",
+          "positionDelta",
+          "impactRanking",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "MatchRankingImpactSummaryDto": {
+        "properties": {
+          "subtitle": {
+            "example": "+20 ELO despues de este partido",
+            "type": "string"
+          },
+          "title": {
+            "example": "Ganaste y subiste 2 posiciones",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "subtitle"
+        ],
+        "type": "object"
+      },
       "MatchmakingCandidateItemDto": {
         "properties": {
           "categoryKey": {
@@ -8183,6 +8276,38 @@
         ]
       }
     },
+    "/matches/{id}/ranking-impact": {
+      "get": {
+        "description": "Returns the competitive impact of a confirmed match from the authenticated participant perspective. Position fields are only populated when exact snapshot context exists; otherwise they are null.",
+        "operationId": "MatchesController_getRankingImpact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRankingImpactResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get ranking impact for the authenticated player",
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
     "/matches/{id}/reject": {
       "patch": {
         "operationId": "MatchesController_reject",
@@ -8274,6 +8399,7 @@
     },
     "/matches/{matchId}/endorsements": {
       "post": {
+        "description": "Lets an authenticated participant optionally endorse one rival from a confirmed match with up to 2 strengths. Each rival can only be endorsed once per match.",
         "operationId": "MatchEndorsementsController_create",
         "parameters": [
           {
@@ -8312,6 +8438,7 @@
             "bearer": []
           }
         ],
+        "summary": "Create post-match endorsement for a rival",
         "tags": [
           "endorsements"
         ]
@@ -9530,8 +9657,58 @@
         ]
       }
     },
+    "/players/{userId}/strengths": {
+      "get": {
+        "description": "Returns aggregated strengths inferred from post-match endorsements. This data feeds compact scouting and competitive profile surfaces.",
+        "operationId": "PlayerStrengthsController_getStrengths",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rolling window in days",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 3650,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrengthSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get player strengths from endorsements",
+        "tags": [
+          "endorsements"
+        ]
+      }
+    },
     "/players/{userId}/strengths/summary": {
       "get": {
+        "description": "Backward-compatible alias for GET /players/:userId/strengths.",
         "operationId": "PlayerStrengthsController_getSummary",
         "parameters": [
           {
@@ -9572,6 +9749,7 @@
             "bearer": []
           }
         ],
+        "summary": "Get player strengths summary",
         "tags": [
           "endorsements"
         ]

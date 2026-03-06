@@ -7,6 +7,7 @@ describe('MatchesController', () => {
   let controller: MatchesController;
   let matchesService: {
     getMyMatches: jest.Mock;
+    getRankingImpact: jest.Mock;
     reportMatch: jest.Mock;
     confirmMatch: jest.Mock;
     rejectMatch: jest.Mock;
@@ -17,6 +18,7 @@ describe('MatchesController', () => {
   beforeEach(async () => {
     matchesService = {
       getMyMatches: jest.fn(),
+      getRankingImpact: jest.fn(),
       reportMatch: jest.fn(),
       confirmMatch: jest.fn(),
       rejectMatch: jest.fn(),
