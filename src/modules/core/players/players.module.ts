@@ -9,6 +9,8 @@ import { City } from '../geo/entities/city.entity';
 import { PlayersService } from './services/players.service';
 import { PlayersMeProfileController } from './controllers/players-me-profile.controller';
 import { PlayersFavoritesController } from './controllers/players-favorites.controller';
+import { PlayerCompetitiveSummaryService } from './services/player-competitive-summary.service';
+import { PlayersPublicController } from './controllers/players-public.controller';
 
 @Module({
   imports: [
@@ -21,8 +23,12 @@ import { PlayersFavoritesController } from './controllers/players-favorites.cont
       City,
     ]),
   ],
-  providers: [PlayersService],
-  controllers: [PlayersMeProfileController, PlayersFavoritesController],
+  providers: [PlayersService, PlayerCompetitiveSummaryService],
+  controllers: [
+    PlayersMeProfileController,
+    PlayersFavoritesController,
+    PlayersPublicController,
+  ],
   exports: [PlayersService],
 })
 export class PlayersModule {}
