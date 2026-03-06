@@ -402,6 +402,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
       const res = await request(app.getHttpServer())
         .get(`/leagues/${LEAGUE_ID}/pending-confirmations?limit=10`)
+        .set('x-request-id', 'req-league-pending-1')
         .expect(200);
 
       expect(res.body.items).toHaveLength(1);
@@ -410,7 +411,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       expect(matchesService.getLeaguePendingConfirmations).toHaveBeenCalledWith(
         FAKE_MEMBER.userId,
         LEAGUE_ID,
-        { cursor: undefined, limit: 10 },
+        { cursor: undefined, limit: 10, requestId: 'req-league-pending-1' },
       );
     });
   });
@@ -548,11 +549,13 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
       const postRes = await request(app.getHttpServer())
         .post(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/confirm`)
+        .set('x-request-id', 'req-confirm-post')
         .expect(201);
       const patchRes = await request(app.getHttpServer())
         .patch(
           `/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/confirm`,
         )
+        .set('x-request-id', 'req-confirm-patch')
         .expect(200);
 
       expect(postRes.body).toEqual({
@@ -569,10 +572,14 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
       });
       expect(
         matchesService.confirmLeaguePendingConfirmation,
-      ).toHaveBeenNthCalledWith(1, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID);
+      ).toHaveBeenNthCalledWith(1, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID, {
+        requestId: 'req-confirm-post',
+      });
       expect(
         matchesService.confirmLeaguePendingConfirmation,
-      ).toHaveBeenNthCalledWith(2, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID);
+      ).toHaveBeenNthCalledWith(2, FAKE_MEMBER.userId, LEAGUE_ID, MATCH_ID, {
+        requestId: 'req-confirm-patch',
+      });
     });
 
     it('uses the same service method for reject with POST and PATCH', async () => {
@@ -584,10 +591,12 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
       const postRes = await request(app.getHttpServer())
         .post(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`)
+        .set('x-request-id', 'req-reject-post')
         .send({ reason: 'Wrong score' })
         .expect(201);
       const patchRes = await request(app.getHttpServer())
         .patch(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`)
+        .set('x-request-id', 'req-reject-patch')
         .send({ reason: 'Wrong score' })
         .expect(200);
 
@@ -609,6 +618,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         LEAGUE_ID,
         MATCH_ID,
         'Wrong score',
+        { requestId: 'req-reject-post' },
       );
       expect(
         matchesService.rejectLeaguePendingConfirmation,
@@ -618,6 +628,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         LEAGUE_ID,
         MATCH_ID,
         'Wrong score',
+        { requestId: 'req-reject-patch' },
       );
     });
   });

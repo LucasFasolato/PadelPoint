@@ -39,6 +39,7 @@ import {
   RejectLeaguePendingConfirmationResponseDto,
 } from '../dto/league-pending-confirmations.dto';
 import { LeagueMatchResponseDto } from '../dto/league-match-response.dto';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -71,12 +72,14 @@ export class LeagueMatchesController {
     @Query() query: PendingConfirmationsQueryDto,
   ) {
     const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
     return this.matchesService.getLeaguePendingConfirmations(
       user.userId,
       leagueId,
       {
         cursor: query.cursor,
         limit: query.limit,
+        requestId,
       },
     );
   }
@@ -95,6 +98,7 @@ export class LeagueMatchesController {
     @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
     confirmationId: string,
   ) {
+    ensureRequestContext(req, req.res);
     return this.confirmLeaguePendingConfirmationAction(
       req,
       leagueId,
@@ -117,6 +121,7 @@ export class LeagueMatchesController {
     @Param('confirmationId', new ParseRequiredUuidPipe('confirmationId'))
     confirmationId: string,
   ) {
+    ensureRequestContext(req, req.res);
     return this.confirmLeaguePendingConfirmationAction(
       req,
       leagueId,
@@ -139,6 +144,7 @@ export class LeagueMatchesController {
     confirmationId: string,
     @Body() dto: RejectLeaguePendingConfirmationDto,
   ) {
+    ensureRequestContext(req, req.res);
     return this.rejectLeaguePendingConfirmationAction(
       req,
       leagueId,
@@ -163,6 +169,7 @@ export class LeagueMatchesController {
     confirmationId: string,
     @Body() dto: RejectLeaguePendingConfirmationDto,
   ) {
+    ensureRequestContext(req, req.res);
     return this.rejectLeaguePendingConfirmationAction(
       req,
       leagueId,
@@ -177,10 +184,12 @@ export class LeagueMatchesController {
     confirmationId: string,
   ) {
     const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
     return this.matchesService.confirmLeaguePendingConfirmation(
       user.userId,
       leagueId,
       confirmationId,
+      { requestId },
     );
   }
 
@@ -191,11 +200,13 @@ export class LeagueMatchesController {
     dto: RejectLeaguePendingConfirmationDto,
   ) {
     const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
     return this.matchesService.rejectLeaguePendingConfirmation(
       user.userId,
       leagueId,
       confirmationId,
       dto.reason,
+      { requestId },
     );
   }
 

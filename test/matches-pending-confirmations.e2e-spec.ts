@@ -67,6 +67,7 @@ describe('Matches Pending Confirmations (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .get('/matches/me/pending-confirmations?limit=10')
+      .set('x-request-id', 'req-pending-1')
       .expect(200);
 
     expect(res.body).toEqual({
@@ -75,7 +76,7 @@ describe('Matches Pending Confirmations (e2e)', () => {
     });
     expect(matchesService.getPendingConfirmations).toHaveBeenCalledWith(
       FAKE_USER.userId,
-      { cursor: undefined, limit: 10 },
+      { cursor: undefined, limit: 10, requestId: 'req-pending-1' },
     );
   });
 });

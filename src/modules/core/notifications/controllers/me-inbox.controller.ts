@@ -17,6 +17,7 @@ import { MeInboxQueryDto } from '../dto/me-inbox-query.dto';
 import { InboxResponseDto } from '../dto/inbox.dto';
 import { InboxService } from '../services/inbox.service';
 import { LegacyNotificationsFeedResponseDto } from '../dto/notifications-inbox.dto';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -31,7 +32,8 @@ export class MeInboxController {
   @Get('inbox')
   @ApiOperation({
     summary: 'Legacy inbox endpoint (deprecated)',
-    description: 'Use GET /notifications/inbox for the canonical actions inbox.',
+    description:
+      'Use GET /notifications/inbox for the canonical actions inbox.',
     deprecated: true,
   })
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
@@ -39,13 +41,18 @@ export class MeInboxController {
   @ApiOkResponse({ type: InboxResponseDto })
   listInbox(@Req() req: Request, @Query() query: MeInboxQueryDto) {
     const user = req.user as AuthUser;
-    return this.inboxService.listInbox(user.userId, { limit: query.limit });
+    const { requestId } = ensureRequestContext(req, req.res);
+    return this.inboxService.listInbox(user.userId, {
+      limit: query.limit,
+      requestId,
+    });
   }
 
   @Get('notifications')
   @ApiOperation({
     summary: 'Legacy notifications feed endpoint (deprecated)',
-    description: 'Use GET /notifications for feed history or GET /notifications/inbox for actionable items.',
+    description:
+      'Use GET /notifications for feed history or GET /notifications/inbox for actionable items.',
     deprecated: true,
   })
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')

@@ -576,3 +576,50 @@ Critical contract keys validated by e2e tests:
 - `GET /leagues/:id/standings` keys
 - Invite accept/decline response keys
 - Member role update response keys
+
+## 8) Observability / Domain Events
+
+### 8.1 Request correlation
+
+- Every HTTP request receives a backend-generated or forwarded `requestId`
+- Accepted incoming headers:
+  - `x-request-id`
+  - `x-railway-request-id`
+- The backend echoes `x-request-id` in the response when available
+- Structured logs emitted from matches, leagues, and notifications include `requestId`
+- Important infrastructure-mapped errors include `errorId` and `requestId` when available
+
+### 8.2 Domain telemetry emitted
+
+The backend emits structured internal telemetry logs for:
+
+- `league_match_reported`
+- `league_match_confirmed`
+- `league_match_rejected`
+- `league_pending_confirmation_fetched`
+- `inbox_pending_confirmation_opened`
+- `league_standings_recomputed`
+
+Recommended metadata captured per event when applicable:
+
+- `requestId`
+- `userId`
+- `leagueId`
+- `matchId`
+- `confirmationId`
+- `durationMs`
+- `outcome`
+
+### 8.3 Canon vs legacy
+
+Canonical league pending confirmation shape:
+
+- `teams`
+- `participants`
+- `score.summary`
+- `score.sets`
+
+Legacy compatibility retained:
+
+- `sets` is still returned on league pending confirmations for older clients
+- `sets` is deprecated and mirrors `score.sets`

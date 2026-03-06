@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { setupOpenApi } from '@/openapi/openapi';
 import { OriginCsrfGuard } from '@/common/guards/origin-csrf.guard';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 
 const bootLogger = new Logger('Bootstrap');
 
@@ -12,14 +13,17 @@ function normalizeOrigin(url: string): string {
 }
 
 async function bootstrap() {
-  const gitSha =
-    process.env.GIT_SHA ?? process.env.COMMIT_SHA ?? 'unknown';
+  const gitSha = process.env.GIT_SHA ?? process.env.COMMIT_SHA ?? 'unknown';
   const nodeEnv = process.env.NODE_ENV ?? 'development';
   bootLogger.log(`Starting PadelPoint backend sha=${gitSha} env=${nodeEnv}`);
 
   const app = await NestFactory.create(AppModule);
 
   app.use(cookieParser());
+  app.use((req, res, next) => {
+    ensureRequestContext(req, res);
+    next();
+  });
 
   const appUrlRaw = process.env.APP_URL ?? '';
   const allowedOrigin = appUrlRaw ? normalizeOrigin(appUrlRaw) : '';
@@ -40,7 +44,12 @@ async function bootstrap() {
       if (reqOrigin === allowedOrigin) return callback(null, true);
 
       // eslint-disable-next-line no-console
-      console.log('[CORS] blocked origin:', reqOrigin, 'allowed:', allowedOrigin);
+      console.log(
+        '[CORS] blocked origin:',
+        reqOrigin,
+        'allowed:',
+        allowedOrigin,
+      );
 
       return callback(new Error('Not allowed by CORS'), false);
     },

@@ -11,6 +11,7 @@ import {
   MockDataSource,
 } from '@/test-utils/mock-datasource';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
 
 describe('InboxService', () => {
   const USER_ID = 'a1111111-1111-4111-a111-111111111111';
@@ -21,6 +22,7 @@ describe('InboxService', () => {
   let challengeRepo: MockRepo<Challenge>;
   let inviteRepo: MockRepo<LeagueInvite>;
   let notificationsService: { listInboxCanonical: jest.Mock };
+  let telemetry: { track: jest.Mock };
 
   beforeEach(async () => {
     dataSource = createMockDataSource();
@@ -30,6 +32,7 @@ describe('InboxService', () => {
     notificationsService = {
       listInboxCanonical: jest.fn(),
     };
+    telemetry = { track: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -39,6 +42,7 @@ describe('InboxService', () => {
         { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
         { provide: getRepositoryToken(LeagueInvite), useValue: inviteRepo },
         { provide: UserNotificationsService, useValue: notificationsService },
+        { provide: DomainTelemetryService, useValue: telemetry },
       ],
     }).compile();
 
@@ -153,7 +157,14 @@ describe('InboxService', () => {
       nextCursor: null,
     });
 
-    const result = await service.listInbox(USER_ID, { limit: 20 });
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    const result = await service.listInbox(USER_ID, {
+      limit: 20,
+      requestId: 'req-inbox-1',
+    });
 
     expect(result.pendingConfirmations.items).toEqual([]);
     expect(result.pendingConfirmations.error).toEqual(
@@ -163,6 +174,10 @@ describe('InboxService', () => {
       }),
     );
     expect(result.notifications.items).toHaveLength(1);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"requestId":"req-inbox-1"'),
+      expect.any(String),
+    );
   });
 
   it('returns canonical pending confirmations with teams, participants and score summary derivative', async () => {
@@ -222,7 +237,10 @@ describe('InboxService', () => {
       nextCursor: null,
     });
 
-    const result = await service.listInbox(USER_ID, { limit: 20 });
+    const result = await service.listInbox(USER_ID, {
+      limit: 20,
+      requestId: 'req-inbox-2',
+    });
 
     expect(result.pendingConfirmations.items).toEqual([
       expect.objectContaining({
@@ -252,5 +270,13 @@ describe('InboxService', () => {
         },
       }),
     ]);
+    expect(telemetry.track).toHaveBeenCalledWith(
+      'inbox_pending_confirmation_opened',
+      expect.objectContaining({
+        requestId: 'req-inbox-2',
+        userId: USER_ID,
+        outcome: 'SUCCESS',
+      }),
+    );
   });
 });

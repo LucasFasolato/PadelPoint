@@ -23,6 +23,8 @@ import {
   parseScoreSummary,
 } from '@/modules/core/matches/utils/score-summary';
 import { UserNotificationsService } from './user-notifications.service';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
+import { logStructured } from '@/common/observability/structured-log.util';
 
 type InboxSectionError = { code: string; errorId: string };
 type InboxSection<T> = { items: T[]; error?: InboxSectionError };
@@ -145,35 +147,64 @@ export class InboxService {
     @InjectRepository(LeagueInvite)
     private readonly inviteRepo: Repository<LeagueInvite>,
     private readonly userNotificationsService: UserNotificationsService,
+    private readonly telemetry: DomainTelemetryService,
   ) {}
 
   async listInbox(
     userId: string,
-    opts: { limit?: number } = {},
+    opts: { limit?: number; requestId?: string } = {},
   ): Promise<InboxResponse> {
     const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+    const requestId = opts.requestId;
+    const startMs = Date.now();
 
     const [pendingConfirmations, challenges, invites, notifications] =
       await Promise.all([
         this.safeSection(
           'PENDING_CONFIRMATIONS_UNAVAILABLE',
           userId,
+          requestId,
           'pendingConfirmations',
           () => this.listPendingConfirmations(userId, limit),
         ),
-        this.safeSection('CHALLENGES_UNAVAILABLE', userId, 'challenges', () =>
-          this.listChallenges(userId, limit),
+        this.safeSection(
+          'CHALLENGES_UNAVAILABLE',
+          userId,
+          requestId,
+          'challenges',
+          () => this.listChallenges(userId, limit),
         ),
-        this.safeSection('INVITES_UNAVAILABLE', userId, 'invites', () =>
-          this.listInvites(userId, limit),
+        this.safeSection(
+          'INVITES_UNAVAILABLE',
+          userId,
+          requestId,
+          'invites',
+          () => this.listInvites(userId, limit),
         ),
         this.safeSection(
           'NOTIFICATIONS_UNAVAILABLE',
           userId,
+          requestId,
           'notifications',
           () => this.listNotifications(userId, limit),
         ),
       ]);
+
+    this.telemetry.track('inbox_pending_confirmation_opened', {
+      requestId,
+      userId,
+      durationMs: Date.now() - startMs,
+      outcome: pendingConfirmations.error ? 'PARTIAL_FAILURE' : 'SUCCESS',
+      itemsReturned: pendingConfirmations.items.length,
+    });
+    logStructured(this.logger, 'log', {
+      event: 'notifications.inbox.pending_confirmations.loaded',
+      requestId,
+      userId,
+      durationMs: Date.now() - startMs,
+      outcome: pendingConfirmations.error ? 'PARTIAL_FAILURE' : 'SUCCESS',
+      itemsReturned: pendingConfirmations.items.length,
+    });
 
     return {
       pendingConfirmations,
@@ -186,6 +217,7 @@ export class InboxService {
   private async safeSection<T>(
     code: string,
     userId: string,
+    requestId: string | undefined,
     section: string,
     loader: () => Promise<T[]>,
   ): Promise<InboxSection<T>> {
@@ -195,15 +227,18 @@ export class InboxService {
     } catch (err) {
       const errorId = randomUUID();
       const reason = err instanceof Error ? err.message : 'unknown_error';
-      this.logger.error(
-        JSON.stringify({
+      logStructured(
+        this.logger,
+        'error',
+        {
           event: 'inbox.section.failed',
+          requestId,
           section,
           code,
           errorId,
           userId,
           reason,
-        }),
+        },
         err instanceof Error ? err.stack : undefined,
       );
       return {

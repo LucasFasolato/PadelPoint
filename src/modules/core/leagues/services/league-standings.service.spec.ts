@@ -4,7 +4,10 @@ import { League } from '../entities/league.entity';
 import { LeagueMember } from '../entities/league-member.entity';
 import { LeagueStandingsSnapshot } from '../entities/league-standings-snapshot.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
-import { MatchResultStatus, WinnerTeam } from '../../matches/entities/match-result.entity';
+import {
+  MatchResultStatus,
+  WinnerTeam,
+} from '../../matches/entities/match-result.entity';
 import {
   DEFAULT_LEAGUE_SETTINGS,
   LeagueSettings,
@@ -160,12 +163,16 @@ function createMockManager(data: {
           orderBy: jest.fn().mockReturnThis(),
           addOrderBy: jest.fn().mockReturnThis(),
           getOne: jest.fn().mockResolvedValue(null),
-          getRawOne: jest.fn().mockResolvedValue({ nextVersion: String(snapshots.length + 1) }),
+          getRawOne: jest
+            .fn()
+            .mockResolvedValue({ nextVersion: String(snapshots.length + 1) }),
         };
         return qb;
       };
       return {
-        createQueryBuilder: jest.fn().mockImplementation(() => makeSnapshotQb()),
+        createQueryBuilder: jest
+          .fn()
+          .mockImplementation(() => makeSnapshotQb()),
         create: jest
           .fn()
           .mockImplementation((input: Record<string, unknown>) => input),
@@ -220,6 +227,7 @@ describe('LeagueStandingsService', () => {
       noopUserRepo,
       noopActivityService,
       noopNotificationsService,
+      { track: jest.fn() } as any,
     );
   });
 
@@ -681,7 +689,11 @@ describe('LeagueStandingsService', () => {
         mockSnapshotRepo,
         emptyUserRepo,
         { create: jest.fn().mockResolvedValue(undefined) } as any,
-        { hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false), create: jest.fn() } as any,
+        {
+          hasRankingMovedForSnapshot: jest.fn().mockResolvedValue(false),
+          create: jest.fn(),
+        } as any,
+        { track: jest.fn() } as any,
       );
 
       const { rows } = await testService.getStandingsWithMovement('league-1');

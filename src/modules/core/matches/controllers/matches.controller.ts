@@ -21,6 +21,7 @@ import { ResolveDisputeDto } from '../dto/resolve-dispute.dto';
 import { UserRole } from '../../users/enums/user-role.enum';
 import { MyPendingConfirmationsResponseDto } from '../dto/my-pending-confirmation.dto';
 import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query.dto';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 
 type AuthUser = { userId: string; email: string; role: string };
 
@@ -73,10 +74,7 @@ export class MatchesController {
       ],
     },
   })
-  async getMyMatches(
-    @Req() req: Request,
-    @Query('legacy') legacy?: string,
-  ) {
+  async getMyMatches(@Req() req: Request, @Query('legacy') legacy?: string) {
     const user = req.user as AuthUser;
     const items = await this.service.getMyMatches(user.userId);
     if (legacy === '1' || legacy?.toLowerCase() === 'true') {
@@ -95,9 +93,11 @@ export class MatchesController {
     @Query() query: PendingConfirmationsQueryDto,
   ) {
     const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
     return this.service.getPendingConfirmations(user.userId, {
       cursor: query.cursor,
       limit: query.limit,
+      requestId,
     });
   }
 

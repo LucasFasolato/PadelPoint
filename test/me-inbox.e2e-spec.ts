@@ -77,6 +77,7 @@ describe('Me Inbox (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .get('/me/inbox?limit=20')
+      .set('x-request-id', 'req-inbox-e2e-1')
       .expect(200);
 
     expect(res.body).toEqual({
@@ -87,6 +88,7 @@ describe('Me Inbox (e2e)', () => {
     });
     expect(inboxService.listInbox).toHaveBeenCalledWith(FAKE_USER.userId, {
       limit: 20,
+      requestId: 'req-inbox-e2e-1',
     });
   });
 
@@ -106,6 +108,7 @@ describe('Me Inbox (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .get('/me/inbox?limit=10')
+      .set('x-request-id', 'req-inbox-e2e-2')
       .expect(200);
 
     expect(res.body.pendingConfirmations).toEqual({

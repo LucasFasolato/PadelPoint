@@ -24,6 +24,7 @@ import { LeagueActivityService } from '../../leagues/services/league-activity.se
 import { LeagueActivityType } from '../../leagues/enums/league-activity-type.enum';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
 import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
 import { DisputeReasonCode } from '../enums/dispute-reason.enum';
 import { DisputeStatus } from '../enums/dispute-status.enum';
@@ -104,6 +105,7 @@ describe('MatchesService', () => {
   let userNotifications: { create: jest.Mock };
   let leagueStandingsService: { recomputeForMatch: jest.Mock };
   let leagueActivityService: { create: jest.Mock };
+  let telemetry: { track: jest.Mock };
 
   // Mock repos returned inside transactions
   let txMatchRepo: MockRepo<MatchResult>;
@@ -125,6 +127,7 @@ describe('MatchesService', () => {
     userNotifications = { create: jest.fn().mockResolvedValue({}) };
     leagueStandingsService = { recomputeForMatch: jest.fn() };
     leagueActivityService = { create: jest.fn().mockResolvedValue({}) };
+    telemetry = { track: jest.fn() };
 
     // Transaction mock repos
     txMatchRepo = createMockRepo<MatchResult>();
@@ -180,6 +183,7 @@ describe('MatchesService', () => {
         { provide: LeagueStandingsService, useValue: leagueStandingsService },
         { provide: LeagueActivityService, useValue: leagueActivityService },
         { provide: UserNotificationsService, useValue: userNotifications },
+        { provide: DomainTelemetryService, useValue: telemetry },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue(48) },
@@ -910,6 +914,7 @@ describe('MatchesService', () => {
           { provide: LeagueStandingsService, useValue: leagueStandingsService },
           { provide: LeagueActivityService, useValue: leagueActivityService },
           { provide: UserNotificationsService, useValue: userNotifications },
+          { provide: DomainTelemetryService, useValue: telemetry },
           {
             provide: ConfigService,
             useValue: { get: jest.fn().mockReturnValue(48) },
@@ -1685,8 +1690,10 @@ describe('MatchesService', () => {
         status: 'CONFIRMED',
         confirmationId: 'match-1',
         matchId: 'match-1',
+        recomputeTriggered: false,
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
     it('confirmLeaguePendingConfirmation returns REJECTED when already rejected', async () => {
@@ -1717,8 +1724,10 @@ describe('MatchesService', () => {
         status: 'REJECTED',
         confirmationId: 'match-1',
         matchId: 'match-1',
+        recomputeTriggered: false,
       });
       expect(txMatchRepo.save).not.toHaveBeenCalled();
+      expect(leagueStandingsService.recomputeForMatch).not.toHaveBeenCalled();
     });
 
     it('rejectLeaguePendingConfirmation returns CONFIRMED when already confirmed', async () => {
@@ -1834,6 +1843,15 @@ describe('MatchesService', () => {
         expect.any(Object),
         'match-pending-1',
       );
+      expect(telemetry.track).toHaveBeenCalledWith(
+        'league_match_confirmed',
+        expect.objectContaining({
+          leagueId: 'league-1',
+          matchId: 'match-pending-1',
+          confirmationId: 'match-pending-1',
+          outcome: 'SUCCESS',
+        }),
+      );
     });
 
     it('rejectLeaguePendingConfirmation marks the match rejected and writes coherent league activity', async () => {
@@ -1884,6 +1902,15 @@ describe('MatchesService', () => {
           leagueId: 'league-1',
           type: LeagueActivityType.MATCH_REJECTED,
           entityId: 'match-pending-2',
+        }),
+      );
+      expect(telemetry.track).toHaveBeenCalledWith(
+        'league_match_rejected',
+        expect.objectContaining({
+          leagueId: 'league-1',
+          matchId: 'match-pending-2',
+          confirmationId: 'match-pending-2',
+          outcome: 'SUCCESS',
         }),
       );
     });

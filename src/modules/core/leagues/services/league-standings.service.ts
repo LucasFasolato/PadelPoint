@@ -11,7 +11,10 @@ import {
 } from '../entities/league-standings-snapshot.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
 import { LeagueMode } from '../enums/league-mode.enum';
-import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '../../matches/entities/match-result.entity';
 import {
   LeagueSettings,
   normalizeLeagueSettings,
@@ -24,6 +27,8 @@ import { LeagueActivityService } from './league-activity.service';
 import { LeagueActivityType } from '../enums/league-activity-type.enum';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
+import { logStructured } from '@/common/observability/structured-log.util';
 
 /** Max user notifications emitted per league per snapshot. */
 const MAX_NOTIFICATIONS_PER_SNAPSHOT = 10;
@@ -31,6 +36,10 @@ const MAX_NOTIFICATIONS_PER_SNAPSHOT = 10;
 /** Snapshot row enriched with display-ready player name for API responses. */
 export type EnrichedStandingsRow = LeagueStandingsSnapshotRow & {
   displayName: string | null;
+};
+
+type RequestContextInput = {
+  requestId?: string;
 };
 
 @Injectable()
@@ -52,6 +61,7 @@ export class LeagueStandingsService {
     private readonly userRepo: Repository<User>,
     private readonly activityService: LeagueActivityService,
     private readonly userNotificationsService: UserNotificationsService,
+    private readonly telemetry: DomainTelemetryService,
   ) {}
 
   /**
@@ -61,6 +71,7 @@ export class LeagueStandingsService {
   async recomputeForMatch(
     manager: EntityManager,
     matchId: string,
+    context: RequestContextInput = {},
   ): Promise<void> {
     this.debugLog(`recomputeForMatch: entry matchId=${matchId}`);
     const match = await manager
@@ -99,7 +110,7 @@ export class LeagueStandingsService {
         .getCount();
 
       if (memberCount === 4) {
-        await this.recomputeLeague(manager, league.id);
+        await this.recomputeLeague(manager, league.id, context);
       }
     }
     this.debugLog(`recomputeForMatch: done matchId=${matchId}`);
@@ -113,8 +124,10 @@ export class LeagueStandingsService {
   async recomputeLeague(
     manager: EntityManager,
     leagueId: string,
+    context: RequestContextInput = {},
   ): Promise<LeagueMember[]> {
     const startMs = Date.now();
+    const requestId = context.requestId;
     this.debugLog(`recomputeLeague: entry leagueId=${leagueId}`);
     const league = await manager
       .getRepository(League)
@@ -136,7 +149,11 @@ export class LeagueStandingsService {
       .innerJoinAndSelect('mr.challenge', 'c')
       .where('mr.status = :status', { status: MatchResultStatus.CONFIRMED });
 
-    if (league.mode === LeagueMode.SCHEDULED && league.startDate && league.endDate) {
+    if (
+      league.mode === LeagueMode.SCHEDULED &&
+      league.startDate &&
+      league.endDate
+    ) {
       matchQb
         .andWhere('mr."playedAt" >= :start', { start: league.startDate })
         .andWhere('mr."playedAt" <= :end', { end: league.endDate });
@@ -339,6 +356,25 @@ export class LeagueStandingsService {
     this.logger.log(
       `standings recomputed: leagueId=${leagueId} members=${ranked.length} totalMatchesFetched=${totalMatchesFetched} totalMatchesUsed=${leagueMatches.length} snapshotVersion=${snapshot.version} checksum=${snapshot.checksum} executionTimeMs=${Date.now() - startMs}`,
     );
+    this.telemetry.track('league_standings_recomputed', {
+      requestId,
+      leagueId,
+      durationMs: Date.now() - startMs,
+      outcome: 'SUCCESS',
+      totalMatchesFetched,
+      totalMatchesUsed: leagueMatches.length,
+      snapshotVersion: snapshot.version,
+    });
+    logStructured(this.logger, 'log', {
+      event: 'league.standings.recomputed',
+      requestId,
+      leagueId,
+      durationMs: Date.now() - startMs,
+      outcome: 'SUCCESS',
+      totalMatchesFetched,
+      totalMatchesUsed: leagueMatches.length,
+      snapshotVersion: snapshot.version,
+    });
 
     // Emit activity + per-player notifications (best-effort; failures are logged, not thrown)
     try {
@@ -375,7 +411,11 @@ export class LeagueStandingsService {
     if (!latest) {
       rows = await this.getCurrentRowsFromMembers(leagueId);
       movement = this.computeMovement(rows, null);
-      return { computedAt: null, rows: await this.enrichRowsWithUsers(rows), movement };
+      return {
+        computedAt: null,
+        rows: await this.enrichRowsWithUsers(rows),
+        movement,
+      };
     }
 
     const previous = await this.snapshotRepo
@@ -455,7 +495,12 @@ export class LeagueStandingsService {
       const rawTable = await this.getCurrentRowsFromMembers(leagueId);
       const movements = computeStandingsDiff([], rawTable);
       const table = await this.enrichRowsWithUsers(rawTable);
-      return { computedAt: null, table, movements, topMovers: { up: [], down: [] } };
+      return {
+        computedAt: null,
+        table,
+        movements,
+        topMovers: { up: [], down: [] },
+      };
     }
 
     const prevSnapshot = await this.snapshotRepo
@@ -502,7 +547,10 @@ export class LeagueStandingsService {
       });
       const userMap = new Map<string, string | null>();
       for (const u of users) {
-        userMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+        userMap.set(
+          u.id,
+          u.displayName ?? (u.email ? u.email.split('@')[0] : null),
+        );
       }
       return rows.map((r) => ({
         ...r,
@@ -518,8 +566,15 @@ export class LeagueStandingsService {
     leagueId: string,
     rows: LeagueStandingsSnapshotRow[],
     totalMatchesUsed: number,
-  ): Promise<LeagueStandingsSnapshot & { checksum: string; movements: StandingsMovement[] }> {
-    this.debugLog(`persistSnapshot: entry leagueId=${leagueId} rows=${rows.length} matchesUsed=${totalMatchesUsed}`);
+  ): Promise<
+    LeagueStandingsSnapshot & {
+      checksum: string;
+      movements: StandingsMovement[];
+    }
+  > {
+    this.debugLog(
+      `persistSnapshot: entry leagueId=${leagueId} rows=${rows.length} matchesUsed=${totalMatchesUsed}`,
+    );
     // Stable JSON ordering: rows sorted by position ASC then userId ASC before persistence
     const stableRows = [...rows].sort(
       (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
@@ -542,18 +597,16 @@ export class LeagueStandingsService {
     const movementByUser = new Map(movements.map((m) => [m.userId, m]));
 
     // Enrich each row with movement metadata for direct consumers
-    const enrichedRows: LeagueStandingsSnapshotRow[] = stableRows.map(
-      (row) => {
-        const mv = movementByUser.get(row.userId);
-        if (!mv) return row;
-        return {
-          ...row,
-          delta: mv.delta,
-          oldPosition: mv.oldPosition,
-          movementType: mv.movementType,
-        };
-      },
-    );
+    const enrichedRows: LeagueStandingsSnapshotRow[] = stableRows.map((row) => {
+      const mv = movementByUser.get(row.userId);
+      if (!mv) return row;
+      return {
+        ...row,
+        delta: mv.delta,
+        oldPosition: mv.oldPosition,
+        movementType: mv.movementType,
+      };
+    });
 
     // Deterministic checksum over the pure stats payload (movement is derived)
     const checksum = createHash('sha256')
@@ -685,11 +738,19 @@ export class LeagueStandingsService {
       up: movements
         .filter((m) => m.movementType === 'UP')
         .slice(0, 3)
-        .map(({ userId, delta, newPosition }) => ({ userId, delta, newPosition })),
+        .map(({ userId, delta, newPosition }) => ({
+          userId,
+          delta,
+          newPosition,
+        })),
       down: movements
         .filter((m) => m.movementType === 'DOWN')
         .slice(0, 3)
-        .map(({ userId, delta, newPosition }) => ({ userId, delta, newPosition })),
+        .map(({ userId, delta, newPosition }) => ({
+          userId,
+          delta,
+          newPosition,
+        })),
     };
 
     try {

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   InternalServerErrorException,
   Injectable,
   Logger,
@@ -54,12 +55,18 @@ import { LeagueActivity } from '../../leagues/entities/league-activity.entity';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
 import { buildScoreSummary, parseScoreSummary } from '../utils/score-summary';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
+import { logStructured } from '@/common/observability/structured-log.util';
 
 const TZ = 'America/Argentina/Cordoba';
 
 type PlayerRef = { userId: string | null; displayName: string | null };
 
 type PendingConfirmationStatus = 'PENDING_CONFIRMATION';
+
+type RequestContextInput = {
+  requestId?: string;
+};
 
 type PendingConfirmationCta = {
   primary: 'Confirmar' | 'Ver';
@@ -238,9 +245,92 @@ export class MatchesService {
     private readonly leagueStandingsService: LeagueStandingsService,
     private readonly leagueActivityService: LeagueActivityService,
     private readonly userNotifications: UserNotificationsService,
+    private readonly telemetry: DomainTelemetryService,
     config: ConfigService,
   ) {
     this.disputeWindowHours = config.get<number>('DISPUTE_WINDOW_HOURS') ?? 48;
+  }
+
+  private trackDomainEvent(
+    event:
+      | 'league_match_reported'
+      | 'league_match_confirmed'
+      | 'league_match_rejected'
+      | 'league_pending_confirmation_fetched',
+    payload: {
+      requestId?: string | null;
+      userId?: string | null;
+      leagueId?: string | null;
+      matchId?: string | null;
+      confirmationId?: string | null;
+      durationMs?: number | null;
+      outcome?: string | null;
+      [key: string]: unknown;
+    },
+  ): void {
+    this.telemetry.track(event, payload);
+  }
+
+  private logStructured(
+    level: 'log' | 'warn' | 'error' | 'debug',
+    payload: Record<string, unknown>,
+    trace?: string,
+  ): void {
+    logStructured(this.logger, level, payload, trace);
+  }
+
+  private buildOperationError(
+    code: string,
+    message: string,
+    requestId?: string,
+  ): InternalServerErrorException {
+    const errorId = randomUUID();
+    return new InternalServerErrorException({
+      statusCode: 500,
+      code,
+      message,
+      errorId,
+      ...(requestId ? { requestId } : {}),
+    });
+  }
+
+  private rethrowUnexpectedError(
+    err: unknown,
+    payload: {
+      event: string;
+      code: string;
+      message: string;
+      requestId?: string;
+      userId?: string;
+      leagueId?: string;
+      matchId?: string;
+      confirmationId?: string;
+    },
+  ): never {
+    if (err instanceof HttpException) {
+      throw err;
+    }
+
+    const error = this.buildOperationError(
+      payload.code,
+      payload.message,
+      payload.requestId,
+    );
+    const response = error.getResponse() as Record<string, unknown>;
+    const reason = err instanceof Error ? err.message : 'unknown_error';
+
+    this.logStructured(
+      'error',
+      {
+        event: payload.event,
+        ...payload,
+        errorId: response.errorId,
+        reason,
+      },
+      err instanceof Error ? err.stack : undefined,
+    );
+
+    throw error;
   }
 
   // ------------------------
@@ -699,9 +789,16 @@ export class MatchesService {
   private async recomputeStandingsIfCompetitive(
     manager: EntityManager,
     match: Pick<MatchResult, 'id' | 'leagueId' | 'matchType' | 'impactRanking'>,
+    context: RequestContextInput = {},
   ): Promise<void> {
     if (!match.leagueId) return;
     if (!this.shouldImpactRanking(match)) return;
+    if (context.requestId) {
+      await this.leagueStandingsService.recomputeForMatch(manager, match.id, {
+        requestId: context.requestId,
+      });
+      return;
+    }
     await this.leagueStandingsService.recomputeForMatch(manager, match.id);
   }
 
@@ -1854,13 +1951,14 @@ export class MatchesService {
    */
   async getPendingConfirmations(
     userId: string,
-    opts: { cursor?: string; limit?: number },
+    opts: { cursor?: string; limit?: number; requestId?: string },
   ): Promise<{
     items: MyPendingConfirmationView[];
     nextCursor: string | null;
   }> {
     const startMs = Date.now();
     const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+    const requestId = opts.requestId;
 
     try {
       const qb = this.matchRepo
@@ -1935,199 +2033,66 @@ export class MatchesService {
 
       const result = this.toMyPendingConfirmationViews(userId, pagedRows);
 
-      this.logger.debug(
-        `getPendingConfirmations: userId=${userId} rowsFound=${rows.length} itemsReturned=${result.length} executionTimeMs=${Date.now() - startMs}`,
-      );
+      this.logStructured('debug', {
+        event: 'matches.pending_confirmations.fetched',
+        requestId,
+        userId,
+        rowsFound: rows.length,
+        itemsReturned: result.length,
+        durationMs: Date.now() - startMs,
+      });
 
       return { items: result, nextCursor };
     } catch (err) {
       if (err instanceof SafePendingConfirmationsFallbackError) {
-        this.logger.warn(
-          `getPendingConfirmations safe fallback applied for userId=${userId}: ${err.message}`,
-        );
+        this.logStructured('warn', {
+          event: 'matches.pending_confirmations.safe_fallback',
+          requestId,
+          userId,
+          reason: err.message,
+        });
         return { items: [], nextCursor: null };
       }
 
-      const errorId = randomUUID();
+      const error = this.buildOperationError(
+        'PENDING_CONFIRMATIONS_UNAVAILABLE',
+        'Unable to load pending confirmations at the moment. Please try again.',
+        requestId,
+      );
+      const response = error.getResponse() as Record<string, unknown>;
       const reason = err instanceof Error ? err.message : 'unknown_error';
-      this.logger.error(
-        `getPendingConfirmations failed errorId=${errorId} userId=${userId} reason=${reason}`,
+      this.logStructured(
+        'error',
+        {
+          event: 'matches.pending_confirmations.failed',
+          requestId,
+          userId,
+          errorId: response.errorId,
+          reason,
+        },
         err instanceof Error ? err.stack : undefined,
       );
-      throw new InternalServerErrorException({
-        statusCode: 500,
-        code: 'PENDING_CONFIRMATIONS_UNAVAILABLE',
-        message:
-          'Unable to load pending confirmations at the moment. Please try again.',
-        errorId,
-      });
+      throw error;
     }
   }
 
   async getLeaguePendingConfirmations(
     userId: string,
     leagueId: string,
-    opts: { cursor?: string; limit?: number },
+    opts: { cursor?: string; limit?: number; requestId?: string },
   ): Promise<{
     items: LeaguePendingConfirmationItem[];
     nextCursor: string | null;
   }> {
     const startMs = Date.now();
     const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+    const requestId = opts.requestId;
 
-    const member = await this.dataSource.getRepository(LeagueMember).findOne({
-      where: { leagueId, userId },
-      select: ['id', 'leagueId', 'userId'],
-    });
-    if (!member) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        code: 'LEAGUE_FORBIDDEN',
-        message: 'You are not a member of this league',
+    try {
+      const member = await this.dataSource.getRepository(LeagueMember).findOne({
+        where: { leagueId, userId },
+        select: ['id', 'leagueId', 'userId'],
       });
-    }
-
-    const qb = this.matchRepo
-      .createQueryBuilder('m')
-      .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
-      .leftJoin(User, 'a1', 'a1.id = c."teamA1Id"')
-      .leftJoin(User, 'a2', 'a2.id = c."teamA2Id"')
-      .leftJoin(User, 'b1', 'b1.id = c."teamB1Id"')
-      .leftJoin(User, 'b2', 'b2.id = c."teamB2Id"')
-      .select('m.id', 'matchId')
-      .addSelect('m."leagueId"', 'leagueId')
-      .addSelect('m."reportedByUserId"', 'reportedByUserId')
-      .addSelect('m."createdAt"', 'createdAt')
-      .addSelect('COALESCE(m."playedAt", m."createdAt")', 'sortDate')
-      .addSelect('m."matchType"', 'matchType')
-      .addSelect('m."impactRanking"', 'impactRanking')
-      .addSelect('m."teamASet1"', 'teamASet1')
-      .addSelect('m."teamBSet1"', 'teamBSet1')
-      .addSelect('m."teamASet2"', 'teamASet2')
-      .addSelect('m."teamBSet2"', 'teamBSet2')
-      .addSelect('m."teamASet3"', 'teamASet3')
-      .addSelect('m."teamBSet3"', 'teamBSet3')
-      .addSelect('c."teamA1Id"', 'teamA1Id')
-      .addSelect('c."teamA2Id"', 'teamA2Id')
-      .addSelect('c."teamB1Id"', 'teamB1Id')
-      .addSelect('c."teamB2Id"', 'teamB2Id')
-      .addSelect('a1."displayName"', 'teamA1DisplayName')
-      .addSelect('a1.email', 'teamA1Email')
-      .addSelect('a2."displayName"', 'teamA2DisplayName')
-      .addSelect('a2.email', 'teamA2Email')
-      .addSelect('b1."displayName"', 'teamB1DisplayName')
-      .addSelect('b1.email', 'teamB1Email')
-      .addSelect('b2."displayName"', 'teamB2DisplayName')
-      .addSelect('b2.email', 'teamB2Email')
-      .where('m."leagueId" = :leagueId', { leagueId })
-      .andWhere('m.status = :status', {
-        status: MatchResultStatus.PENDING_CONFIRM,
-      })
-      .andWhere('m."reportedByUserId" != :userId', { userId })
-      .andWhere(
-        '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
-        { userId },
-      )
-      .orderBy('COALESCE(m."playedAt", m."createdAt")', 'DESC')
-      .addOrderBy('m.id', 'DESC')
-      .take(limit + 1);
-
-    const parsedCursor = this.parsePendingConfirmationsCursor(opts.cursor);
-    if (parsedCursor) {
-      qb.andWhere(
-        '(COALESCE(m."playedAt", m."createdAt"), m.id) < (:cursorDate, :cursorId)',
-        parsedCursor,
-      );
-    }
-
-    const rows = await qb.getRawMany<LeaguePendingConfirmationRawRow>();
-    if (!Array.isArray(rows)) {
-      throw new SafePendingConfirmationsFallbackError(
-        'Unexpected league pending confirmations query result shape',
-      );
-    }
-
-    const hasMore = rows.length > limit;
-    const pagedRows = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor =
-      hasMore && pagedRows.length > 0
-        ? (() => {
-            const cursorRow = pagedRows[pagedRows.length - 1];
-            const cursorDate =
-              this.toIsoString(cursorRow.sortDate) ??
-              this.toIsoString(cursorRow.createdAt);
-            return cursorDate ? `${cursorDate}|${cursorRow.matchId}` : null;
-          })()
-        : null;
-
-    const scoreSummaryByMatchId = await this.resolveScoreSummaryByMatchIds(
-      pagedRows.map((row) => row.matchId),
-    );
-
-    const items: LeaguePendingConfirmationItem[] = pagedRows.map((row) => {
-      const score = this.buildScoreView(
-        row,
-        scoreSummaryByMatchId.get(row.matchId) ?? null,
-      );
-      const participants = this.buildParticipantsViewFromRawRow(row);
-
-      const matchType = this.normalizeMatchType(row.matchType ?? undefined);
-      const impactRanking =
-        typeof row.impactRanking === 'boolean'
-          ? row.impactRanking
-          : this.impactRankingForMatchType(matchType);
-
-      return {
-        id: row.matchId,
-        confirmationId: row.matchId,
-        leagueId: row.leagueId,
-        matchId: row.matchId,
-        reportedByUserId: row.reportedByUserId,
-        createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
-        expiresAt: null,
-        matchType,
-        impactRanking,
-        teams: {
-          teamA: {
-            player1Id: row.teamA1Id,
-            player2Id: row.teamA2Id ?? null,
-          },
-          teamB: {
-            player1Id: row.teamB1Id,
-            player2Id: row.teamB2Id ?? null,
-          },
-        },
-        participants,
-        score,
-        sets: score.sets,
-      };
-    });
-
-    this.logger.debug(
-      `getLeaguePendingConfirmations: userId=${userId} leagueId=${leagueId} matchesFound=${rows.length} itemsReturned=${items.length} executionTimeMs=${Date.now() - startMs}`,
-    );
-
-    return { items, nextCursor };
-  }
-
-  async confirmLeaguePendingConfirmation(
-    userId: string,
-    leagueId: string,
-    confirmationId: string,
-  ): Promise<{
-    status: LeaguePendingConfirmationFinalStatus;
-    confirmationId: string;
-    matchId: string;
-    recomputeTriggered?: boolean;
-  }> {
-    return this.dataSource.transaction(async (manager) => {
-      this.assertLeagueIdRequired(leagueId);
-
-      const matchRepo = manager.getRepository(MatchResult);
-      const challengeRepo = manager.getRepository(Challenge);
-      const memberRepo = manager.getRepository(LeagueMember);
-
-      const member = await memberRepo.findOne({ where: { leagueId, userId } });
       if (!member) {
         throw new ForbiddenException({
           statusCode: 403,
@@ -2136,102 +2101,410 @@ export class MatchesService {
         });
       }
 
-      const match = await matchRepo
+      const qb = this.matchRepo
         .createQueryBuilder('m')
-        .setLock('pessimistic_write')
-        .where('m.id = :id', { id: confirmationId })
-        .getOne();
-      if (!match || match.leagueId !== leagueId) {
-        throw new NotFoundException({
-          statusCode: 404,
-          code: 'PENDING_CONFIRMATION_NOT_FOUND',
-          message: 'Pending confirmation not found',
-        });
+        .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
+        .leftJoin(User, 'a1', 'a1.id = c."teamA1Id"')
+        .leftJoin(User, 'a2', 'a2.id = c."teamA2Id"')
+        .leftJoin(User, 'b1', 'b1.id = c."teamB1Id"')
+        .leftJoin(User, 'b2', 'b2.id = c."teamB2Id"')
+        .select('m.id', 'matchId')
+        .addSelect('m."leagueId"', 'leagueId')
+        .addSelect('m."reportedByUserId"', 'reportedByUserId')
+        .addSelect('m."createdAt"', 'createdAt')
+        .addSelect('COALESCE(m."playedAt", m."createdAt")', 'sortDate')
+        .addSelect('m."matchType"', 'matchType')
+        .addSelect('m."impactRanking"', 'impactRanking')
+        .addSelect('m."teamASet1"', 'teamASet1')
+        .addSelect('m."teamBSet1"', 'teamBSet1')
+        .addSelect('m."teamASet2"', 'teamASet2')
+        .addSelect('m."teamBSet2"', 'teamBSet2')
+        .addSelect('m."teamASet3"', 'teamASet3')
+        .addSelect('m."teamBSet3"', 'teamBSet3')
+        .addSelect('c."teamA1Id"', 'teamA1Id')
+        .addSelect('c."teamA2Id"', 'teamA2Id')
+        .addSelect('c."teamB1Id"', 'teamB1Id')
+        .addSelect('c."teamB2Id"', 'teamB2Id')
+        .addSelect('a1."displayName"', 'teamA1DisplayName')
+        .addSelect('a1.email', 'teamA1Email')
+        .addSelect('a2."displayName"', 'teamA2DisplayName')
+        .addSelect('a2.email', 'teamA2Email')
+        .addSelect('b1."displayName"', 'teamB1DisplayName')
+        .addSelect('b1.email', 'teamB1Email')
+        .addSelect('b2."displayName"', 'teamB2DisplayName')
+        .addSelect('b2.email', 'teamB2Email')
+        .where('m."leagueId" = :leagueId', { leagueId })
+        .andWhere('m.status = :status', {
+          status: MatchResultStatus.PENDING_CONFIRM,
+        })
+        .andWhere('m."reportedByUserId" != :userId', { userId })
+        .andWhere(
+          '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
+          { userId },
+        )
+        .orderBy('COALESCE(m."playedAt", m."createdAt")', 'DESC')
+        .addOrderBy('m.id', 'DESC')
+        .take(limit + 1);
+
+      const parsedCursor = this.parsePendingConfirmationsCursor(opts.cursor);
+      if (parsedCursor) {
+        qb.andWhere(
+          '(COALESCE(m."playedAt", m."createdAt"), m.id) < (:cursorDate, :cursorId)',
+          parsedCursor,
+        );
       }
 
-      if (
-        match.status === MatchResultStatus.CONFIRMED ||
-        match.status === MatchResultStatus.RESOLVED
-      ) {
+      const rows = await qb.getRawMany<LeaguePendingConfirmationRawRow>();
+      if (!Array.isArray(rows)) {
+        throw new SafePendingConfirmationsFallbackError(
+          'Unexpected league pending confirmations query result shape',
+        );
+      }
+
+      const hasMore = rows.length > limit;
+      const pagedRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor =
+        hasMore && pagedRows.length > 0
+          ? (() => {
+              const cursorRow = pagedRows[pagedRows.length - 1];
+              const cursorDate =
+                this.toIsoString(cursorRow.sortDate) ??
+                this.toIsoString(cursorRow.createdAt);
+              return cursorDate ? `${cursorDate}|${cursorRow.matchId}` : null;
+            })()
+          : null;
+
+      const scoreSummaryByMatchId = await this.resolveScoreSummaryByMatchIds(
+        pagedRows.map((row) => row.matchId),
+      );
+
+      const items: LeaguePendingConfirmationItem[] = pagedRows.map((row) => {
+        const score = this.buildScoreView(
+          row,
+          scoreSummaryByMatchId.get(row.matchId) ?? null,
+        );
+        const participants = this.buildParticipantsViewFromRawRow(row);
+
+        const matchType = this.normalizeMatchType(row.matchType ?? undefined);
+        const impactRanking =
+          typeof row.impactRanking === 'boolean'
+            ? row.impactRanking
+            : this.impactRankingForMatchType(matchType);
+
+        return {
+          id: row.matchId,
+          confirmationId: row.matchId,
+          leagueId: row.leagueId,
+          matchId: row.matchId,
+          reportedByUserId: row.reportedByUserId,
+          createdAt:
+            this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+          expiresAt: null,
+          matchType,
+          impactRanking,
+          teams: {
+            teamA: {
+              player1Id: row.teamA1Id,
+              player2Id: row.teamA2Id ?? null,
+            },
+            teamB: {
+              player1Id: row.teamB1Id,
+              player2Id: row.teamB2Id ?? null,
+            },
+          },
+          participants,
+          score,
+          sets: score.sets,
+        };
+      });
+
+      const durationMs = Date.now() - startMs;
+      this.logStructured('debug', {
+        event: 'leagues.pending_confirmations.fetched',
+        requestId,
+        userId,
+        leagueId,
+        matchesFound: rows.length,
+        itemsReturned: items.length,
+        durationMs,
+      });
+      this.trackDomainEvent('league_pending_confirmation_fetched', {
+        requestId,
+        userId,
+        leagueId,
+        durationMs,
+        outcome: 'SUCCESS',
+        itemsReturned: items.length,
+      });
+
+      return { items, nextCursor };
+    } catch (err) {
+      if (err instanceof SafePendingConfirmationsFallbackError) {
+        this.logStructured('warn', {
+          event: 'leagues.pending_confirmations.safe_fallback',
+          requestId,
+          userId,
+          leagueId,
+          reason: err.message,
+        });
+        return { items: [], nextCursor: null };
+      }
+
+      this.rethrowUnexpectedError(err, {
+        event: 'leagues.pending_confirmations.failed',
+        code: 'PENDING_CONFIRMATIONS_UNAVAILABLE',
+        message:
+          'Unable to load pending confirmations at the moment. Please try again.',
+        requestId,
+        userId,
+        leagueId,
+      });
+    }
+  }
+
+  async confirmLeaguePendingConfirmation(
+    userId: string,
+    leagueId: string,
+    confirmationId: string,
+    context: RequestContextInput = {},
+  ): Promise<{
+    status: LeaguePendingConfirmationFinalStatus;
+    confirmationId: string;
+    matchId: string;
+    recomputeTriggered?: boolean;
+  }> {
+    const requestId = context.requestId;
+    const startMs = Date.now();
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        this.assertLeagueIdRequired(leagueId);
+
+        const matchRepo = manager.getRepository(MatchResult);
+        const challengeRepo = manager.getRepository(Challenge);
+        const memberRepo = manager.getRepository(LeagueMember);
+
+        const member = await memberRepo.findOne({
+          where: { leagueId, userId },
+        });
+        if (!member) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'LEAGUE_FORBIDDEN',
+            message: 'You are not a member of this league',
+          });
+        }
+
+        const match = await matchRepo
+          .createQueryBuilder('m')
+          .setLock('pessimistic_write')
+          .where('m.id = :id', { id: confirmationId })
+          .getOne();
+        if (!match) {
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'PENDING_CONFIRMATION_NOT_FOUND',
+            message: 'Pending confirmation not found for this league',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+        if (match.leagueId !== leagueId) {
+          this.logStructured('warn', {
+            event: 'leagues.pending_confirmation.league_mismatch',
+            requestId,
+            userId,
+            leagueId,
+            confirmationId,
+            actualLeagueId: match.leagueId,
+          });
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'PENDING_CONFIRMATION_NOT_FOUND',
+            message: 'Pending confirmation not found for this league',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        if (
+          match.status === MatchResultStatus.CONFIRMED ||
+          match.status === MatchResultStatus.RESOLVED
+        ) {
+          const result = {
+            status: 'CONFIRMED' as const,
+            confirmationId: match.id,
+            matchId: match.id,
+            recomputeTriggered: false,
+          };
+          this.logStructured('log', {
+            event: 'leagues.pending_confirmation.confirm.idempotent',
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            recomputeTriggered: false,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_CONFIRMED',
+          });
+          this.trackDomainEvent('league_match_confirmed', {
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_CONFIRMED',
+            recomputeTriggered: false,
+          });
+          return result;
+        }
+        if (match.status === MatchResultStatus.REJECTED) {
+          const result = {
+            status: 'REJECTED' as const,
+            confirmationId: match.id,
+            matchId: match.id,
+            recomputeTriggered: false,
+          };
+          this.logStructured('log', {
+            event: 'leagues.pending_confirmation.confirm.idempotent',
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            recomputeTriggered: false,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_REJECTED',
+          });
+          this.trackDomainEvent('league_match_confirmed', {
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_REJECTED',
+            recomputeTriggered: false,
+          });
+          return result;
+        }
+        if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'PENDING_CONFIRMATION_NOT_PENDING',
+            message: 'This confirmation is not pending anymore',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        const challenge = await challengeRepo.findOne({
+          where: { id: match.challengeId as string },
+        });
+        if (!challenge) {
+          throw new NotFoundException('Challenge not found');
+        }
+        const participants = this.getParticipantsOrThrow(challenge);
+
+        if (
+          !participants.all.includes(userId) ||
+          userId === match.reportedByUserId
+        ) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'MATCH_FORBIDDEN',
+            message: 'Only opponent participants can confirm this result',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        match.status = MatchResultStatus.CONFIRMED;
+        match.confirmedByUserId = userId;
+        match.rejectionReason = null;
+        await matchRepo.save(match);
+
+        await this.applyEloIfCompetitive(manager, match);
+
+        let recomputeTriggered = true;
+        try {
+          await this.recomputeStandingsIfCompetitive(manager, match, context);
+          this.logStructured('debug', {
+            event: 'leagues.pending_confirmation.confirm.recompute_executed',
+            requestId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            outcome: 'RECOMPUTE_EXECUTED',
+          });
+        } catch (error) {
+          recomputeTriggered = false;
+          const message = error instanceof Error ? error.message : 'unknown';
+          this.logStructured('warn', {
+            event: 'leagues.pending_confirmation.confirm.recompute_failed',
+            requestId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            reason: message,
+          });
+        }
+
+        this.notifyMatchConfirmed(match, participants.all, userId).catch(
+          (err) =>
+            this.logger.error(
+              `failed to send match-confirmed notifications: ${err.message}`,
+            ),
+        );
+
+        this.logLeagueActivity(
+          leagueId,
+          LeagueActivityType.MATCH_CONFIRMED,
+          userId,
+          match.id,
+          { participantIds: participants.all },
+        );
+
+        const durationMs = Date.now() - startMs;
+        this.logStructured('log', {
+          event: 'leagues.pending_confirmation.confirmed',
+          requestId,
+          userId,
+          leagueId,
+          matchId: match.id,
+          confirmationId: match.id,
+          recomputeTriggered,
+          durationMs,
+          outcome: 'SUCCESS',
+        });
+        this.trackDomainEvent('league_match_confirmed', {
+          requestId,
+          userId,
+          leagueId,
+          matchId: match.id,
+          confirmationId: match.id,
+          durationMs,
+          outcome: 'SUCCESS',
+          recomputeTriggered,
+        });
+
         return {
           status: 'CONFIRMED',
           confirmationId: match.id,
           matchId: match.id,
+          recomputeTriggered,
         };
-      }
-      if (match.status === MatchResultStatus.REJECTED) {
-        return {
-          status: 'REJECTED',
-          confirmationId: match.id,
-          matchId: match.id,
-        };
-      }
-      if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_NOT_PENDING',
-          message: 'This confirmation is not pending anymore',
-        });
-      }
-
-      const challenge = await challengeRepo.findOne({
-        where: { id: match.challengeId as string },
       });
-      if (!challenge) {
-        throw new NotFoundException('Challenge not found');
-      }
-      const participants = this.getParticipantsOrThrow(challenge);
-
-      if (
-        !participants.all.includes(userId) ||
-        userId === match.reportedByUserId
-      ) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          code: 'MATCH_FORBIDDEN',
-          message: 'Only opponent participants can confirm this result',
-        });
-      }
-
-      match.status = MatchResultStatus.CONFIRMED;
-      match.confirmedByUserId = userId;
-      match.rejectionReason = null;
-      await matchRepo.save(match);
-
-      await this.applyEloIfCompetitive(manager, match);
-
-      let recomputeTriggered = true;
-      try {
-        await this.recomputeStandingsIfCompetitive(manager, match);
-      } catch (error) {
-        recomputeTriggered = false;
-        const message = error instanceof Error ? error.message : 'unknown';
-        this.logger.warn(
-          `league pending confirmation recompute failed non-blocking: matchId=${match.id} leagueId=${leagueId} reason=${message}`,
-        );
-      }
-
-      this.notifyMatchConfirmed(match, participants.all, userId).catch((err) =>
-        this.logger.error(
-          `failed to send match-confirmed notifications: ${err.message}`,
-        ),
-      );
-
-      this.logLeagueActivity(
-        leagueId,
-        LeagueActivityType.MATCH_CONFIRMED,
+    } catch (err) {
+      this.rethrowUnexpectedError(err, {
+        event: 'leagues.pending_confirmation.confirm.failed',
+        code: 'PENDING_CONFIRMATION_CONFIRM_UNAVAILABLE',
+        message:
+          'Unable to confirm the pending confirmation at the moment. Please try again.',
+        requestId,
         userId,
-        match.id,
-        { participantIds: participants.all },
-      );
-
-      return {
-        status: 'CONFIRMED',
-        confirmationId: match.id,
-        matchId: match.id,
-        recomputeTriggered,
-      };
-    });
+        leagueId,
+        confirmationId,
+      });
+    }
   }
 
   async rejectLeaguePendingConfirmation(
@@ -2239,114 +2512,217 @@ export class MatchesService {
     leagueId: string,
     confirmationId: string,
     reason?: string,
+    context: RequestContextInput = {},
   ): Promise<{
     status: LeaguePendingConfirmationFinalStatus;
     confirmationId: string;
     matchId: string;
   }> {
-    return this.dataSource.transaction(async (manager) => {
-      this.assertLeagueIdRequired(leagueId);
+    const requestId = context.requestId;
+    const startMs = Date.now();
 
-      const matchRepo = manager.getRepository(MatchResult);
-      const challengeRepo = manager.getRepository(Challenge);
-      const memberRepo = manager.getRepository(LeagueMember);
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        this.assertLeagueIdRequired(leagueId);
 
-      const member = await memberRepo.findOne({ where: { leagueId, userId } });
-      if (!member) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          code: 'LEAGUE_FORBIDDEN',
-          message: 'You are not a member of this league',
+        const matchRepo = manager.getRepository(MatchResult);
+        const challengeRepo = manager.getRepository(Challenge);
+        const memberRepo = manager.getRepository(LeagueMember);
+
+        const member = await memberRepo.findOne({
+          where: { leagueId, userId },
         });
-      }
+        if (!member) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'LEAGUE_FORBIDDEN',
+            message: 'You are not a member of this league',
+          });
+        }
 
-      const match = await matchRepo
-        .createQueryBuilder('m')
-        .setLock('pessimistic_write')
-        .where('m.id = :id', { id: confirmationId })
-        .getOne();
-      if (!match || match.leagueId !== leagueId) {
-        throw new NotFoundException({
-          statusCode: 404,
-          code: 'PENDING_CONFIRMATION_NOT_FOUND',
-          message: 'Pending confirmation not found',
+        const match = await matchRepo
+          .createQueryBuilder('m')
+          .setLock('pessimistic_write')
+          .where('m.id = :id', { id: confirmationId })
+          .getOne();
+        if (!match) {
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'PENDING_CONFIRMATION_NOT_FOUND',
+            message: 'Pending confirmation not found for this league',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+        if (match.leagueId !== leagueId) {
+          this.logStructured('warn', {
+            event: 'leagues.pending_confirmation.league_mismatch',
+            requestId,
+            userId,
+            leagueId,
+            confirmationId,
+            actualLeagueId: match.leagueId,
+          });
+          throw new NotFoundException({
+            statusCode: 404,
+            code: 'PENDING_CONFIRMATION_NOT_FOUND',
+            message: 'Pending confirmation not found for this league',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        if (
+          match.status === MatchResultStatus.CONFIRMED ||
+          match.status === MatchResultStatus.RESOLVED
+        ) {
+          const result = {
+            status: 'CONFIRMED' as const,
+            confirmationId: match.id,
+            matchId: match.id,
+          };
+          this.logStructured('log', {
+            event: 'leagues.pending_confirmation.reject.idempotent',
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            recomputeTriggered: false,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_CONFIRMED',
+          });
+          this.trackDomainEvent('league_match_rejected', {
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_CONFIRMED',
+            recomputeTriggered: false,
+          });
+          return result;
+        }
+        if (match.status === MatchResultStatus.REJECTED) {
+          const result = {
+            status: 'REJECTED' as const,
+            confirmationId: match.id,
+            matchId: match.id,
+          };
+          this.logStructured('log', {
+            event: 'leagues.pending_confirmation.reject.idempotent',
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            recomputeTriggered: false,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_REJECTED',
+          });
+          this.trackDomainEvent('league_match_rejected', {
+            requestId,
+            userId,
+            leagueId,
+            matchId: match.id,
+            confirmationId: match.id,
+            durationMs: Date.now() - startMs,
+            outcome: 'IDEMPOTENT_ALREADY_REJECTED',
+            recomputeTriggered: false,
+          });
+          return result;
+        }
+        if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'PENDING_CONFIRMATION_NOT_PENDING',
+            message: 'This confirmation is not pending anymore',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        const challenge = await challengeRepo.findOne({
+          where: { id: match.challengeId as string },
         });
-      }
+        if (!challenge) {
+          throw new NotFoundException('Challenge not found');
+        }
+        const participants = this.getParticipantsOrThrow(challenge);
 
-      if (
-        match.status === MatchResultStatus.CONFIRMED ||
-        match.status === MatchResultStatus.RESOLVED
-      ) {
-        return {
-          status: 'CONFIRMED',
-          confirmationId: match.id,
+        if (
+          !participants.all.includes(userId) ||
+          userId === match.reportedByUserId
+        ) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            code: 'MATCH_FORBIDDEN',
+            message: 'Only opponent participants can reject this result',
+            ...(requestId ? { requestId } : {}),
+          });
+        }
+
+        match.status = MatchResultStatus.REJECTED;
+        match.confirmedByUserId = null;
+        match.rejectionReason = reason?.trim() || 'Rejected by opponent';
+        await matchRepo.save(match);
+
+        this.notifyMatchRejected(
+          match,
+          participants.all,
+          userId,
+          match.rejectionReason ?? 'Rejected by opponent',
+        ).catch((err) =>
+          this.logger.error(
+            `failed to send match-rejected notifications: ${err.message}`,
+          ),
+        );
+
+        this.logLeagueActivity(
+          leagueId,
+          LeagueActivityType.MATCH_REJECTED,
+          userId,
+          match.id,
+          { participantIds: participants.all },
+        );
+
+        const durationMs = Date.now() - startMs;
+        this.logStructured('log', {
+          event: 'leagues.pending_confirmation.rejected',
+          requestId,
+          userId,
+          leagueId,
           matchId: match.id,
-        };
-      }
-      if (match.status === MatchResultStatus.REJECTED) {
+          confirmationId: match.id,
+          durationMs,
+          outcome: 'SUCCESS',
+        });
+        this.trackDomainEvent('league_match_rejected', {
+          requestId,
+          userId,
+          leagueId,
+          matchId: match.id,
+          confirmationId: match.id,
+          durationMs,
+          outcome: 'SUCCESS',
+        });
+
         return {
           status: 'REJECTED',
           confirmationId: match.id,
           matchId: match.id,
         };
-      }
-      if (match.status !== MatchResultStatus.PENDING_CONFIRM) {
-        throw new ConflictException({
-          statusCode: 409,
-          code: 'PENDING_CONFIRMATION_NOT_PENDING',
-          message: 'This confirmation is not pending anymore',
-        });
-      }
-
-      const challenge = await challengeRepo.findOne({
-        where: { id: match.challengeId as string },
       });
-      if (!challenge) {
-        throw new NotFoundException('Challenge not found');
-      }
-      const participants = this.getParticipantsOrThrow(challenge);
-
-      if (
-        !participants.all.includes(userId) ||
-        userId === match.reportedByUserId
-      ) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          code: 'MATCH_FORBIDDEN',
-          message: 'Only opponent participants can reject this result',
-        });
-      }
-
-      match.status = MatchResultStatus.REJECTED;
-      match.confirmedByUserId = null;
-      match.rejectionReason = reason?.trim() || 'Rejected by opponent';
-      await matchRepo.save(match);
-
-      this.notifyMatchRejected(
-        match,
-        participants.all,
+    } catch (err) {
+      this.rethrowUnexpectedError(err, {
+        event: 'leagues.pending_confirmation.reject.failed',
+        code: 'PENDING_CONFIRMATION_REJECT_UNAVAILABLE',
+        message:
+          'Unable to reject the pending confirmation at the moment. Please try again.',
+        requestId,
         userId,
-        match.rejectionReason ?? 'Rejected by opponent',
-      ).catch((err) =>
-        this.logger.error(
-          `failed to send match-rejected notifications: ${err.message}`,
-        ),
-      );
-
-      this.logLeagueActivity(
         leagueId,
-        LeagueActivityType.MATCH_REJECTED,
-        userId,
-        match.id,
-        { participantIds: participants.all },
-      );
-
-      return {
-        status: 'REJECTED',
-        confirmationId: match.id,
-        matchId: match.id,
-      };
-    });
+        confirmationId,
+      });
+    }
   }
 
   // ------------------------
@@ -3500,6 +3876,16 @@ export class MatchesService {
     }
 
     try {
+      if (type === LeagueActivityType.MATCH_REPORTED) {
+        this.trackDomainEvent('league_match_reported', {
+          userId: actorId ?? null,
+          leagueId: leagueId ?? null,
+          matchId,
+          confirmationId: matchId,
+          outcome: 'SUCCESS',
+        });
+      }
+
       void this.leagueActivityService
         .create({
           leagueId,

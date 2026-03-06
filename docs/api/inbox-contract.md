@@ -139,6 +139,32 @@ Possible section-level error codes:
 - `score.sets` is always present as an array.
 - `opponentName` and `scoreSummary` remain as derived legacy helpers for old clients.
 
+### Request correlation and error tracing
+
+- The backend accepts forwarded `requestId` via:
+  - `x-request-id`
+  - `x-railway-request-id`
+- The backend echoes `x-request-id` in the response when available.
+- Partial section failures still return `200`, but generate:
+  - stable section `code`
+  - unique `errorId`
+  - structured server logs containing `requestId` + `errorId`
+
+### Canon vs legacy
+
+Canonical pending confirmation fields:
+
+- `teams`
+- `participants`
+- `score.summary`
+- `score.sets`
+
+Legacy derived fields kept for backward compatibility:
+
+- `opponentName`
+- `opponentAvatarUrl`
+- `scoreSummary`
+
 ## GET /me/notifications
 
 Thin wrapper over user notifications feed.
@@ -186,3 +212,17 @@ Marks all unread notifications as read.
 ```json
 { "updated": 3 }
 ```
+
+## Observability / Domain Events
+
+Structured internal telemetry may be emitted for inbox-related flows:
+
+- `inbox_pending_confirmation_opened`
+
+Recommended metadata:
+
+- `requestId`
+- `userId`
+- `durationMs`
+- `itemsReturned`
+- `outcome`

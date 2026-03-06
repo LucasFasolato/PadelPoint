@@ -25,6 +25,7 @@ import { RankingsModule } from './modules/core/rankings/rankings.module';
 import { IntentsModule } from './modules/core/intents/intents.module';
 import { InsightsModule } from './modules/core/insights/insights.module';
 import { EndorsementsModule } from './modules/core/endorsements/endorsements.module';
+import { ObservabilityModule } from './common/observability/observability.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { EndorsementsModule } from './modules/core/endorsements/endorsements.mod
       isGlobal: true,
       load: [configuration],
     }),
+    ObservabilityModule,
     ScheduleModule.forRoot(),
 
     DatabaseModule,
