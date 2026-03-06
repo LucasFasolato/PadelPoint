@@ -27,6 +27,7 @@ describe('Rankings (e2e)', () => {
       getAvailableScopes: jest.fn(),
       getMyRankingIntelligence: jest.fn(),
       getSuggestedRivals: jest.fn(),
+      getMyRankingMovementFeed: jest.fn(),
       createGlobalRankingSnapshot: jest.fn(),
     };
     schedulerService = {
@@ -463,6 +464,64 @@ describe('Rankings (e2e)', () => {
         }),
       }),
     );
+  });
+
+  it('GET /rankings/me/movement-feed returns stable response shape', async () => {
+    rankingsService.getMyRankingMovementFeed!.mockResolvedValue({
+      items: [
+        {
+          type: 'PASSED_BY',
+          userId: 'u-1',
+          displayName: 'Juan Perez',
+          oldPosition: 14,
+          newPosition: 13,
+          timestamp: '2026-03-07T10:00:00.000Z',
+        },
+        {
+          type: 'YOU_MOVED',
+          oldPosition: 16,
+          newPosition: 14,
+          timestamp: '2026-03-07T10:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/rankings/me/movement-feed?limit=20')
+      .set('x-railway-request-id', 'req-ranking-feed-1')
+      .expect(200);
+
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "items",
+  "nextCursor",
+]
+`);
+    expect(Object.keys(res.body.items[0]).sort()).toMatchInlineSnapshot(`
+[
+  "displayName",
+  "newPosition",
+  "oldPosition",
+  "timestamp",
+  "type",
+  "userId",
+]
+`);
+    expect(Object.keys(res.body.items[1]).sort()).toMatchInlineSnapshot(`
+[
+  "newPosition",
+  "oldPosition",
+  "timestamp",
+  "type",
+]
+`);
+    expect(rankingsService.getMyRankingMovementFeed).toHaveBeenCalledWith({
+      userId: FAKE_USER.userId,
+      cursor: undefined,
+      limit: 20,
+      context: { requestId: 'req-ranking-feed-1' },
+    });
   });
 
   it('POST /rankings/snapshots/run is admin-only', async () => {

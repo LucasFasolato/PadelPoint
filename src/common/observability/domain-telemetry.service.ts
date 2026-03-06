@@ -10,7 +10,8 @@ export type DomainTelemetryEvent =
   | 'league_standings_recomputed'
   | 'league_standings_snapshot_persisted'
   | 'ranking_intelligence_fetched'
-  | 'suggested_rivals_fetched';
+  | 'suggested_rivals_fetched'
+  | 'ranking_movement_feed_fetched';
 
 export type DomainTelemetryPayload = {
   requestId?: string | null;

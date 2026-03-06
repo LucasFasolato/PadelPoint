@@ -10,8 +10,10 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiOkResponse,
+  ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -32,6 +34,8 @@ import { RankingTimeframe } from '../enums/ranking-timeframe.enum';
 import { RankingMode } from '../enums/ranking-mode.enum';
 import { RankingIntelligenceResponseDto } from '../dto/ranking-intelligence-response.dto';
 import { SuggestedRivalsResponseDto } from '../dto/suggested-rivals-response.dto';
+import { RankingMovementFeedQueryDto } from '../dto/ranking-movement-feed-query.dto';
+import { RankingMovementFeedResponseDto } from '../dto/ranking-movement-feed-response.dto';
 
 type AuthUser = {
   userId: string;
@@ -197,6 +201,44 @@ export class RankingsController {
       category: query.category,
       timeframe: query.timeframe,
       mode: query.mode,
+      context: { requestId },
+    });
+  }
+
+  @Get('me/movement-feed')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiOperation({
+    summary: 'Get ranking movement feed',
+    description:
+      'Returns ranking movement events relevant to the authenticated user, ordered newest first. ' +
+      'This is a cursor-paginated feed with a hard limit cap of 20 items per request.',
+  })
+  @ApiQuery({
+    name: 'cursor',
+    type: String,
+    required: false,
+    description: 'Opaque cursor returned by the previous page.',
+  })
+  @ApiQuery({
+    name: 'limit',
+    type: Number,
+    required: false,
+    description: 'Page size from 1 to 20. Defaults to 20.',
+  })
+  @ApiOkResponse({ type: RankingMovementFeedResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid cursor' })
+  listMyMovementFeed(
+    @Req() req: Request,
+    @Query() query: RankingMovementFeedQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
+
+    return this.rankingsService.getMyRankingMovementFeed({
+      userId: user.userId,
+      cursor: query.cursor,
+      limit: query.limit,
       context: { requestId },
     });
   }

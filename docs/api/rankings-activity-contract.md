@@ -6,6 +6,7 @@ This document defines the current HTTP contract for:
 
 - `GET /rankings`
 - `GET /rankings/me/intelligence`
+- `GET /rankings/me/movement-feed`
 - `GET /rankings/me/suggested-rivals`
 - `GET /rankings/scopes`
 - `GET /me/activity`
@@ -16,6 +17,7 @@ All endpoints require JWT auth.
 
 - `GET /rankings` uses page-based pagination (`page`, `limit`).
 - `GET /rankings/me/intelligence` is not paginated.
+- `GET /rankings/me/movement-feed` is cursor-paginated.
 - `GET /rankings/me/suggested-rivals` is not paginated.
 - `GET /me/activity` uses cursor-based pagination (`cursor`, `limit`).
 - `GET /rankings/scopes` is not paginated.
@@ -381,6 +383,55 @@ Same filters as `GET /rankings/me/intelligence`.
 ### Error codes
 
 Same as `GET /rankings`.
+
+---
+
+## GET /rankings/me/movement-feed
+
+Returns ranking movement events relevant to the authenticated user, newest first.
+
+### Query params
+
+- `cursor` (optional): opaque cursor from previous response
+- `limit` (optional): int 1..20 (default: `20`)
+
+### Response shape
+
+```json
+{
+  "items": [
+    {
+      "type": "PASSED_BY",
+      "userId": "uuid",
+      "displayName": "Juan Perez",
+      "oldPosition": 14,
+      "newPosition": 13,
+      "timestamp": "2026-03-07T10:00:00.000Z"
+    },
+    {
+      "type": "YOU_MOVED",
+      "oldPosition": 16,
+      "newPosition": 14,
+      "timestamp": "2026-03-07T10:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+### Semantics
+
+- Source of truth is the user's `ranking.movement` notifications, enriched with
+  snapshot comparisons when possible.
+- `YOU_MOVED` represents the user's own rank delta for that snapshot.
+- `PASSED_BY` represents nearby mover(s) that crossed the user's lane or ended
+  immediately above the user in that snapshot.
+- Ordered by `timestamp DESC`, then deterministic item tiebreakers.
+
+### Error codes
+
+- `INVALID_CURSOR`: malformed cursor
+- `401` unauthorized
 
 ---
 

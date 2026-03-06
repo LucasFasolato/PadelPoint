@@ -5,6 +5,7 @@ import { RankingScope } from '../enums/ranking-scope.enum';
 import { RankingTimeframe } from '../enums/ranking-timeframe.enum';
 import { RankingMode } from '../enums/ranking-mode.enum';
 import { RankingsQueryDto } from '../dto/rankings-query.dto';
+import { UserNotificationType } from '../../notifications/enums/user-notification-type.enum';
 
 function createRepoMock() {
   return {
@@ -1353,5 +1354,195 @@ describe('RankingsService', () => {
         returnedItems: 5,
       }),
     );
+  });
+
+  it('builds movement feed items from snapshot context', async () => {
+    const { service, snapshotRepo } = createRankingsServiceForInsights();
+    const currentRows = [
+      ...Array.from({ length: 12 }, (_, index) =>
+        makeRankingRow({
+          userId: `u-static-current-${index + 1}`,
+          displayName: `Static ${index + 1}`,
+          position: index + 1,
+        }),
+      ),
+      makeRankingRow({ userId: 'u-1', displayName: 'Juan Perez', position: 13 }),
+      makeRankingRow({ userId: 'u-me', displayName: 'Me', position: 14 }),
+      makeRankingRow({ userId: 'u-3', displayName: 'Pedro Diaz', position: 15 }),
+    ];
+    const previousRows = [
+      ...Array.from({ length: 13 }, (_, index) =>
+        makeRankingRow({
+          userId: `u-static-previous-${index + 1}`,
+          displayName: `Static ${index + 1}`,
+          position: index + 1,
+        }),
+      ),
+      makeRankingRow({ userId: 'u-1', displayName: 'Juan Perez', position: 14 }),
+      makeRankingRow({ userId: 'u-2', displayName: 'Otro', position: 15 }),
+      makeRankingRow({ userId: 'u-me', displayName: 'Me', position: 16 }),
+    ];
+    const previousSnapshotQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ rows: previousRows, version: 1 }),
+    };
+    snapshotRepo.findOne.mockResolvedValue({
+      id: 'snapshot-1',
+      dimensionKey: 'COUNTRY',
+      categoryKey: '6ta',
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      version: 2,
+      rows: currentRows,
+    });
+    snapshotRepo.createQueryBuilder.mockReturnValue(previousSnapshotQb);
+
+    const items = await (service as any).buildMovementFeedItemsForNotification(
+      'u-me',
+      {
+        id: 'notif-1',
+        type: UserNotificationType.RANKING_MOVEMENT,
+        createdAt: new Date('2026-03-07T10:00:00.000Z'),
+        data: {
+          snapshotId: 'snapshot-1',
+          oldPosition: 16,
+          newPosition: 14,
+        },
+      },
+    );
+
+    expect(items).toEqual([
+      {
+        type: 'PASSED_BY',
+        userId: 'u-1',
+        displayName: 'Juan Perez',
+        oldPosition: 14,
+        newPosition: 13,
+        timestamp: '2026-03-07T10:00:00.000Z',
+        notificationId: 'notif-1',
+        actorUserId: 'u-1',
+        positionSort: 13,
+      },
+      {
+        type: 'YOU_MOVED',
+        oldPosition: 16,
+        newPosition: 14,
+        timestamp: '2026-03-07T10:00:00.000Z',
+        notificationId: 'notif-1',
+        actorUserId: null,
+        positionSort: 14,
+      },
+    ]);
+  });
+
+  it('returns ranking movement feed sorted newest first with cursor and telemetry', async () => {
+    const { service, telemetry } = createRankingsServiceForInsights();
+
+    jest
+      .spyOn(service as any, 'listRankingMovementNotifications')
+      .mockResolvedValueOnce([
+        {
+          id: 'notif-new',
+          createdAt: new Date('2026-03-07T10:00:00.000Z'),
+        },
+        {
+          id: 'notif-old',
+          createdAt: new Date('2026-03-06T10:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    jest
+      .spyOn(service as any, 'buildMovementFeedItemsForNotification')
+      .mockImplementation(async (_userId: string, notification: any) => {
+        if (notification.id === 'notif-new') {
+          return [
+            {
+              type: 'PASSED_BY',
+              userId: 'u-1',
+              displayName: 'Juan Perez',
+              oldPosition: 14,
+              newPosition: 13,
+              timestamp: '2026-03-07T10:00:00.000Z',
+              notificationId: 'notif-new',
+              actorUserId: 'u-1',
+              positionSort: 13,
+            },
+            {
+              type: 'YOU_MOVED',
+              oldPosition: 16,
+              newPosition: 14,
+              timestamp: '2026-03-07T10:00:00.000Z',
+              notificationId: 'notif-new',
+              actorUserId: null,
+              positionSort: 14,
+            },
+          ];
+        }
+
+        return [
+          {
+            type: 'YOU_MOVED',
+            oldPosition: 18,
+            newPosition: 16,
+            timestamp: '2026-03-06T10:00:00.000Z',
+            notificationId: 'notif-old',
+            actorUserId: null,
+            positionSort: 16,
+          },
+        ];
+      });
+
+    const result = await service.getMyRankingMovementFeed({
+      userId: 'u-me',
+      limit: 2,
+      context: { requestId: 'req-feed-1' },
+    });
+
+    expect(result.items).toEqual([
+      {
+        type: 'PASSED_BY',
+        userId: 'u-1',
+        displayName: 'Juan Perez',
+        oldPosition: 14,
+        newPosition: 13,
+        timestamp: '2026-03-07T10:00:00.000Z',
+      },
+      {
+        type: 'YOU_MOVED',
+        oldPosition: 16,
+        newPosition: 14,
+        timestamp: '2026-03-07T10:00:00.000Z',
+      },
+    ]);
+    expect(result.nextCursor).toBe(
+      '2026-03-07T10:00:00.000Z|notif-new|YOU_MOVED|14|self',
+    );
+    expect(telemetry.track).toHaveBeenCalledWith(
+      'ranking_movement_feed_fetched',
+      expect.objectContaining({
+        requestId: 'req-feed-1',
+        userId: 'u-me',
+        outcome: 'SUCCESS',
+        returnedItems: 2,
+      }),
+    );
+  });
+
+  it('rejects invalid movement feed cursor', async () => {
+    const { service } = createRankingsServiceForInsights();
+
+    await expect(
+      service.getMyRankingMovementFeed({
+        userId: 'u-me',
+        cursor: 'bad-cursor',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVALID_CURSOR',
+      }),
+    });
   });
 });

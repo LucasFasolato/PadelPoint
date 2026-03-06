@@ -85,6 +85,15 @@ type LeaderboardParams = {
 
 type RankingInsightParams = Omit<LeaderboardParams, 'page' | 'limit'>;
 
+type RankingMovementFeedParams = {
+  userId: string;
+  cursor?: string;
+  limit?: number;
+  context?: {
+    requestId?: string;
+  };
+};
+
 export type CreateGlobalRankingSnapshotArgs = {
   scope: RankingScope;
   provinceCode?: string | null;
@@ -241,6 +250,29 @@ type SuggestedRivalItem = {
   eloGap: number | null;
   isActiveLast7Days: boolean;
   canChallenge: boolean;
+};
+
+type RankingMovementFeedItem = {
+  type: 'PASSED_BY' | 'YOU_MOVED';
+  userId?: string;
+  displayName?: string;
+  oldPosition: number;
+  newPosition: number;
+  timestamp: string;
+};
+
+type RankingMovementFeedInternalItem = RankingMovementFeedItem & {
+  notificationId: string;
+  actorUserId: string | null;
+  positionSort: number;
+};
+
+type RankingMovementFeedCursor = {
+  timestamp: string;
+  notificationId: string;
+  type: 'PASSED_BY' | 'YOU_MOVED';
+  positionSort: number;
+  actorUserId: string | null;
 };
 
 const ACTIVE_DIRECT_CHALLENGE_STATUSES = [
@@ -602,6 +634,68 @@ export class RankingsService {
     });
 
     return { items };
+  }
+
+  async getMyRankingMovementFeed(
+    params: RankingMovementFeedParams,
+  ): Promise<{ items: RankingMovementFeedItem[]; nextCursor: string | null }> {
+    const startedAt = Date.now();
+    const limit = Math.min(20, Math.max(1, params.limit ?? 20));
+    const parsedCursor = this.parseRankingMovementFeedCursor(params.cursor);
+    const items: RankingMovementFeedInternalItem[] = [];
+    let notificationsCursor: { createdAt: Date; id: string } | null = null;
+
+    while (items.length < limit + 1) {
+      const notifications = await this.listRankingMovementNotifications(
+        params.userId,
+        notificationsCursor,
+        20,
+      );
+      if (notifications.length === 0) break;
+
+      for (const notification of notifications) {
+        const builtItems = await this.buildMovementFeedItemsForNotification(
+          params.userId,
+          notification,
+        );
+        items.push(
+          ...builtItems.filter(
+            (item) =>
+              !parsedCursor ||
+              this.isAfterRankingMovementFeedCursor(item, parsedCursor),
+          ),
+        );
+      }
+
+      const lastNotification = notifications[notifications.length - 1];
+      notificationsCursor = {
+        createdAt: lastNotification.createdAt,
+        id: lastNotification.id,
+      };
+
+      if (notifications.length < 20) break;
+    }
+
+    items.sort((a, b) => this.compareRankingMovementFeedItems(a, b));
+
+    const page = items.slice(0, limit);
+    const nextCursor =
+      items.length > limit
+        ? this.encodeRankingMovementFeedCursor(page[page.length - 1])
+        : null;
+
+    this.telemetry.track('ranking_movement_feed_fetched', {
+      requestId: params.context?.requestId ?? null,
+      userId: params.userId,
+      outcome: page.length > 0 ? 'SUCCESS' : 'EMPTY',
+      durationMs: Date.now() - startedAt,
+      returnedItems: page.length,
+    });
+
+    return {
+      items: page.map((item) => this.toRankingMovementFeedItem(item)),
+      nextCursor,
+    };
   }
 
   async getAvailableScopes(userId: string) {
@@ -1078,6 +1172,266 @@ export class RankingsService {
       category,
       categoryKey: this.categoryToKey(category),
     };
+  }
+
+  private async listRankingMovementNotifications(
+    userId: string,
+    cursor: { createdAt: Date; id: string } | null,
+    limit: number,
+  ): Promise<UserNotification[]> {
+    const qb = this.userNotificationRepo
+      .createQueryBuilder('n')
+      .where('n."userId" = :userId', { userId })
+      .andWhere('n.type = :type', {
+        type: UserNotificationType.RANKING_MOVEMENT,
+      })
+      .orderBy('n."createdAt"', 'DESC')
+      .addOrderBy('n.id', 'DESC')
+      .take(limit);
+
+    if (cursor) {
+      qb.andWhere('(n."createdAt", n.id) < (:cursorDate, :cursorId)', {
+        cursorDate: cursor.createdAt,
+        cursorId: cursor.id,
+      });
+    }
+
+    return qb.getMany();
+  }
+
+  private async buildMovementFeedItemsForNotification(
+    userId: string,
+    notification: UserNotification,
+  ): Promise<RankingMovementFeedInternalItem[]> {
+    const data = notification.data ?? {};
+    const timestamp = notification.createdAt.toISOString();
+    const snapshotId =
+      typeof data.snapshotId === 'string' && data.snapshotId.trim().length > 0
+        ? data.snapshotId.trim()
+        : null;
+
+    let userPreviousPosition = this.toIntegerOrNull(data.oldPosition);
+    let userNewPosition = this.toIntegerOrNull(data.newPosition);
+    const items: RankingMovementFeedInternalItem[] = [];
+
+    if (snapshotId) {
+      const currentSnapshot = await this.snapshotRepo.findOne({
+        where: { id: snapshotId },
+      });
+      const previousSnapshot = currentSnapshot
+        ? await this.getPreviousSnapshotBySnapshot(currentSnapshot)
+        : null;
+
+      if (currentSnapshot) {
+        const currentVisibleRows = this.toVisibleRows(currentSnapshot.rows ?? []);
+        const previousVisibleRows = this.toVisibleRows(previousSnapshot?.rows ?? []);
+        const userCurrentRow =
+          currentVisibleRows.find((row) => row.userId === userId) ?? null;
+        const userPreviousRow =
+          previousVisibleRows.find((row) => row.userId === userId) ?? null;
+
+        userPreviousPosition = userPreviousRow?.position ?? userPreviousPosition;
+        userNewPosition = userCurrentRow?.position ?? userNewPosition;
+
+        if (
+          userCurrentRow &&
+          userPreviousRow &&
+          typeof userPreviousPosition === 'number' &&
+          typeof userNewPosition === 'number'
+        ) {
+          const previousPositions = new Map<string, number>();
+          for (const row of previousVisibleRows) {
+            previousPositions.set(row.userId, row.position);
+          }
+
+          const relevantPlayers = new Map<string, VisibleRankingRow>();
+          const currentAbove =
+            currentVisibleRows[userCurrentRow.position - 2] ?? null;
+
+          if (
+            currentAbove &&
+            previousPositions.has(currentAbove.userId) &&
+            (previousPositions.get(currentAbove.userId) ?? currentAbove.position) !==
+              currentAbove.position
+          ) {
+            relevantPlayers.set(currentAbove.userId, currentAbove);
+          }
+
+          for (const row of currentVisibleRows) {
+            if (row.userId === userId) continue;
+            const previousPosition = previousPositions.get(row.userId);
+            if (typeof previousPosition !== 'number') continue;
+            if (
+              previousPosition > userPreviousPosition &&
+              row.position < userNewPosition
+            ) {
+              relevantPlayers.set(row.userId, row);
+            }
+          }
+
+          const passedByItems = [...relevantPlayers.values()]
+            .map((row) => {
+              const oldPosition = previousPositions.get(row.userId);
+              if (typeof oldPosition !== 'number') return null;
+              return {
+                type: 'PASSED_BY' as const,
+                userId: row.userId,
+                displayName: row.displayName,
+                oldPosition,
+                newPosition: row.position,
+                timestamp,
+                notificationId: notification.id,
+                actorUserId: row.userId,
+                positionSort: row.position,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null)
+            .sort((a, b) => a.newPosition - b.newPosition);
+
+          items.push(...passedByItems);
+        }
+      }
+    }
+
+    if (
+      typeof userPreviousPosition === 'number' &&
+      typeof userNewPosition === 'number'
+    ) {
+      items.push({
+        type: 'YOU_MOVED',
+        oldPosition: userPreviousPosition,
+        newPosition: userNewPosition,
+        timestamp,
+        notificationId: notification.id,
+        actorUserId: null,
+        positionSort: userNewPosition,
+      });
+    }
+
+    return items;
+  }
+
+  private async getPreviousSnapshotBySnapshot(
+    snapshot: GlobalRankingSnapshot,
+  ): Promise<GlobalRankingSnapshot | null> {
+    if (!Number.isFinite(snapshot.version) || snapshot.version <= 1) {
+      return null;
+    }
+
+    return this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s."dimensionKey" = :dimensionKey', {
+        dimensionKey: snapshot.dimensionKey,
+      })
+      .andWhere('s."categoryKey" = :categoryKey', {
+        categoryKey: snapshot.categoryKey,
+      })
+      .andWhere('s.timeframe = :timeframe', { timeframe: snapshot.timeframe })
+      .andWhere('s."modeKey" = :modeKey', { modeKey: snapshot.modeKey })
+      .andWhere('s.version < :version', { version: snapshot.version })
+      .orderBy('s.version', 'DESC')
+      .addOrderBy('s."computedAt"', 'DESC')
+      .getOne();
+  }
+
+  private compareRankingMovementFeedItems(
+    a: RankingMovementFeedInternalItem,
+    b: RankingMovementFeedInternalItem,
+  ) {
+    const aTs = new Date(a.timestamp).getTime();
+    const bTs = new Date(b.timestamp).getTime();
+    if (aTs !== bTs) return bTs - aTs;
+    if (a.notificationId !== b.notificationId) {
+      return b.notificationId.localeCompare(a.notificationId);
+    }
+    if (a.type !== b.type) {
+      return a.type === 'PASSED_BY' ? -1 : 1;
+    }
+    if (a.positionSort !== b.positionSort) {
+      return a.positionSort - b.positionSort;
+    }
+    return (a.actorUserId ?? '').localeCompare(b.actorUserId ?? '');
+  }
+
+  private parseRankingMovementFeedCursor(
+    cursor?: string,
+  ): RankingMovementFeedCursor | null {
+    if (!cursor || cursor.trim().length === 0) return null;
+
+    const [timestamp, notificationId, type, positionRaw, actorRaw] =
+      cursor.trim().split('|');
+    const parsedTimestamp = new Date(timestamp ?? '');
+    const positionSort = Number(positionRaw);
+    if (
+      Number.isNaN(parsedTimestamp.getTime()) ||
+      !notificationId ||
+      (type !== 'PASSED_BY' && type !== 'YOU_MOVED') ||
+      !Number.isFinite(positionSort)
+    ) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INVALID_CURSOR',
+        message: 'cursor is invalid',
+      });
+    }
+
+    return {
+      timestamp: parsedTimestamp.toISOString(),
+      notificationId,
+      type,
+      positionSort: Math.trunc(positionSort),
+      actorUserId:
+        actorRaw && actorRaw !== 'self' && actorRaw.length > 0 ? actorRaw : null,
+    };
+  }
+
+  private isAfterRankingMovementFeedCursor(
+    item: RankingMovementFeedInternalItem,
+    cursor: RankingMovementFeedCursor,
+  ): boolean {
+    const itemTimestamp = new Date(item.timestamp).getTime();
+    const cursorTimestamp = new Date(cursor.timestamp).getTime();
+    if (itemTimestamp !== cursorTimestamp) {
+      return itemTimestamp < cursorTimestamp;
+    }
+    if (item.notificationId !== cursor.notificationId) {
+      return item.notificationId.localeCompare(cursor.notificationId) < 0;
+    }
+    if (item.type !== cursor.type) {
+      return item.type === 'YOU_MOVED' && cursor.type === 'PASSED_BY';
+    }
+    if (item.positionSort !== cursor.positionSort) {
+      return item.positionSort > cursor.positionSort;
+    }
+    return (item.actorUserId ?? '').localeCompare(cursor.actorUserId ?? '') > 0;
+  }
+
+  private encodeRankingMovementFeedCursor(
+    item: RankingMovementFeedInternalItem,
+  ): string {
+    return [
+      item.timestamp,
+      item.notificationId,
+      item.type,
+      item.positionSort,
+      item.actorUserId ?? 'self',
+    ].join('|');
+  }
+
+  private toRankingMovementFeedItem(
+    item: RankingMovementFeedInternalItem,
+  ): RankingMovementFeedItem {
+    const response: RankingMovementFeedItem = {
+      type: item.type,
+      oldPosition: item.oldPosition,
+      newPosition: item.newPosition,
+      timestamp: item.timestamp,
+    };
+    if (item.type === 'PASSED_BY') {
+      response.userId = item.userId;
+      response.displayName = item.displayName;
+    }
+    return response;
   }
 
   parseScope(scope?: string): RankingScope {
@@ -1952,6 +2306,11 @@ export class RankingsService {
   private toNumberOrNull(value: unknown): number | null {
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
+  }
+
+  private toIntegerOrNull(value: unknown): number | null {
+    const num = this.toNumberOrNull(value);
+    return num === null ? null : Math.trunc(num);
   }
 
   private async getLatestSnapshot(args: {
