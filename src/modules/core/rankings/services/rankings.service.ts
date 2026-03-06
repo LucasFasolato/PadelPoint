@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { Brackets, In, QueryFailedError, Repository } from 'typeorm';
+import { DomainTelemetryService } from '@/common/observability/domain-telemetry.service';
 import { categoryFromElo } from '../../competitive/utils/competitive.constants';
 import {
   MatchRankingImpact,
@@ -21,6 +22,9 @@ import { User } from '../../users/entities/user.entity';
 import { PlayerProfile } from '../../players/entities/player-profile.entity';
 import { UserNotification } from '../../notifications/entities/user-notification.entity';
 import { UserNotificationType } from '../../notifications/enums/user-notification-type.enum';
+import { Challenge } from '../../challenges/entities/challenge.entity';
+import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
+import { ChallengeType } from '../../challenges/enums/challenge-type.enum';
 import {
   GlobalRankingSnapshot,
   GlobalRankingSnapshotRow,
@@ -78,6 +82,8 @@ type LeaderboardParams = {
     requestId?: string;
   };
 };
+
+type RankingInsightParams = Omit<LeaderboardParams, 'page' | 'limit'>;
 
 export type CreateGlobalRankingSnapshotArgs = {
   scope: RankingScope;
@@ -177,6 +183,72 @@ type RawRankingEligibilityMatch = {
   rankingImpact: unknown;
 };
 
+type VisibleRankingRow = GlobalRankingSnapshotRow & {
+  position: number;
+};
+
+type RankingSnapshotContext = {
+  scopeResolution: ScopeResolution;
+  categoryKey: string;
+  categoryNumber: number | null;
+  timeframe: RankingTimeframe;
+  modeKey: RankingMode;
+  snapshot: GlobalRankingSnapshot;
+  visibleRows: VisibleRankingRow[];
+  mySnapshotRow: GlobalRankingSnapshotRow | null;
+  myVisibleRow: VisibleRankingRow | null;
+};
+
+type RankingIntelligenceGap = {
+  userId: string;
+  displayName: string;
+  position: number;
+  elo: number | null;
+  eloGap: number | null;
+};
+
+type RankingIntelligenceResponse = {
+  position: number | null;
+  previousPosition: number | null;
+  deltaPosition: number | null;
+  movementType: 'UP' | 'DOWN' | 'SAME' | 'NEW';
+  elo: number | null;
+  category: number | null;
+  categoryKey: string;
+  gapToAbove: RankingIntelligenceGap | null;
+  gapToBelow: RankingIntelligenceGap | null;
+  recentMovement: {
+    summary: string;
+    hasMovement: boolean;
+  };
+  eligibility: {
+    eligible: boolean;
+    neededForRanking: number;
+    remaining: number;
+  };
+};
+
+type SuggestedRivalItem = {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  position: number;
+  elo: number | null;
+  category: number | null;
+  categoryKey: string;
+  reason: string;
+  suggestionType: 'ABOVE' | 'BELOW' | 'NEARBY';
+  eloGap: number | null;
+  isActiveLast7Days: boolean;
+  canChallenge: boolean;
+};
+
+const ACTIVE_DIRECT_CHALLENGE_STATUSES = [
+  ChallengeStatus.PENDING,
+  ChallengeStatus.ACCEPTED,
+  ChallengeStatus.READY,
+] as const;
+
 @Injectable()
 export class RankingsService {
   private readonly logger = new Logger(RankingsService.name);
@@ -201,6 +273,10 @@ export class RankingsService {
     @InjectRepository(UserNotification)
     private readonly userNotificationRepo: Repository<UserNotification>,
     private readonly config: ConfigService,
+    @InjectRepository(Challenge)
+    private readonly challengeRepo: Repository<Challenge> = null as any,
+    private readonly telemetry: DomainTelemetryService =
+      ({ track: () => undefined } as unknown as DomainTelemetryService),
   ) {
     this.rankingMinMatches = this.resolveMinMatches();
   }
@@ -340,6 +416,192 @@ export class RankingsService {
       },
       my,
     };
+  }
+
+  async getMyRankingIntelligence(
+    params: RankingInsightParams,
+  ): Promise<RankingIntelligenceResponse> {
+    const startedAt = Date.now();
+    const context = await this.getRankingSnapshotContext(params);
+    const previousSnapshot = await this.getPreviousSnapshot({
+      resolution: context.scopeResolution,
+      categoryKey: context.categoryKey,
+      timeframe: context.timeframe,
+      modeKey: context.modeKey,
+      currentVersion: context.snapshot.version,
+    });
+    const previousVisibleRows = this.toVisibleRows(previousSnapshot?.rows ?? []);
+    const previousPosition =
+      context.myVisibleRow && previousVisibleRows.length > 0
+        ? (previousVisibleRows.find((row) => row.userId === params.userId)?.position ??
+          null)
+        : null;
+    const currentPosition = context.myVisibleRow?.position ?? null;
+    const deltaPosition =
+      currentPosition !== null && previousPosition !== null
+        ? previousPosition - currentPosition
+        : null;
+    const movementType = this.resolveMovementType(
+      currentPosition,
+      previousPosition,
+      deltaPosition,
+    );
+    const fallbackIdentity = await this.getUserCompetitiveIdentity(params.userId);
+    const currentElo =
+      context.mySnapshotRow?.elo ?? context.myVisibleRow?.elo ?? fallbackIdentity.elo;
+    const currentCategory =
+      context.mySnapshotRow?.category ??
+      context.myVisibleRow?.category ??
+      fallbackIdentity.category;
+    const currentCategoryKey =
+      context.mySnapshotRow?.categoryKey ??
+      context.myVisibleRow?.categoryKey ??
+      fallbackIdentity.categoryKey ??
+      context.categoryKey;
+    const gapToAbove = context.myVisibleRow
+      ? this.buildGap(
+          context.visibleRows[context.myVisibleRow.position - 2] ?? null,
+          context.myVisibleRow.elo,
+        )
+      : null;
+    const gapToBelow = context.myVisibleRow
+      ? this.buildGap(
+          context.visibleRows[context.myVisibleRow.position] ?? null,
+          context.myVisibleRow.elo,
+        )
+      : null;
+    const remaining = Math.max(
+      0,
+      this.rankingMinMatches - (context.mySnapshotRow?.matchesPlayed ?? 0),
+    );
+    const response: RankingIntelligenceResponse = {
+      position: currentPosition,
+      previousPosition,
+      deltaPosition,
+      movementType,
+      elo: currentElo,
+      category: currentCategory,
+      categoryKey: currentCategoryKey,
+      gapToAbove,
+      gapToBelow,
+      recentMovement: this.buildRecentMovement({
+        movementType,
+        deltaPosition,
+        position: currentPosition,
+        previousPosition,
+        remaining,
+      }),
+      eligibility: {
+        eligible: remaining === 0,
+        neededForRanking: remaining,
+        remaining,
+      },
+    };
+
+    this.telemetry.track('ranking_intelligence_fetched', {
+      requestId: params.context?.requestId ?? null,
+      userId: params.userId,
+      scope: context.scopeResolution.scope,
+      category: context.categoryKey,
+      timeframe: context.timeframe,
+      mode: context.modeKey,
+      outcome: currentPosition === null ? 'NOT_RANKED' : movementType,
+      durationMs: Date.now() - startedAt,
+      returnedItems: 1,
+    });
+
+    return response;
+  }
+
+  async getSuggestedRivals(
+    params: RankingInsightParams,
+  ): Promise<{ items: SuggestedRivalItem[] }> {
+    const startedAt = Date.now();
+    const context = await this.getRankingSnapshotContext(params);
+
+    if (!context.myVisibleRow) {
+      this.telemetry.track('suggested_rivals_fetched', {
+        requestId: params.context?.requestId ?? null,
+        userId: params.userId,
+        scope: context.scopeResolution.scope,
+        category: context.categoryKey,
+        timeframe: context.timeframe,
+        mode: context.modeKey,
+        outcome: 'NOT_RANKED',
+        durationMs: Date.now() - startedAt,
+        returnedItems: 0,
+      });
+      return { items: [] };
+    }
+
+    const selectedRows: VisibleRankingRow[] = [];
+    const seenUserIds = new Set<string>([params.userId]);
+    const aboveRow = context.visibleRows[context.myVisibleRow.position - 2] ?? null;
+    const belowRow = context.visibleRows[context.myVisibleRow.position] ?? null;
+
+    for (const row of [aboveRow, belowRow]) {
+      if (!row || seenUserIds.has(row.userId)) continue;
+      seenUserIds.add(row.userId);
+      selectedRows.push(row);
+    }
+
+    const nearbyRows = context.visibleRows
+      .filter((row) => !seenUserIds.has(row.userId))
+      .sort((a, b) =>
+        this.compareNearbyRivals(a, b, context.myVisibleRow as VisibleRankingRow),
+      )
+      .slice(0, 3);
+
+    for (const row of nearbyRows) {
+      if (seenUserIds.has(row.userId)) continue;
+      seenUserIds.add(row.userId);
+      selectedRows.push(row);
+    }
+
+    const limitedRows = selectedRows.slice(0, 5);
+    const candidateUserIds = limitedRows.map((row) => row.userId);
+    const [activeLast7DaysUserIds, blockedUserIds] = await Promise.all([
+      this.getActiveLast7DaysUserIds(candidateUserIds, context.modeKey),
+      this.getBlockedDirectChallengeUserIds(params.userId, candidateUserIds),
+    ]);
+
+    const items = limitedRows.map((row) => {
+      const suggestionType =
+        aboveRow?.userId === row.userId
+          ? 'ABOVE'
+          : belowRow?.userId === row.userId
+            ? 'BELOW'
+            : 'NEARBY';
+
+      return {
+        userId: row.userId,
+        displayName: row.displayName,
+        avatarUrl: null,
+        position: row.position,
+        elo: row.elo,
+        category: row.category,
+        categoryKey: row.categoryKey,
+        reason: this.getSuggestedRivalReason(suggestionType),
+        suggestionType,
+        eloGap: this.computeEloGap(context.myVisibleRow?.elo ?? null, row.elo),
+        isActiveLast7Days: activeLast7DaysUserIds.has(row.userId),
+        canChallenge: !blockedUserIds.has(row.userId),
+      } satisfies SuggestedRivalItem;
+    });
+
+    this.telemetry.track('suggested_rivals_fetched', {
+      requestId: params.context?.requestId ?? null,
+      userId: params.userId,
+      scope: context.scopeResolution.scope,
+      category: context.categoryKey,
+      timeframe: context.timeframe,
+      mode: context.modeKey,
+      outcome: items.length > 0 ? 'SUCCESS' : 'EMPTY',
+      durationMs: Date.now() - startedAt,
+      returnedItems: items.length,
+    });
+
+    return { items };
   }
 
   async getAvailableScopes(userId: string) {
@@ -491,6 +753,331 @@ export class RankingsService {
     }
 
     return response;
+  }
+
+  private async getRankingSnapshotContext(
+    params: RankingInsightParams,
+  ): Promise<RankingSnapshotContext> {
+    const scope = this.normalizeScope(params.scope);
+    const scopeResolution = await this.resolveScope({
+      scope,
+      provinceCode: params.provinceCode,
+      cityId: params.cityId,
+      cityName: params.cityName,
+      context: params.context,
+    });
+    const { categoryKey, categoryNumber } = normalizeCategoryFilter(
+      params.category,
+    );
+    const timeframe = this.normalizeTimeframe(params.timeframe);
+    const modeKey = this.normalizeMode(params.mode);
+
+    const latest = await this.getLatestSnapshot({
+      resolution: scopeResolution,
+      categoryKey,
+      timeframe,
+      modeKey,
+    });
+    const isFresh =
+      latest &&
+      Date.now() - new Date(latest.computedAt).getTime() < this.snapshotFreshMs;
+    const snapshot =
+      isFresh && latest
+        ? latest
+        : (
+            await this.createGlobalRankingSnapshotDetailedWithResolution(
+              {
+                scope: scopeResolution.scope,
+                provinceCode: scopeResolution.provinceCode,
+                cityId: scopeResolution.cityId,
+                categoryKey,
+                categoryNumber,
+                timeframe,
+                modeKey,
+              },
+              scopeResolution,
+            )
+          ).snapshot;
+    const visibleRows = this.toVisibleRows(snapshot.rows ?? []);
+    return {
+      scopeResolution,
+      categoryKey,
+      categoryNumber,
+      timeframe,
+      modeKey,
+      snapshot,
+      visibleRows,
+      mySnapshotRow:
+        (snapshot.rows ?? []).find((row) => row.userId === params.userId) ?? null,
+      myVisibleRow:
+        visibleRows.find((row) => row.userId === params.userId) ?? null,
+    };
+  }
+
+  private toVisibleRows(rows: GlobalRankingSnapshotRow[]): VisibleRankingRow[] {
+    return rows
+      .filter((row) => row.matchesPlayed >= this.rankingMinMatches)
+      .map((row, index) => ({
+        ...row,
+        position: index + 1,
+      }));
+  }
+
+  private async getPreviousSnapshot(args: {
+    resolution: ScopeResolution;
+    categoryKey: string;
+    timeframe: RankingTimeframe;
+    modeKey: RankingMode;
+    currentVersion: number;
+  }): Promise<GlobalRankingSnapshot | null> {
+    if (!Number.isFinite(args.currentVersion) || args.currentVersion <= 1) {
+      return null;
+    }
+
+    return this.snapshotRepo
+      .createQueryBuilder('s')
+      .where('s."dimensionKey" = :dimensionKey', {
+        dimensionKey: args.resolution.dimensionKey,
+      })
+      .andWhere('s."categoryKey" = :categoryKey', {
+        categoryKey: args.categoryKey,
+      })
+      .andWhere('s.timeframe = :timeframe', { timeframe: args.timeframe })
+      .andWhere('s."modeKey" = :modeKey', { modeKey: args.modeKey })
+      .andWhere('s.version < :currentVersion', {
+        currentVersion: args.currentVersion,
+      })
+      .orderBy('s.version', 'DESC')
+      .addOrderBy('s."computedAt"', 'DESC')
+      .getOne();
+  }
+
+  private resolveMovementType(
+    position: number | null,
+    previousPosition: number | null,
+    deltaPosition: number | null,
+  ): 'UP' | 'DOWN' | 'SAME' | 'NEW' {
+    if (position === null) return 'SAME';
+    if (previousPosition === null) return 'NEW';
+    if ((deltaPosition ?? 0) > 0) return 'UP';
+    if ((deltaPosition ?? 0) < 0) return 'DOWN';
+    return 'SAME';
+  }
+
+  private buildGap(
+    row: VisibleRankingRow | null,
+    myElo: number | null,
+  ): RankingIntelligenceGap | null {
+    if (!row) return null;
+    return {
+      userId: row.userId,
+      displayName: row.displayName,
+      position: row.position,
+      elo: row.elo,
+      eloGap: this.computeEloGap(myElo, row.elo),
+    };
+  }
+
+  private buildRecentMovement(input: {
+    movementType: 'UP' | 'DOWN' | 'SAME' | 'NEW';
+    deltaPosition: number | null;
+    position: number | null;
+    previousPosition: number | null;
+    remaining: number;
+  }): { summary: string; hasMovement: boolean } {
+    if (input.position === null && input.remaining > 0) {
+      return {
+        summary: 'Todavia no cumplis el minimo para figurar en el ranking',
+        hasMovement: false,
+      };
+    }
+    if (input.previousPosition === null) {
+      return {
+        summary: 'Sin snapshot previo para comparar',
+        hasMovement: false,
+      };
+    }
+    if (input.movementType === 'UP' && (input.deltaPosition ?? 0) > 0) {
+      const delta = input.deltaPosition as number;
+      const label = delta === 1 ? 'posicion' : 'posiciones';
+      return {
+        summary: `Subiste ${delta} ${label} desde el ultimo snapshot`,
+        hasMovement: true,
+      };
+    }
+    if (input.movementType === 'DOWN' && (input.deltaPosition ?? 0) < 0) {
+      const delta = Math.abs(input.deltaPosition as number);
+      const label = delta === 1 ? 'posicion' : 'posiciones';
+      return {
+        summary: `Bajaste ${delta} ${label} desde el ultimo snapshot`,
+        hasMovement: true,
+      };
+    }
+
+    return {
+      summary: 'No cambiaste de posicion desde el ultimo snapshot',
+      hasMovement: false,
+    };
+  }
+
+  private compareNearbyRivals(
+    a: VisibleRankingRow,
+    b: VisibleRankingRow,
+    me: VisibleRankingRow,
+  ) {
+    const aPositionDiff = Math.abs(a.position - me.position);
+    const bPositionDiff = Math.abs(b.position - me.position);
+    if (aPositionDiff !== bPositionDiff) {
+      return aPositionDiff - bPositionDiff;
+    }
+
+    const aEloGap = this.computeEloGap(me.elo, a.elo) ?? Number.MAX_SAFE_INTEGER;
+    const bEloGap = this.computeEloGap(me.elo, b.elo) ?? Number.MAX_SAFE_INTEGER;
+    if (aEloGap !== bEloGap) {
+      return aEloGap - bEloGap;
+    }
+
+    return a.position - b.position || a.userId.localeCompare(b.userId);
+  }
+
+  private getSuggestedRivalReason(
+    suggestionType: 'ABOVE' | 'BELOW' | 'NEARBY',
+  ): string {
+    if (suggestionType === 'ABOVE') {
+      return 'Jugador inmediatamente por encima tuyo';
+    }
+    if (suggestionType === 'BELOW') {
+      return 'Jugador inmediatamente por debajo tuyo';
+    }
+    return 'Rival cercano en nivel';
+  }
+
+  private computeEloGap(a: number | null, b: number | null): number | null {
+    if (typeof a !== 'number' || typeof b !== 'number') return null;
+    return Math.abs(a - b);
+  }
+
+  private async getActiveLast7DaysUserIds(
+    userIds: string[],
+    modeKey: RankingMode,
+  ): Promise<Set<string>> {
+    const active = new Set<string>();
+    if (userIds.length === 0) return active;
+
+    const rows = await this.matchRepo
+      .createQueryBuilder('m')
+      .innerJoin('m.challenge', 'c')
+      .select('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."teamA2Id"', 'teamA2Id')
+      .addSelect('c."teamB1Id"', 'teamB1Id')
+      .addSelect('c."teamB2Id"', 'teamB2Id')
+      .where('m.status = :status', { status: MatchResultStatus.CONFIRMED })
+      .andWhere('m."playedAt" IS NOT NULL')
+      .andWhere('m."playedAt" >= :cutoff', {
+        cutoff: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      })
+      .andWhere(
+        '(c."teamA1Id" IN (:...userIds) OR c."teamA2Id" IN (:...userIds) OR c."teamB1Id" IN (:...userIds) OR c."teamB2Id" IN (:...userIds))',
+        { userIds },
+      );
+
+    if (modeKey === RankingMode.COMPETITIVE) {
+      rows
+        .andWhere('m."matchType" = :matchType', {
+          matchType: MatchType.COMPETITIVE,
+        })
+        .andWhere('m."impactRanking" = true');
+    } else if (modeKey === RankingMode.FRIENDLY) {
+      rows.andWhere('m."matchType" = :matchType', {
+        matchType: MatchType.FRIENDLY,
+      });
+    }
+
+    const rawRows = await rows.getRawMany<{
+      teamA1Id: string;
+      teamA2Id: string | null;
+      teamB1Id: string | null;
+      teamB2Id: string | null;
+    }>();
+    const targetIds = new Set(userIds);
+    for (const row of rawRows) {
+      for (const userId of [
+        row.teamA1Id,
+        row.teamA2Id,
+        row.teamB1Id,
+        row.teamB2Id,
+      ]) {
+        if (userId && targetIds.has(userId)) {
+          active.add(userId);
+        }
+      }
+    }
+
+    return active;
+  }
+
+  private async getBlockedDirectChallengeUserIds(
+    userId: string,
+    candidateUserIds: string[],
+  ): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    if (!this.challengeRepo || candidateUserIds.length === 0) {
+      return blocked;
+    }
+
+    const rows = await this.challengeRepo
+      .createQueryBuilder('c')
+      .select('c."teamA1Id"', 'teamA1Id')
+      .addSelect('c."invitedOpponentId"', 'invitedOpponentId')
+      .where('c.type = :type', { type: ChallengeType.DIRECT })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: [...ACTIVE_DIRECT_CHALLENGE_STATUSES],
+      })
+      .andWhere(
+        new Brackets((where) => {
+          where.where(
+            'c."teamA1Id" = :userId AND c."invitedOpponentId" IN (:...candidateUserIds)',
+            { userId, candidateUserIds },
+          );
+          where.orWhere(
+            'c."invitedOpponentId" = :userId AND c."teamA1Id" IN (:...candidateUserIds)',
+            { userId, candidateUserIds },
+          );
+        }),
+      )
+      .getRawMany<{ teamA1Id: string; invitedOpponentId: string | null }>();
+
+    for (const row of rows) {
+      if (row.teamA1Id && row.teamA1Id !== userId) {
+        blocked.add(row.teamA1Id);
+      }
+      if (row.invitedOpponentId && row.invitedOpponentId !== userId) {
+        blocked.add(row.invitedOpponentId);
+      }
+    }
+
+    return blocked;
+  }
+
+  private async getUserCompetitiveIdentity(userId: string): Promise<{
+    elo: number | null;
+    category: number | null;
+    categoryKey: string;
+  }> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['competitiveProfile'],
+    });
+    const elo =
+      typeof user?.competitiveProfile?.elo === 'number'
+        ? user.competitiveProfile.elo
+        : null;
+    const category = typeof elo === 'number' ? categoryFromElo(elo) : null;
+    return {
+      elo,
+      category,
+      categoryKey: this.categoryToKey(category),
+    };
   }
 
   parseScope(scope?: string): RankingScope {

@@ -15,6 +15,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
 import { Roles } from '@/modules/core/auth/decorators/roles.decorator';
@@ -26,6 +27,11 @@ import { RankingScope } from '../enums/ranking-scope.enum';
 import { RankingsService } from '../services/rankings.service';
 import { RankingsSnapshotSchedulerService } from '../services/rankings-snapshot-scheduler.service';
 import { RunRankingSnapshotsQueryDto } from '../dto/run-ranking-snapshots-query.dto';
+import { RankingsInsightQueryDto } from '../dto/rankings-insight-query.dto';
+import { RankingTimeframe } from '../enums/ranking-timeframe.enum';
+import { RankingMode } from '../enums/ranking-mode.enum';
+import { RankingIntelligenceResponseDto } from '../dto/ranking-intelligence-response.dto';
+import { SuggestedRivalsResponseDto } from '../dto/suggested-rivals-response.dto';
 
 type AuthUser = {
   userId: string;
@@ -122,6 +128,76 @@ export class RankingsController {
       userId: user.userId,
       scope: query.scope,
       category: query.category,
+    });
+  }
+
+  @Get('me/intelligence')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiQuery({ name: 'scope', enum: RankingScope, required: false })
+  @ApiQuery({ name: 'provinceCode', type: String, required: false })
+  @ApiQuery({ name: 'cityId', type: String, required: false })
+  @ApiQuery({ name: 'cityName', type: String, required: false })
+  @ApiQuery({ name: 'category', type: String, required: false })
+  @ApiQuery({
+    name: 'timeframe',
+    enum: RankingTimeframe,
+    required: false,
+  })
+  @ApiQuery({ name: 'mode', enum: RankingMode, required: false })
+  @ApiOkResponse({ type: RankingIntelligenceResponseDto })
+  getMyIntelligence(
+    @Req() req: Request,
+    @Query() query: RankingsInsightQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
+
+    return this.rankingsService.getMyRankingIntelligence({
+      userId: user.userId,
+      scope: query.scope,
+      provinceCode: query.provinceCode,
+      cityId: query.cityId,
+      cityName: query.cityName,
+      category: query.category,
+      timeframe: query.timeframe,
+      mode: query.mode,
+      context: { requestId },
+    });
+  }
+
+  @Get('me/suggested-rivals')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @ApiQuery({ name: 'scope', enum: RankingScope, required: false })
+  @ApiQuery({ name: 'provinceCode', type: String, required: false })
+  @ApiQuery({ name: 'cityId', type: String, required: false })
+  @ApiQuery({ name: 'cityName', type: String, required: false })
+  @ApiQuery({ name: 'category', type: String, required: false })
+  @ApiQuery({
+    name: 'timeframe',
+    enum: RankingTimeframe,
+    required: false,
+  })
+  @ApiQuery({ name: 'mode', enum: RankingMode, required: false })
+  @ApiOkResponse({ type: SuggestedRivalsResponseDto })
+  getSuggestedRivals(
+    @Req() req: Request,
+    @Query() query: RankingsInsightQueryDto,
+  ) {
+    const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
+
+    return this.rankingsService.getSuggestedRivals({
+      userId: user.userId,
+      scope: query.scope,
+      provinceCode: query.provinceCode,
+      cityId: query.cityId,
+      cityName: query.cityName,
+      category: query.category,
+      timeframe: query.timeframe,
+      mode: query.mode,
+      context: { requestId },
     });
   }
 

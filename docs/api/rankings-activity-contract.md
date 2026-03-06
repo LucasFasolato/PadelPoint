@@ -1,10 +1,12 @@
 # Rankings + Activity API Contract (v1)
 
-Last updated: 2026-02-28
+Last updated: 2026-03-06
 
 This document defines the current HTTP contract for:
 
 - `GET /rankings`
+- `GET /rankings/me/intelligence`
+- `GET /rankings/me/suggested-rivals`
 - `GET /rankings/scopes`
 - `GET /me/activity`
 
@@ -13,6 +15,8 @@ All endpoints require JWT auth.
 ## Pagination Rules
 
 - `GET /rankings` uses page-based pagination (`page`, `limit`).
+- `GET /rankings/me/intelligence` is not paginated.
+- `GET /rankings/me/suggested-rivals` is not paginated.
 - `GET /me/activity` uses cursor-based pagination (`cursor`, `limit`).
 - `GET /rankings/scopes` is not paginated.
 
@@ -260,6 +264,123 @@ Plus standard:
 
 - `400` validation errors (`limit`, `page`, malformed query types)
 - `401` unauthorized
+
+---
+
+## GET /rankings/me/intelligence
+
+Compact explanation of the authenticated user's current ranking state for the
+selected filters.
+
+### Query params
+
+Same filters as `GET /rankings`, except pagination is ignored:
+
+- `scope` (optional): `COUNTRY` | `PROVINCE` | `CITY`
+- `provinceCode` (required when `scope=PROVINCE`)
+- `cityId` (preferred when `scope=CITY`)
+- `cityName` (fallback when `scope=CITY` and `cityId` missing)
+- `category` (optional)
+- `timeframe` (optional): `CURRENT_SEASON` | `LAST_90D`
+- `mode` (optional): `COMPETITIVE` | `FRIENDLY` | `ALL`
+
+### Response shape
+
+```json
+{
+  "position": 14,
+  "previousPosition": 16,
+  "deltaPosition": 2,
+  "movementType": "UP",
+  "elo": 1470,
+  "category": 6,
+  "categoryKey": "6ta",
+  "gapToAbove": {
+    "userId": "uuid",
+    "displayName": "Juan Perez",
+    "position": 13,
+    "elo": 1482,
+    "eloGap": 12
+  },
+  "gapToBelow": {
+    "userId": "uuid",
+    "displayName": "Pedro Diaz",
+    "position": 15,
+    "elo": 1462,
+    "eloGap": 8
+  },
+  "recentMovement": {
+    "summary": "Subiste 2 posiciones desde el ultimo snapshot",
+    "hasMovement": true
+  },
+  "eligibility": {
+    "eligible": true,
+    "neededForRanking": 0,
+    "remaining": 0
+  }
+}
+```
+
+### Semantics
+
+- `position` / `previousPosition` are based on the visible ranking table after
+  applying the minimum-match eligibility filter.
+- `movementType` is `NEW` when no previous visible snapshot position exists.
+- `gapToAbove` / `gapToBelow` are `null` for top-ranked / last-ranked players.
+- `eligibility.remaining` and `eligibility.neededForRanking` follow the same
+  minimum-match rule used by the `my` block in `GET /rankings`.
+
+### Error codes
+
+Same as `GET /rankings`.
+
+---
+
+## GET /rankings/me/suggested-rivals
+
+Returns up to 5 reasonable rivals from the current filtered ranking.
+
+### Query params
+
+Same filters as `GET /rankings/me/intelligence`.
+
+### Response shape
+
+```json
+{
+  "items": [
+    {
+      "userId": "uuid",
+      "displayName": "Juan Perez",
+      "avatarUrl": null,
+      "position": 13,
+      "elo": 1482,
+      "category": 6,
+      "categoryKey": "6ta",
+      "reason": "Jugador inmediatamente por encima tuyo",
+      "suggestionType": "ABOVE",
+      "eloGap": 12,
+      "isActiveLast7Days": true,
+      "canChallenge": true
+    }
+  ]
+}
+```
+
+### Semantics
+
+- Ordering priority:
+  - immediate player above
+  - immediate player below
+  - up to 3 additional nearby rivals by position/ELO proximity
+- Current user is always excluded.
+- `canChallenge=false` currently means there is already an active direct
+  challenge with that rival. Ranking anti-farming cooldowns are not precomputed
+  here yet.
+
+### Error codes
+
+Same as `GET /rankings`.
 
 ---
 

@@ -11,6 +11,7 @@ import { RankingsService } from './services/rankings.service';
 import { RankingsSnapshotSchedulerService } from './services/rankings-snapshot-scheduler.service';
 import { UserNotification } from '../notifications/entities/user-notification.entity';
 import { PlayerProfile } from '../players/entities/player-profile.entity';
+import { Challenge } from '../challenges/entities/challenge.entity';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PlayerProfile } from '../players/entities/player-profile.entity';
       City,
       Province,
       UserNotification,
+      Challenge,
       RankingSnapshotRun,
     ]),
   ],

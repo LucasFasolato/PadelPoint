@@ -19,6 +19,23 @@
         ],
         "type": "object"
       },
+      "ActivitySummaryDto": {
+        "properties": {
+          "isActiveLast7Days": {
+            "example": true,
+            "type": "boolean"
+          },
+          "lastPlayedAt": {
+            "example": "2026-03-05T03:33:03.677Z",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "isActiveLast7Days"
+        ],
+        "type": "object"
+      },
       "ActivityViewDto": {
         "properties": {
           "actorId": {
@@ -317,6 +334,120 @@
           "ratio30d",
           "endorsementsGiven30d",
           "competitiveConfirmedMatches30d"
+        ],
+        "type": "object"
+      },
+      "CompetitiveStatsDto": {
+        "properties": {
+          "category": {
+            "example": 6,
+            "type": "number"
+          },
+          "categoryKey": {
+            "example": "6ta",
+            "type": "string"
+          },
+          "currentStreak": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompetitiveStreakDto"
+              }
+            ],
+            "nullable": true
+          },
+          "draws": {
+            "example": 1,
+            "type": "number"
+          },
+          "elo": {
+            "example": 1470,
+            "type": "number"
+          },
+          "losses": {
+            "example": 8,
+            "type": "number"
+          },
+          "matchesPlayed": {
+            "example": 24,
+            "type": "number"
+          },
+          "recentForm": {
+            "description": "Last up-to-5 confirmed match results from the player perspective. Newest first. W=win, L=loss, D=draw.",
+            "example": [
+              "W",
+              "W",
+              "L",
+              "W",
+              "W"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "winRate": {
+            "example": 0.625,
+            "type": "number"
+          },
+          "wins": {
+            "example": 15,
+            "type": "number"
+          }
+        },
+        "required": [
+          "elo",
+          "category",
+          "categoryKey",
+          "matchesPlayed",
+          "wins",
+          "losses",
+          "draws",
+          "winRate",
+          "recentForm"
+        ],
+        "type": "object"
+      },
+      "CompetitiveStreakDto": {
+        "properties": {
+          "count": {
+            "example": 3,
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "WIN",
+              "LOSS",
+              "DRAW"
+            ],
+            "example": "WIN",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "count"
+        ],
+        "type": "object"
+      },
+      "CompetitiveSummaryCityDto": {
+        "properties": {
+          "id": {
+            "example": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "example": "Rosario",
+            "type": "string"
+          },
+          "provinceCode": {
+            "example": "AR-S",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },
@@ -2216,6 +2347,60 @@
         ],
         "type": "object"
       },
+      "PlayerCompetitiveSummaryDto": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/ActivitySummaryDto"
+          },
+          "avatarUrl": {
+            "example": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompetitiveSummaryCityDto"
+              }
+            ],
+            "nullable": true
+          },
+          "competitive": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompetitiveStatsDto"
+              }
+            ],
+            "description": "Null when the player has no competitive profile.",
+            "nullable": true
+          },
+          "displayName": {
+            "example": "Lucas Fasolato",
+            "nullable": true,
+            "type": "string"
+          },
+          "recentMatches": {
+            "items": {
+              "$ref": "#/components/schemas/RecentMatchDto"
+            },
+            "type": "array"
+          },
+          "strengths": {
+            "$ref": "#/components/schemas/StrengthsSummaryDto"
+          },
+          "userId": {
+            "example": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "strengths",
+          "recentMatches",
+          "activity"
+        ],
+        "type": "object"
+      },
       "PlayerFavoriteIdsResponseDto": {
         "properties": {
           "ids": {
@@ -2472,6 +2657,229 @@
           "remaining",
           "eligible",
           "reasons"
+        ],
+        "type": "object"
+      },
+      "RankingIntelligenceEligibilityDto": {
+        "properties": {
+          "eligible": {
+            "example": true,
+            "type": "boolean"
+          },
+          "neededForRanking": {
+            "example": 0,
+            "type": "number"
+          },
+          "remaining": {
+            "example": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "eligible",
+          "neededForRanking",
+          "remaining"
+        ],
+        "type": "object"
+      },
+      "RankingIntelligenceGapDto": {
+        "properties": {
+          "displayName": {
+            "example": "Juan Perez",
+            "type": "string"
+          },
+          "elo": {
+            "example": 1482,
+            "type": "number"
+          },
+          "eloGap": {
+            "example": 12,
+            "type": "number"
+          },
+          "position": {
+            "example": 13,
+            "type": "number"
+          },
+          "userId": {
+            "example": "11111111-1111-4111-8111-111111111111",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "position",
+          "elo",
+          "eloGap"
+        ],
+        "type": "object"
+      },
+      "RankingIntelligenceResponseDto": {
+        "properties": {
+          "category": {
+            "example": 6,
+            "nullable": true,
+            "type": "number"
+          },
+          "categoryKey": {
+            "example": "6ta",
+            "type": "string"
+          },
+          "deltaPosition": {
+            "example": 2,
+            "nullable": true,
+            "type": "number"
+          },
+          "eligibility": {
+            "$ref": "#/components/schemas/RankingIntelligenceEligibilityDto"
+          },
+          "elo": {
+            "example": 1470,
+            "nullable": true,
+            "type": "number"
+          },
+          "gapToAbove": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RankingIntelligenceGapDto"
+              }
+            ],
+            "nullable": true
+          },
+          "gapToBelow": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RankingIntelligenceGapDto"
+              }
+            ],
+            "nullable": true
+          },
+          "movementType": {
+            "example": "UP",
+            "type": "string"
+          },
+          "position": {
+            "example": 14,
+            "nullable": true,
+            "type": "number"
+          },
+          "previousPosition": {
+            "example": 16,
+            "nullable": true,
+            "type": "number"
+          },
+          "recentMovement": {
+            "$ref": "#/components/schemas/RankingRecentMovementDto"
+          }
+        },
+        "required": [
+          "position",
+          "previousPosition",
+          "deltaPosition",
+          "movementType",
+          "elo",
+          "category",
+          "categoryKey",
+          "recentMovement",
+          "eligibility"
+        ],
+        "type": "object"
+      },
+      "RankingRecentMovementDto": {
+        "properties": {
+          "hasMovement": {
+            "example": true,
+            "type": "boolean"
+          },
+          "summary": {
+            "example": "Subiste 2 posiciones desde el ultimo snapshot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "hasMovement"
+        ],
+        "type": "object"
+      },
+      "RecentMatchDto": {
+        "properties": {
+          "impactRanking": {
+            "example": true,
+            "type": "boolean"
+          },
+          "matchId": {
+            "example": "uuid",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "example": "COMPETITIVE",
+            "type": "string"
+          },
+          "opponentSummary": {
+            "description": "Human-readable opponent summary. For doubles: \"vs Juan + Pedro\".",
+            "example": "vs Juan Perez",
+            "type": "string"
+          },
+          "playedAt": {
+            "example": "2026-03-05T03:33:03.677Z",
+            "type": "string"
+          },
+          "result": {
+            "description": "Match result from the perspective of the queried player.",
+            "enum": [
+              "WIN",
+              "LOSS",
+              "DRAW"
+            ],
+            "example": "WIN",
+            "type": "string"
+          },
+          "score": {
+            "$ref": "#/components/schemas/RecentMatchScoreDto"
+          }
+        },
+        "required": [
+          "matchId",
+          "playedAt",
+          "result",
+          "score",
+          "opponentSummary",
+          "matchType",
+          "impactRanking"
+        ],
+        "type": "object"
+      },
+      "RecentMatchScoreDto": {
+        "properties": {
+          "sets": {
+            "example": [
+              {
+                "a": 7,
+                "b": 6
+              },
+              {
+                "a": 6,
+                "b": 4
+              }
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "example": "7-6 6-4",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "sets"
         ],
         "type": "object"
       },
@@ -2957,6 +3365,10 @@
             "description": "ISO 8601 timestamp of the last computed snapshot; null if no snapshot yet",
             "type": "string"
           },
+          "lastUpdatedAt": {
+            "description": "ISO 8601 timestamp of the latest standings snapshot row update.",
+            "type": "string"
+          },
           "movement": {
             "description": "userId → { delta } movement map",
             "example": {
@@ -2974,11 +3386,32 @@
               "$ref": "#/components/schemas/StandingsRowDto"
             },
             "type": "array"
+          },
+          "snapshotVersion": {
+            "description": "Current standings read-model version; additive metadata for clients that want snapshot freshness.",
+            "type": "number"
           }
         },
         "required": [
           "rows",
           "movement"
+        ],
+        "type": "object"
+      },
+      "StrengthItemDto": {
+        "properties": {
+          "count": {
+            "example": 8,
+            "type": "number"
+          },
+          "key": {
+            "example": "TACTICA",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
         ],
         "type": "object"
       },
@@ -3033,6 +3466,30 @@
         ],
         "type": "object"
       },
+      "StrengthsSummaryDto": {
+        "properties": {
+          "endorsementCount": {
+            "example": 18,
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StrengthItemDto"
+            },
+            "type": "array"
+          },
+          "topStrength": {
+            "example": "TACTICA",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "endorsementCount",
+          "items"
+        ],
+        "type": "object"
+      },
       "SubmitLeagueMatchResultCanonicalBodyDto": {
         "properties": {
           "playedAt": {
@@ -3046,6 +3503,91 @@
         "required": [
           "playedAt",
           "score"
+        ],
+        "type": "object"
+      },
+      "SuggestedRivalItemDto": {
+        "properties": {
+          "avatarUrl": {
+            "example": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "canChallenge": {
+            "example": true,
+            "type": "boolean"
+          },
+          "category": {
+            "example": 6,
+            "nullable": true,
+            "type": "number"
+          },
+          "categoryKey": {
+            "example": "6ta",
+            "type": "string"
+          },
+          "displayName": {
+            "example": "Juan Perez",
+            "type": "string"
+          },
+          "elo": {
+            "example": 1482,
+            "nullable": true,
+            "type": "number"
+          },
+          "eloGap": {
+            "example": 12,
+            "nullable": true,
+            "type": "number"
+          },
+          "isActiveLast7Days": {
+            "example": true,
+            "type": "boolean"
+          },
+          "position": {
+            "example": 13,
+            "type": "number"
+          },
+          "reason": {
+            "example": "Jugador inmediatamente por encima tuyo",
+            "type": "string"
+          },
+          "suggestionType": {
+            "example": "ABOVE",
+            "type": "string"
+          },
+          "userId": {
+            "example": "11111111-1111-4111-8111-111111111111",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "avatarUrl",
+          "position",
+          "elo",
+          "category",
+          "categoryKey",
+          "reason",
+          "suggestionType",
+          "eloGap",
+          "isActiveLast7Days",
+          "canChallenge"
+        ],
+        "type": "object"
+      },
+      "SuggestedRivalsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestedRivalItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -8702,6 +9244,46 @@
         ]
       }
     },
+    "/players/{id}/competitive-summary": {
+      "get": {
+        "description": "Returns a compact, UI-ready competitive snapshot for a given player. Includes ELO, category, recent form, top strengths/endorsements and last confirmed matches. Intended for hover/tap cards from the ranking view. All sections that lack data return null/empty — never invented.",
+        "operationId": "PlayersPublicController_getCompetitiveSummary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerCompetitiveSummaryDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "Player not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get rival scouting profile (competitive summary)",
+        "tags": [
+          "players"
+        ]
+      }
+    },
     "/players/{userId}/strengths/summary": {
       "get": {
         "operationId": "PlayerStrengthsController_getSummary",
@@ -9298,6 +9880,103 @@
         ]
       }
     },
+    "/rankings/me/intelligence": {
+      "get": {
+        "operationId": "RankingsController_getMyIntelligence",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "enum": [
+                "COMPETITIVE",
+                "FRIENDLY",
+                "ALL"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeframe",
+            "required": false,
+            "schema": {
+              "enum": [
+                "CURRENT_SEASON",
+                "LAST_90D"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityName",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provinceCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "COUNTRY",
+                "PROVINCE",
+                "CITY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankingIntelligenceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
     "/rankings/me/progress": {
       "get": {
         "operationId": "RankingsController_getMyProgress",
@@ -9342,6 +10021,103 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RankingEligibilityProgressResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/rankings/me/suggested-rivals": {
+      "get": {
+        "operationId": "RankingsController_getSuggestedRivals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "enum": [
+                "COMPETITIVE",
+                "FRIENDLY",
+                "ALL"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeframe",
+            "required": false,
+            "schema": {
+              "enum": [
+                "CURRENT_SEASON",
+                "LAST_90D"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityName",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provinceCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "COUNTRY",
+                "PROVINCE",
+                "CITY"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestedRivalsResponseDto"
                 }
               }
             },

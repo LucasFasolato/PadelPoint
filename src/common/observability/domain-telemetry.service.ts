@@ -8,7 +8,9 @@ export type DomainTelemetryEvent =
   | 'league_pending_confirmation_fetched'
   | 'inbox_pending_confirmation_opened'
   | 'league_standings_recomputed'
-  | 'league_standings_snapshot_persisted';
+  | 'league_standings_snapshot_persisted'
+  | 'ranking_intelligence_fetched'
+  | 'suggested_rivals_fetched';
 
 export type DomainTelemetryPayload = {
   requestId?: string | null;

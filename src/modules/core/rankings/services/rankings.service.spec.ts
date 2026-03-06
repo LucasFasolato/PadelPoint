@@ -28,6 +28,77 @@ function createConfigMock(minMatches = 4): ConfigService {
   } as unknown as ConfigService;
 }
 
+function createRankingsServiceForInsights(minMatches = 4) {
+  const snapshotRepo = createRepoMock();
+  const matchRepo = createRepoMock();
+  const userRepo = createRepoMock();
+  const playerProfileRepo = createRepoMock();
+  const cityRepo = createRepoMock();
+  const provinceRepo = createRepoMock();
+  const userNotificationRepo = createRepoMock();
+  const challengeRepo = createRepoMock();
+  const telemetry = { track: jest.fn() };
+  const config = createConfigMock(minMatches);
+
+  const service = new RankingsService(
+    snapshotRepo,
+    matchRepo,
+    userRepo,
+    playerProfileRepo,
+    cityRepo,
+    provinceRepo,
+    userNotificationRepo,
+    config,
+    challengeRepo,
+    telemetry as any,
+  );
+
+  return {
+    service,
+    telemetry,
+    snapshotRepo,
+    matchRepo,
+    userRepo,
+    playerProfileRepo,
+    cityRepo,
+    provinceRepo,
+    userNotificationRepo,
+    challengeRepo,
+  };
+}
+
+function makeRankingRow(
+  overrides: Partial<{
+    userId: string;
+    displayName: string;
+    elo: number | null;
+    category: number | null;
+    categoryKey: string;
+    matchesPlayed: number;
+    position: number;
+  }> = {},
+) {
+  return {
+    userId: overrides.userId ?? 'user-1',
+    displayName: overrides.displayName ?? 'Player',
+    cityId: null,
+    provinceCode: 'S',
+    category: overrides.category ?? 6,
+    categoryKey: overrides.categoryKey ?? '6ta',
+    matchesPlayed: overrides.matchesPlayed ?? 6,
+    wins: 4,
+    losses: 2,
+    draws: 0,
+    points: 12,
+    setsDiff: 5,
+    gamesDiff: 10,
+    rating: 1400,
+    elo: overrides.elo ?? 1400,
+    opponentAvgElo: 1390,
+    position: overrides.position ?? 1,
+  };
+}
+
 describe('RankingsService', () => {
   it('keeps cityName/provinceCode through ValidationPipe whitelist transforms', async () => {
     const pipe = new ValidationPipe({
@@ -861,5 +932,426 @@ describe('RankingsService', () => {
 
     expect(belongs).toBe(true);
     expect(notBelongs).toBe(false);
+  });
+
+  it('returns ranking intelligence with UP movement', async () => {
+    const { service, telemetry } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({
+        userId: 'u-1',
+        displayName: 'Top',
+        elo: 1490,
+        position: 1,
+      }),
+      makeRankingRow({
+        userId: 'u-me',
+        displayName: 'Me',
+        elo: 1470,
+        position: 2,
+      }),
+      makeRankingRow({
+        userId: 'u-3',
+        displayName: 'Below',
+        elo: 1462,
+        position: 3,
+      }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 2 } as any,
+      visibleRows,
+      mySnapshotRow: { ...visibleRows[1], matchesPlayed: 6 },
+      myVisibleRow: visibleRows[1],
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue({
+      rows: [
+        makeRankingRow({ userId: 'u-1', position: 1, elo: 1490 }),
+        makeRankingRow({ userId: 'u-3', position: 2, elo: 1462 }),
+        makeRankingRow({ userId: 'u-x', position: 3, elo: 1458 }),
+        makeRankingRow({ userId: 'u-me', position: 4, elo: 1470 }),
+      ],
+    } as any);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+      timeframe: 'CURRENT_SEASON',
+      mode: 'COMPETITIVE',
+    });
+
+    expect(result).toEqual({
+      position: 2,
+      previousPosition: 4,
+      deltaPosition: 2,
+      movementType: 'UP',
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+      gapToAbove: {
+        userId: 'u-1',
+        displayName: 'Top',
+        position: 1,
+        elo: 1490,
+        eloGap: 20,
+      },
+      gapToBelow: {
+        userId: 'u-3',
+        displayName: 'Below',
+        position: 3,
+        elo: 1462,
+        eloGap: 8,
+      },
+      recentMovement: {
+        summary: 'Subiste 2 posiciones desde el ultimo snapshot',
+        hasMovement: true,
+      },
+      eligibility: {
+        eligible: true,
+        neededForRanking: 0,
+        remaining: 0,
+      },
+    });
+    expect(telemetry.track).toHaveBeenCalledWith(
+      'ranking_intelligence_fetched',
+      expect.objectContaining({
+        userId: 'u-me',
+        outcome: 'UP',
+        returnedItems: 1,
+      }),
+    );
+  });
+
+  it('returns ranking intelligence with DOWN movement', async () => {
+    const { service } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({ userId: 'u-1', position: 1, elo: 1500 }),
+      makeRankingRow({ userId: 'u-2', position: 2, elo: 1490 }),
+      makeRankingRow({ userId: 'u-me', position: 3, elo: 1470 }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 2 } as any,
+      visibleRows,
+      mySnapshotRow: visibleRows[2],
+      myVisibleRow: visibleRows[2],
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue({
+      rows: [
+        makeRankingRow({ userId: 'u-1', position: 1, elo: 1500 }),
+        makeRankingRow({ userId: 'u-me', position: 2, elo: 1470 }),
+        makeRankingRow({ userId: 'u-2', position: 3, elo: 1490 }),
+      ],
+    } as any);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.previousPosition).toBe(2);
+    expect(result.position).toBe(3);
+    expect(result.deltaPosition).toBe(-1);
+    expect(result.movementType).toBe('DOWN');
+    expect(result.recentMovement).toEqual({
+      summary: 'Bajaste 1 posicion desde el ultimo snapshot',
+      hasMovement: true,
+    });
+  });
+
+  it('returns ranking intelligence without previous snapshot', async () => {
+    const { service } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({ userId: 'u-me', position: 1, elo: 1470 }),
+      makeRankingRow({ userId: 'u-2', position: 2, elo: 1462 }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 1 } as any,
+      visibleRows,
+      mySnapshotRow: visibleRows[0],
+      myVisibleRow: visibleRows[0],
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.previousPosition).toBeNull();
+    expect(result.deltaPosition).toBeNull();
+    expect(result.movementType).toBe('NEW');
+    expect(result.recentMovement).toEqual({
+      summary: 'Sin snapshot previo para comparar',
+      hasMovement: false,
+    });
+  });
+
+  it('returns no gapToAbove for top ranked player', async () => {
+    const { service } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({ userId: 'u-me', position: 1, elo: 1500 }),
+      makeRankingRow({ userId: 'u-2', position: 2, elo: 1488 }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 2 } as any,
+      visibleRows,
+      mySnapshotRow: visibleRows[0],
+      myVisibleRow: visibleRows[0],
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1500,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.gapToAbove).toBeNull();
+    expect(result.gapToBelow).toEqual(
+      expect.objectContaining({
+        userId: 'u-2',
+        eloGap: 12,
+      }),
+    );
+  });
+
+  it('returns no gapToBelow for last ranked player', async () => {
+    const { service } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({ userId: 'u-1', position: 1, elo: 1490 }),
+      makeRankingRow({ userId: 'u-me', position: 2, elo: 1470 }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 2 } as any,
+      visibleRows,
+      mySnapshotRow: visibleRows[1],
+      myVisibleRow: visibleRows[1],
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.gapToAbove).toEqual(
+      expect.objectContaining({
+        userId: 'u-1',
+      }),
+    );
+    expect(result.gapToBelow).toBeNull();
+  });
+
+  it('returns consistent eligibility when user is below minimum matches', async () => {
+    const { service } = createRankingsServiceForInsights();
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 1 } as any,
+      visibleRows: [makeRankingRow({ userId: 'u-1', position: 1, elo: 1490 })],
+      mySnapshotRow: makeRankingRow({
+        userId: 'u-me',
+        displayName: 'Me',
+        elo: 1470,
+        matchesPlayed: 2,
+        position: 4,
+      }),
+      myVisibleRow: null,
+    });
+    jest.spyOn(service as any, 'getPreviousSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'getUserCompetitiveIdentity').mockResolvedValue({
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+    });
+
+    const result = await service.getMyRankingIntelligence({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.position).toBeNull();
+    expect(result.eligibility).toEqual({
+      eligible: false,
+      neededForRanking: 2,
+      remaining: 2,
+    });
+    expect(result.recentMovement).toEqual({
+      summary: 'Todavia no cumplis el minimo para figurar en el ranking',
+      hasMovement: false,
+    });
+  });
+
+  it('orders suggested rivals correctly, excludes self, and limits to five', async () => {
+    const { service, telemetry } = createRankingsServiceForInsights();
+    const visibleRows = [
+      makeRankingRow({ userId: 'u-1', displayName: 'P1', elo: 1520, position: 1 }),
+      makeRankingRow({ userId: 'u-2', displayName: 'P2', elo: 1505, position: 2 }),
+      makeRankingRow({ userId: 'u-3', displayName: 'P3', elo: 1492, position: 3 }),
+      makeRankingRow({ userId: 'u-me', displayName: 'Me', elo: 1480, position: 4 }),
+      makeRankingRow({ userId: 'u-5', displayName: 'P5', elo: 1474, position: 5 }),
+      makeRankingRow({ userId: 'u-6', displayName: 'P6', elo: 1471, position: 6 }),
+      makeRankingRow({ userId: 'u-7', displayName: 'P7', elo: 1468, position: 7 }),
+      makeRankingRow({ userId: 'u-8', displayName: 'P8', elo: 1460, position: 8 }),
+    ];
+
+    jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
+      scopeResolution: {
+        scope: RankingScope.COUNTRY,
+        provinceCode: null,
+        provinceCodeIso: null,
+        cityId: null,
+        cityNameNormalized: null,
+        dimensionKey: 'COUNTRY',
+      },
+      categoryKey: '6ta',
+      categoryNumber: 6,
+      timeframe: RankingTimeframe.CURRENT_SEASON,
+      modeKey: RankingMode.COMPETITIVE,
+      snapshot: { version: 2 } as any,
+      visibleRows,
+      mySnapshotRow: visibleRows[3],
+      myVisibleRow: visibleRows[3],
+    });
+    jest
+      .spyOn(service as any, 'getActiveLast7DaysUserIds')
+      .mockResolvedValue(new Set(['u-3', 'u-6']));
+    jest
+      .spyOn(service as any, 'getBlockedDirectChallengeUserIds')
+      .mockResolvedValue(new Set(['u-5']));
+
+    const result = await service.getSuggestedRivals({
+      userId: 'u-me',
+      scope: 'COUNTRY',
+    });
+
+    expect(result.items).toHaveLength(5);
+    expect(result.items.map((item) => item.userId)).toEqual([
+      'u-3',
+      'u-5',
+      'u-6',
+      'u-2',
+      'u-7',
+    ]);
+    expect(result.items.map((item) => item.suggestionType)).toEqual([
+      'ABOVE',
+      'BELOW',
+      'NEARBY',
+      'NEARBY',
+      'NEARBY',
+    ]);
+    expect(result.items.some((item) => item.userId === 'u-me')).toBe(false);
+    expect(result.items.find((item) => item.userId === 'u-5')?.canChallenge).toBe(
+      false,
+    );
+    expect(
+      result.items.find((item) => item.userId === 'u-3')?.isActiveLast7Days,
+    ).toBe(true);
+    expect(telemetry.track).toHaveBeenCalledWith(
+      'suggested_rivals_fetched',
+      expect.objectContaining({
+        userId: 'u-me',
+        outcome: 'SUCCESS',
+        returnedItems: 5,
+      }),
+    );
   });
 });

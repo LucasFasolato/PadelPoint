@@ -25,6 +25,8 @@ describe('Rankings (e2e)', () => {
     rankingsService = {
       getLeaderboard: jest.fn(),
       getAvailableScopes: jest.fn(),
+      getMyRankingIntelligence: jest.fn(),
+      getSuggestedRivals: jest.fn(),
       createGlobalRankingSnapshot: jest.fn(),
     };
     schedulerService = {
@@ -315,6 +317,152 @@ describe('Rankings (e2e)', () => {
   "scope",
 ]
 `);
+  });
+
+  it('GET /rankings/me/intelligence returns stable response shape', async () => {
+    rankingsService.getMyRankingIntelligence!.mockResolvedValue({
+      position: 14,
+      previousPosition: 16,
+      deltaPosition: 2,
+      movementType: 'UP',
+      elo: 1470,
+      category: 6,
+      categoryKey: '6ta',
+      gapToAbove: {
+        userId: 'u-above',
+        displayName: 'Juan Perez',
+        position: 13,
+        elo: 1482,
+        eloGap: 12,
+      },
+      gapToBelow: {
+        userId: 'u-below',
+        displayName: 'Pedro Diaz',
+        position: 15,
+        elo: 1462,
+        eloGap: 8,
+      },
+      recentMovement: {
+        summary: 'Subiste 2 posiciones desde el ultimo snapshot',
+        hasMovement: true,
+      },
+      eligibility: {
+        eligible: true,
+        neededForRanking: 0,
+        remaining: 0,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/rankings/me/intelligence?scope=COUNTRY&category=6ta')
+      .set('x-railway-request-id', 'req-ranking-intelligence-1')
+      .expect(200);
+
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "category",
+  "categoryKey",
+  "deltaPosition",
+  "eligibility",
+  "elo",
+  "gapToAbove",
+  "gapToBelow",
+  "movementType",
+  "position",
+  "previousPosition",
+  "recentMovement",
+]
+`);
+    expect(Object.keys(res.body.gapToAbove).sort()).toMatchInlineSnapshot(`
+[
+  "displayName",
+  "elo",
+  "eloGap",
+  "position",
+  "userId",
+]
+`);
+    expect(Object.keys(res.body.recentMovement).sort()).toMatchInlineSnapshot(`
+[
+  "hasMovement",
+  "summary",
+]
+`);
+    expect(Object.keys(res.body.eligibility).sort()).toMatchInlineSnapshot(`
+[
+  "eligible",
+  "neededForRanking",
+  "remaining",
+]
+`);
+    expect(rankingsService.getMyRankingIntelligence).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: FAKE_USER.userId,
+        scope: 'COUNTRY',
+        category: '6ta',
+        context: expect.objectContaining({
+          requestId: 'req-ranking-intelligence-1',
+        }),
+      }),
+    );
+  });
+
+  it('GET /rankings/me/suggested-rivals returns stable response shape', async () => {
+    rankingsService.getSuggestedRivals!.mockResolvedValue({
+      items: [
+        {
+          userId: 'u-above',
+          displayName: 'Juan Perez',
+          avatarUrl: null,
+          position: 13,
+          elo: 1482,
+          category: 6,
+          categoryKey: '6ta',
+          reason: 'Jugador inmediatamente por encima tuyo',
+          suggestionType: 'ABOVE',
+          eloGap: 12,
+          isActiveLast7Days: true,
+          canChallenge: true,
+        },
+      ],
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/rankings/me/suggested-rivals?scope=COUNTRY&category=6ta')
+      .set('x-railway-request-id', 'req-ranking-rivals-1')
+      .expect(200);
+
+    expect(Object.keys(res.body).sort()).toMatchInlineSnapshot(`
+[
+  "items",
+]
+`);
+    expect(Object.keys(res.body.items[0]).sort()).toMatchInlineSnapshot(`
+[
+  "avatarUrl",
+  "canChallenge",
+  "category",
+  "categoryKey",
+  "displayName",
+  "elo",
+  "eloGap",
+  "isActiveLast7Days",
+  "position",
+  "reason",
+  "suggestionType",
+  "userId",
+]
+`);
+    expect(rankingsService.getSuggestedRivals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: FAKE_USER.userId,
+        scope: 'COUNTRY',
+        category: '6ta',
+        context: expect.objectContaining({
+          requestId: 'req-ranking-rivals-1',
+        }),
+      }),
+    );
   });
 
   it('POST /rankings/snapshots/run is admin-only', async () => {
