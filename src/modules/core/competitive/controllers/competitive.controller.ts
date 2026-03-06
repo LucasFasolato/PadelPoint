@@ -89,6 +89,11 @@ export class CompetitiveController {
   }
 
   @Get('profile/me')
+  @ApiOperation({
+    summary: 'Get competitive profile for current player (legacy endpoint)',
+    description: 'Use GET /competitive/me instead.',
+    deprecated: true,
+  })
   me(@Req() req: Request) {
     const user = req.user as AuthUser;
     return this.competitive.getOrCreateProfile(user.userId);
@@ -247,6 +252,11 @@ export class CompetitiveController {
   }
 
   @Get('ranking')
+  @ApiOperation({
+    summary: 'Get ranking list (legacy endpoint)',
+    description: 'Use GET /rankings instead.',
+    deprecated: true,
+  })
   ranking(@Req() req: Request, @Query() q: RankingQueryDto) {
     const user = req.user as AuthUser;
     return this.competitive.ranking({
