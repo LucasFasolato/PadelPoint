@@ -9,11 +9,12 @@ import {
 } from 'typeorm';
 import { League } from '../entities/league.entity';
 
-@Entity('league_standings_cache')
+@Entity('league_standings_snapshot')
 @Index(['leagueId', 'userId'], { unique: true })
 @Index(['leagueId', 'position'])
 @Index(['leagueId', 'snapshotVersion'])
-export class LeagueStandingsCache {
+@Index(['leagueId', 'computedAt'])
+export class LeagueStandingsReadModel {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -51,11 +52,20 @@ export class LeagueStandingsCache {
   @Column({ type: 'int' })
   gamesDiff!: number;
 
+  @Column({ type: 'double precision', default: 0 })
+  winRate!: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastWinAt!: Date | null;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  lastMatchAt!: Date | null;
+
   @Column({ type: 'int', nullable: true })
   delta!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  deltaPosition!: number | null;
 
   @Column({ type: 'int', nullable: true })
   oldPosition!: number | null;
@@ -67,7 +77,7 @@ export class LeagueStandingsCache {
   snapshotVersion!: number;
 
   @Column({ type: 'timestamptz' })
-  snapshotComputedAt!: Date;
+  computedAt!: Date;
 
   @UpdateDateColumn()
   updatedAt!: Date;

@@ -21,6 +21,8 @@ export type LeagueStandingsSnapshotRow = {
   position: number;
   /** ISO 8601 timestamp of the player's most recent winning match in this league. */
   lastWinAt?: string;
+  /** ISO 8601 timestamp of the player's most recent confirmed ranking-impacting league match. */
+  lastMatchAt?: string;
   // Movement fields — populated when a prior snapshot exists; absent on the first snapshot.
   /** oldPosition - newPosition. Positive = moved up. null = new player. */
   delta?: number | null;

@@ -1,7 +1,7 @@
 import { EntityManager, Repository } from 'typeorm';
 import { LeagueStandingsService } from './league-standings.service';
 import { League } from '../entities/league.entity';
-import { LeagueStandingsCache } from '../entities/league-standings-cache.entity';
+import { LeagueStandingsReadModel } from '../entities/league-standings-read-model.entity';
 import { LeagueMember } from '../entities/league-member.entity';
 import { LeagueStandingsSnapshot } from '../entities/league-standings-snapshot.entity';
 import { LeagueStatus } from '../enums/league-status.enum';
@@ -104,7 +104,7 @@ function createMockManager(data: {
 }): EntityManager {
   const savedMembers: LeagueMember[] = [];
   const snapshots: Array<Record<string, unknown>> = [];
-  const cacheRows: Array<Record<string, unknown>> = [];
+  const readModelRows: Array<Record<string, unknown>> = [];
 
   const getRepository = jest.fn().mockImplementation((entity: any) => {
     const entityName =
@@ -196,12 +196,15 @@ function createMockManager(data: {
       };
     }
 
-    if (entity === LeagueStandingsCache || entityName === 'LeagueStandingsCache') {
+    if (
+      entity === LeagueStandingsReadModel ||
+      entityName === 'LeagueStandingsReadModel'
+    ) {
       return {
         delete: jest.fn().mockImplementation(async ({ leagueId }: { leagueId: string }) => {
-          for (let index = cacheRows.length - 1; index >= 0; index--) {
-            if (cacheRows[index].leagueId === leagueId) {
-              cacheRows.splice(index, 1);
+          for (let index = readModelRows.length - 1; index >= 0; index--) {
+            if (readModelRows[index].leagueId === leagueId) {
+              readModelRows.splice(index, 1);
             }
           }
           return { affected: 0 };
@@ -212,8 +215,8 @@ function createMockManager(data: {
         save: jest.fn().mockImplementation(async (items: Record<string, unknown>[]) => {
           const arr = Array.isArray(items) ? items : [items];
           for (const item of arr) {
-            cacheRows.push({
-              id: `cache-${cacheRows.length + 1}`,
+            readModelRows.push({
+              id: `read-model-${readModelRows.length + 1}`,
               updatedAt: new Date(),
               ...item,
             });
@@ -230,7 +233,7 @@ function createMockManager(data: {
     getRepository,
     query: jest.fn().mockResolvedValue(undefined),
     __snapshots: snapshots,
-    __cacheRows: cacheRows,
+    __readModelRows: readModelRows,
   } as unknown as EntityManager;
 }
 
@@ -673,8 +676,8 @@ describe('LeagueStandingsService', () => {
     });
   });
 
-  describe('standings cache read model', () => {
-    it('persists snapshot history and current cache on recompute', async () => {
+  describe('standings snapshot read model', () => {
+    it('persists snapshot history and current read model on recompute', async () => {
       const league = fakeLeague();
       const members = [
         fakeMember(league.id, uid(1)),
@@ -715,12 +718,15 @@ describe('LeagueStandingsService', () => {
       });
 
       expect(manager.__snapshots).toHaveLength(1);
-      expect(manager.__cacheRows).toHaveLength(4);
-      expect(manager.__cacheRows[0]).toEqual(
+      expect(manager.__readModelRows).toHaveLength(4);
+      expect(manager.__readModelRows[0]).toEqual(
         expect.objectContaining({
           leagueId: league.id,
           snapshotVersion: 1,
           played: expect.any(Number),
+          winRate: 1,
+          deltaPosition: null,
+          lastMatchAt: new Date('2025-06-10T00:00:00.000Z'),
         }),
       );
       expect(telemetry.track).toHaveBeenCalledWith(
@@ -735,8 +741,8 @@ describe('LeagueStandingsService', () => {
       );
     });
 
-    it('uses standings cache when present without recompute', async () => {
-      const mockCacheRepo = {
+    it('uses standings snapshot read model when present without recompute', async () => {
+      const mockReadModelRepo = {
         find: jest.fn().mockResolvedValue([
           {
             userId: uid(1),
@@ -749,12 +755,15 @@ describe('LeagueStandingsService', () => {
             points: 6,
             setsDiff: 4,
             gamesDiff: 8,
+            winRate: 1,
             lastWinAt: new Date('2025-06-20T12:00:00.000Z'),
+            lastMatchAt: new Date('2025-06-20T12:00:00.000Z'),
             delta: 1,
+            deltaPosition: 1,
             oldPosition: 2,
             movementType: 'UP',
             snapshotVersion: 3,
-            snapshotComputedAt: new Date('2025-06-20T12:00:00.000Z'),
+            computedAt: new Date('2025-06-20T12:00:00.000Z'),
             updatedAt: new Date('2025-06-20T12:00:00.000Z'),
           },
         ]),
@@ -763,7 +772,7 @@ describe('LeagueStandingsService', () => {
         {} as Repository<League>,
         {} as Repository<LeagueMember>,
         {} as any,
-        mockCacheRepo,
+        mockReadModelRepo,
         { manager: { transaction: jest.fn() } } as any,
         {
           find: jest.fn().mockResolvedValue([
@@ -795,8 +804,8 @@ describe('LeagueStandingsService', () => {
       expect(result.movement[uid(1)]).toEqual({ delta: 1 });
     });
 
-    it('falls back to recompute when standings cache is missing', async () => {
-      const mockCacheRepo = {
+    it('falls back to recompute when standings snapshot read model is missing', async () => {
+      const mockReadModelRepo = {
         find: jest
           .fn()
           .mockResolvedValueOnce([])
@@ -812,12 +821,15 @@ describe('LeagueStandingsService', () => {
               points: 3,
               setsDiff: 2,
               gamesDiff: 5,
+              winRate: 1,
               lastWinAt: null,
+              lastMatchAt: new Date('2025-06-21T12:00:00.000Z'),
               delta: 0,
+              deltaPosition: 0,
               oldPosition: 1,
               movementType: 'SAME',
               snapshotVersion: 1,
-              snapshotComputedAt: new Date('2025-06-21T12:00:00.000Z'),
+              computedAt: new Date('2025-06-21T12:00:00.000Z'),
               updatedAt: new Date('2025-06-21T12:00:00.000Z'),
             },
           ]),
@@ -829,7 +841,7 @@ describe('LeagueStandingsService', () => {
         {} as Repository<League>,
         {} as Repository<LeagueMember>,
         {} as any,
-        mockCacheRepo,
+        mockReadModelRepo,
         { manager: { transaction } } as any,
         {
           find: jest.fn().mockResolvedValue([
@@ -858,7 +870,7 @@ describe('LeagueStandingsService', () => {
 
   describe('getStandingsWithMovement fallback display name', () => {
     it('returns "Jugador {position}" when user is not found in userRepo', async () => {
-      const mockCacheRepo = {
+      const mockReadModelRepo = {
         find: jest.fn().mockResolvedValue([
           {
             userId: uid(1),
@@ -871,12 +883,15 @@ describe('LeagueStandingsService', () => {
             points: 6,
             setsDiff: 4,
             gamesDiff: 6,
+            winRate: 1,
             lastWinAt: null,
+            lastMatchAt: new Date('2025-06-20T12:00:00.000Z'),
             delta: 0,
+            deltaPosition: 0,
             oldPosition: 1,
             movementType: 'SAME',
             snapshotVersion: 1,
-            snapshotComputedAt: new Date('2025-06-20T12:00:00.000Z'),
+            computedAt: new Date('2025-06-20T12:00:00.000Z'),
             updatedAt: new Date('2025-06-20T12:00:00.000Z'),
           },
         ]),
@@ -890,7 +905,7 @@ describe('LeagueStandingsService', () => {
         {} as Repository<League>,
         {} as Repository<LeagueMember>,
         {} as any,
-        mockCacheRepo,
+        mockReadModelRepo,
         { manager: { transaction: jest.fn() } } as any,
         emptyUserRepo,
         { create: jest.fn().mockResolvedValue(undefined) } as any,

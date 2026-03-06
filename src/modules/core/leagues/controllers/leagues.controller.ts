@@ -27,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
+import { ensureRequestContext } from '@/common/observability/request-context.util';
 import { LeaguesService } from '../services/leagues.service';
 import { LeagueStandingsService } from '../services/league-standings.service';
 import { LeagueActivityService } from '../services/league-activity.service';
@@ -504,8 +505,9 @@ export class LeaguesController {
     @Param('id', new ParseRequiredUuidPipe('leagueId')) id: string,
   ) {
     const user = req.user as AuthUser;
+    const { requestId } = ensureRequestContext(req, req.res);
     await this.leaguesService.getLeagueDetail(user.userId, id);
-    return this.standingsService.getStandingsWithMovement(id);
+    return this.standingsService.getStandingsWithMovement(id, { requestId });
   }
 
   @Get(':id/standings/latest')

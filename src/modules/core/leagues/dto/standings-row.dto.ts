@@ -48,13 +48,13 @@ export class StandingsWithMovementDto {
 
   @ApiPropertyOptional({
     description:
-      'Current standings read-model version; additive metadata for clients that want cache freshness.',
+      'Current standings read-model version; additive metadata for clients that want snapshot freshness.',
   })
   snapshotVersion?: number | null;
 
   @ApiPropertyOptional({
     description:
-      'ISO 8601 timestamp of the latest standings cache row update.',
+      'ISO 8601 timestamp of the latest standings snapshot row update.',
   })
   lastUpdatedAt?: string | null;
 

@@ -53,12 +53,12 @@ Constraints honored by this audit:
   - Unique (`leagueId`, `version`)
 - Row payload includes ranking metrics and movement metadata (`delta`, `oldPosition`, `movementType`) when available
 
-5. `league_standings_cache` (`LeagueStandingsCache`)
+5. `league_standings_snapshot` (`LeagueStandingsReadModel`)
 
 - Purpose:
   - Persisted current read model for fast standings reads
 - Key fields:
-  - `id`, `leagueId`, `userId`, `position`, `played`, `wins`, `losses`, `draws`, `points`, `setsDiff`, `gamesDiff`, `lastWinAt`, `delta`, `oldPosition`, `movementType`, `snapshotVersion`, `snapshotComputedAt`, `updatedAt`
+  - `id`, `leagueId`, `userId`, `position`, `played`, `wins`, `losses`, `draws`, `points`, `setsDiff`, `gamesDiff`, `winRate`, `lastWinAt`, `lastMatchAt`, `delta`, `deltaPosition`, `oldPosition`, `movementType`, `snapshotVersion`, `computedAt`, `updatedAt`
 - Constraints / indexes:
   - Unique (`leagueId`, `userId`)
   - Read index on (`leagueId`, `position`)
@@ -311,8 +311,8 @@ All endpoints below require JWT auth unless prefixed with `/public`.
 
 - Behavior:
   - Member-only
-  - Reads from `league_standings_cache` when present
-  - Falls back to `recomputeLeague()` + cache persistence when cache is missing
+  - Reads from `league_standings_snapshot` when present
+  - Falls back to `recomputeLeague()` + snapshot persistence when the read model is missing
   - Returns latest rows + movement map
   - Additive metadata: `snapshotVersion`, `lastUpdatedAt`
 
@@ -367,24 +367,26 @@ All endpoints below require JWT auth unless prefixed with `/public`.
   - Member check first
   - Manual recompute trigger
 
-### 2.3.1 Standings source of truth and read model
+### 2.3.1 Standings Snapshot Read Model
 
 - Source of truth:
   - `match_results` linked by `match_results.leagueId`
   - Only matches that are `confirmed` and `impactRanking = true` are counted
 - Optimized read model:
-  - `league_standings_cache` stores the latest per-player standings rows for a league
+  - `league_standings_snapshot` stores the latest per-player standings rows for a league
   - `league_standings_snapshots` remains the historical/versioned snapshot store
 - Recompute strategy:
   - Confirming a ranking-impacting league match recomputes standings and persists:
     - a new historical snapshot in `league_standings_snapshots`
-    - the latest current cache rows in `league_standings_cache`
+    - the latest current read-model rows in `league_standings_snapshot`
   - Rejecting a match does not recompute standings
-  - Idempotent confirm/reject operations short-circuit with no new snapshot/cache write
+  - Idempotent confirm/reject operations short-circuit with no new snapshot/read-model write
 - Performance notes:
   - League standings reads no longer depend on historical snapshot scans for the common path
   - `recomputeForMatch()` short-circuits directly to `match_results.leagueId` when present instead of scanning active leagues
   - The standings recompute query is indexed on `match_results(leagueId, status, impactRanking, playedAt)`
+  - The current-read query is indexed on `league_standings_snapshot(leagueId, position)` and `league_standings_snapshot(leagueId, snapshotVersion)`
+  - Match timelines and pending confirmations are additionally indexed for `COALESCE(..., createdAt)` sorts
 
 ### 2.4 League activity endpoints
 

@@ -5,7 +5,7 @@ import { EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { League } from '../entities/league.entity';
 import { LeagueMember } from '../entities/league-member.entity';
-import { LeagueStandingsCache } from '../entities/league-standings-cache.entity';
+import { LeagueStandingsReadModel } from '../entities/league-standings-read-model.entity';
 import {
   LeagueStandingsSnapshot,
   LeagueStandingsSnapshotRow,
@@ -62,8 +62,8 @@ export class LeagueStandingsService {
     private readonly memberRepo: Repository<LeagueMember>,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
-    @InjectRepository(LeagueStandingsCache)
-    private readonly standingsCacheRepo: Repository<LeagueStandingsCache>,
+    @InjectRepository(LeagueStandingsReadModel)
+    private readonly standingsReadModelRepo: Repository<LeagueStandingsReadModel>,
     @InjectRepository(LeagueStandingsSnapshot)
     private readonly snapshotRepo: Repository<LeagueStandingsSnapshot>,
     @InjectRepository(User)
@@ -229,6 +229,7 @@ export class LeagueStandingsService {
         setsDiff: number;
         gamesDiff: number;
         lastWinAt: Date | null;
+        lastMatchAt: Date | null;
       }
     >();
     for (const uid of memberUserIds) {
@@ -239,6 +240,7 @@ export class LeagueStandingsService {
         setsDiff: 0,
         gamesDiff: 0,
         lastWinAt: null,
+        lastMatchAt: null,
       });
     }
 
@@ -248,6 +250,14 @@ export class LeagueStandingsService {
       const teamB = [ch.teamB1Id, ch.teamB2Id];
       const winners = mr.winnerTeam === 'A' ? teamA : teamB;
       const losers = mr.winnerTeam === 'A' ? teamB : teamA;
+      const participants = [...teamA, ...teamB];
+
+      for (const uid of participants) {
+        const s = stats.get(uid);
+        if (s && (!s.lastMatchAt || mr.playedAt > s.lastMatchAt)) {
+          s.lastMatchAt = mr.playedAt;
+        }
+      }
 
       for (const uid of winners) {
         const s = stats.get(uid);
@@ -309,6 +319,7 @@ export class LeagueStandingsService {
         setsDiff: 0,
         gamesDiff: 0,
         lastWinAt: null,
+        lastMatchAt: null,
       };
       return {
         member: m,
@@ -318,6 +329,7 @@ export class LeagueStandingsService {
         setsDiff: s.setsDiff,
         gamesDiff: s.gamesDiff,
         lastWinAt: s.lastWinAt,
+        lastMatchAt: s.lastMatchAt,
         points:
           s.wins * winPoints + s.draws * drawPoints + s.losses * lossPoints,
       };
@@ -366,6 +378,7 @@ export class LeagueStandingsService {
         gamesDiff: r.gamesDiff,
         position,
         ...(r.lastWinAt ? { lastWinAt: r.lastWinAt.toISOString() } : {}),
+        ...(r.lastMatchAt ? { lastMatchAt: r.lastMatchAt.toISOString() } : {}),
       });
     }
 
@@ -377,7 +390,7 @@ export class LeagueStandingsService {
       snapshotRows,
       leagueMatches.length,
     );
-    await this.persistCurrentStandingsCache(manager, leagueId, snapshot, {
+    await this.persistCurrentStandingsReadModel(manager, leagueId, snapshot, {
       requestId,
     });
 
@@ -421,22 +434,25 @@ export class LeagueStandingsService {
     return ranked.map((r) => r.member);
   }
 
-  async getStandingsWithMovement(leagueId: string): Promise<{
+  async getStandingsWithMovement(
+    leagueId: string,
+    context: RequestContextInput = {},
+  ): Promise<{
     computedAt: string | null;
     rows: EnrichedStandingsRow[];
     movement: Record<string, { delta: number }>;
     snapshotVersion?: number | null;
     lastUpdatedAt?: string | null;
   }> {
-    let cachedRows = await this.getCurrentCachedRows(leagueId);
-    if (cachedRows.length === 0) {
+    let readModelRows = await this.getCurrentReadModelRows(leagueId);
+    if (readModelRows.length === 0) {
       await this.snapshotRepo.manager.transaction(async (manager) => {
-        await this.recomputeLeague(manager, leagueId);
+        await this.recomputeLeague(manager, leagueId, context);
       });
-      cachedRows = await this.getCurrentCachedRows(leagueId);
+      readModelRows = await this.getCurrentReadModelRows(leagueId);
     }
 
-    if (cachedRows.length === 0) {
+    if (readModelRows.length === 0) {
       const rows = await this.getCurrentRowsFromMembers(leagueId);
       return {
         computedAt: null,
@@ -447,9 +463,11 @@ export class LeagueStandingsService {
       };
     }
 
-    const rows = cachedRows.map((row) => this.mapCacheRowToSnapshotRow(row));
+    const rows = readModelRows.map((row) =>
+      this.mapReadModelRowToSnapshotRow(row),
+    );
     const movement = this.buildMovementFromRows(rows);
-    const metadata = this.getCacheMetadata(cachedRows);
+    const metadata = this.getReadModelMetadata(readModelRows);
     return {
       computedAt: metadata.computedAt,
       rows: await this.enrichRowsWithUsers(rows),
@@ -674,7 +692,7 @@ export class LeagueStandingsService {
     );
   }
 
-  private async persistCurrentStandingsCache(
+  private async persistCurrentStandingsReadModel(
     manager: EntityManager,
     leagueId: string,
     snapshot: LeagueStandingsSnapshot & {
@@ -684,16 +702,16 @@ export class LeagueStandingsService {
     context: RequestContextInput = {},
   ): Promise<void> {
     const startedAt = Date.now();
-    const cacheRepo = manager.getRepository(LeagueStandingsCache);
+    const readModelRepo = manager.getRepository(LeagueStandingsReadModel);
     const rows = [...(snapshot.rows ?? [])].sort(
       (a, b) => a.position - b.position || a.userId.localeCompare(b.userId),
     );
 
-    await cacheRepo.delete({ leagueId });
+    await readModelRepo.delete({ leagueId });
     if (rows.length > 0) {
-      await cacheRepo.save(
+      await readModelRepo.save(
         rows.map((row) =>
-          cacheRepo.create({
+          readModelRepo.create({
             leagueId,
             userId: row.userId,
             position: row.position,
@@ -704,12 +722,18 @@ export class LeagueStandingsService {
             points: row.points,
             setsDiff: row.setsDiff,
             gamesDiff: row.gamesDiff,
+            winRate:
+              row.wins + row.losses + row.draws > 0
+                ? row.wins / (row.wins + row.losses + row.draws)
+                : 0,
             lastWinAt: row.lastWinAt ? new Date(row.lastWinAt) : null,
+            lastMatchAt: row.lastMatchAt ? new Date(row.lastMatchAt) : null,
             delta: row.delta ?? null,
+            deltaPosition: row.delta ?? null,
             oldPosition: row.oldPosition ?? null,
             movementType: row.movementType ?? null,
             snapshotVersion: snapshot.version,
-            snapshotComputedAt: snapshot.computedAt,
+            computedAt: snapshot.computedAt,
           }),
         ),
       );
@@ -776,17 +800,17 @@ export class LeagueStandingsService {
     }));
   }
 
-  private async getCurrentCachedRows(
+  private async getCurrentReadModelRows(
     leagueId: string,
-  ): Promise<LeagueStandingsCache[]> {
-    return this.standingsCacheRepo.find({
+  ): Promise<LeagueStandingsReadModel[]> {
+    return this.standingsReadModelRepo.find({
       where: { leagueId },
       order: { position: 'ASC', userId: 'ASC' },
     });
   }
 
-  private mapCacheRowToSnapshotRow(
-    row: LeagueStandingsCache,
+  private mapReadModelRowToSnapshotRow(
+    row: LeagueStandingsReadModel,
   ): LeagueStandingsSnapshotRow {
     return {
       userId: row.userId,
@@ -798,6 +822,7 @@ export class LeagueStandingsService {
       gamesDiff: row.gamesDiff,
       position: row.position,
       ...(row.lastWinAt ? { lastWinAt: row.lastWinAt.toISOString() } : {}),
+      ...(row.lastMatchAt ? { lastMatchAt: row.lastMatchAt.toISOString() } : {}),
       ...(row.delta !== null ? { delta: row.delta } : {}),
       ...(row.oldPosition !== null ? { oldPosition: row.oldPosition } : {}),
       ...(row.movementType
@@ -806,8 +831,8 @@ export class LeagueStandingsService {
     };
   }
 
-  private getCacheMetadata(
-    rows: LeagueStandingsCache[],
+  private getReadModelMetadata(
+    rows: LeagueStandingsReadModel[],
   ): StandingsCacheMetadata {
     if (rows.length === 0) {
       return {
@@ -824,7 +849,7 @@ export class LeagueStandingsService {
     );
 
     return {
-      computedAt: rows[0].snapshotComputedAt.toISOString(),
+      computedAt: rows[0].computedAt.toISOString(),
       snapshotVersion: rows[0].snapshotVersion,
       lastUpdatedAt: newestUpdatedAt.toISOString(),
     };

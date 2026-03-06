@@ -957,6 +957,7 @@ describe('Leagues (e2e)', () => {
 
       const res = await request(app.getHttpServer())
         .get(`/leagues/${LEAGUE_ID}/standings`)
+        .set('x-request-id', 'req-league-standings-1')
         .expect(200);
 
       expect(res.body).toEqual(
@@ -978,6 +979,10 @@ describe('Leagues (e2e)', () => {
           gamesDiff: expect.any(Number),
           position: expect.any(Number),
         }),
+      );
+      expect(standingsService.getStandingsWithMovement!).toHaveBeenCalledWith(
+        LEAGUE_ID,
+        { requestId: 'req-league-standings-1' },
       );
     });
   });
