@@ -1,16 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import {
   MatchResult,
   MatchResultStatus,
 } from '@/modules/core/matches/entities/match-result.entity';
 import { Challenge } from '@/modules/core/challenges/entities/challenge.entity';
+import { LeagueActivity } from '@/modules/core/leagues/entities/league-activity.entity';
 import { LeagueInvite } from '@/modules/core/leagues/entities/league-invite.entity';
+import { LeagueActivityType } from '@/modules/core/leagues/enums/league-activity-type.enum';
 import { League } from '@/modules/core/leagues/entities/league.entity';
 import { User } from '@/modules/core/users/entities/user.entity';
 import { InviteStatus } from '@/modules/core/leagues/enums/invite-status.enum';
+import {
+  ParticipantDto,
+  TeamsDto,
+} from '@/modules/core/matches/dto/match-view.dto';
+import { ScoreDto } from '@/modules/core/matches/dto/score.dto';
+import {
+  buildScoreSummary,
+  parseScoreSummary,
+} from '@/modules/core/matches/utils/score-summary';
 import { UserNotificationsService } from './user-notifications.service';
 
 type InboxSectionError = { code: string; errorId: string };
@@ -20,13 +31,16 @@ export type PendingConfirmationDTO = {
   id: string;
   matchId: string;
   status: 'PENDING_CONFIRMATION';
-  opponentName: string;
-  opponentAvatarUrl?: string | null;
   leagueId?: string | null;
   leagueName?: string | null;
   playedAt?: string;
-  score?: string | null;
+  teams: TeamsDto;
+  participants: ParticipantDto[];
+  score: ScoreDto;
   cta: { primary: 'Confirmar' | 'Ver'; href?: string };
+  opponentName: string;
+  opponentAvatarUrl?: string | null;
+  scoreSummary?: string | null;
 };
 
 export type ChallengeDTO = {
@@ -70,6 +84,7 @@ type PendingConfirmationRawRow = {
   challengeId: string | null;
   leagueId: string | null;
   leagueName: string | null;
+  createdAt: Date | string | null;
   playedAt: Date | string | null;
   teamASet1: number | null;
   teamBSet1: number | null;
@@ -122,6 +137,7 @@ export class InboxService {
   private readonly logger = new Logger(InboxService.name);
 
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(MatchResult)
     private readonly matchRepo: Repository<MatchResult>,
     @InjectRepository(Challenge)
@@ -214,6 +230,7 @@ export class InboxService {
         'm."challengeId" AS "challengeId"',
         'm."leagueId" AS "leagueId"',
         'l.name AS "leagueName"',
+        'm."createdAt" AS "createdAt"',
         'm."playedAt" AS "playedAt"',
         'm."teamASet1" AS "teamASet1"',
         'm."teamBSet1" AS "teamBSet1"',
@@ -247,44 +264,41 @@ export class InboxService {
       .take(limit)
       .getRawMany<PendingConfirmationRawRow>();
 
-    return rows.map((row) => this.mapPendingConfirmationRow(userId, row));
+    const scoreSummaryByMatchId = await this.resolveScoreSummaryByMatchIds(
+      rows.map((row) => row.matchId),
+    );
+
+    return rows.map((row) =>
+      this.mapPendingConfirmationRow(
+        userId,
+        row,
+        scoreSummaryByMatchId.get(row.matchId) ?? null,
+      ),
+    );
   }
 
   private mapPendingConfirmationRow(
     userId: string,
     row: PendingConfirmationRawRow,
+    fallbackSummary?: string | null,
   ): PendingConfirmationDTO {
-    const teamAIds = [row.teamA1Id, row.teamA2Id].filter(
-      (id): id is string => !!id,
-    );
-    const teamBIds = [row.teamB1Id, row.teamB2Id].filter(
-      (id): id is string => !!id,
-    );
+    const teamAIds = this.getOrderedParticipantIds([
+      row.teamA1Id,
+      row.teamA2Id,
+    ]);
+    const teamBIds = this.getOrderedParticipantIds([
+      row.teamB1Id,
+      row.teamB2Id,
+    ]);
     const isUserTeamA = teamAIds.includes(userId);
     const isUserTeamB = teamBIds.includes(userId);
+    const labels = this.buildParticipantLabelMap(row);
+    const participants = this.buildParticipants(row);
+    const score = this.buildScore(row, fallbackSummary);
 
     let opponentIds: string[] = [];
     if (isUserTeamA) opponentIds = teamBIds;
     if (isUserTeamB) opponentIds = teamAIds;
-
-    const labels = new Map<string, string | null>([
-      [
-        row.teamA1Id ?? '',
-        this.coalesceDisplay(row.teamA1DisplayName, row.teamA1Email),
-      ],
-      [
-        row.teamA2Id ?? '',
-        this.coalesceDisplay(row.teamA2DisplayName, row.teamA2Email),
-      ],
-      [
-        row.teamB1Id ?? '',
-        this.coalesceDisplay(row.teamB1DisplayName, row.teamB1Email),
-      ],
-      [
-        row.teamB2Id ?? '',
-        this.coalesceDisplay(row.teamB2DisplayName, row.teamB2Email),
-      ],
-    ]);
 
     const opponentNames = opponentIds
       .map((id) => (labels.get(id) ?? '').trim())
@@ -297,16 +311,33 @@ export class InboxService {
       id: row.matchId,
       matchId: row.matchId,
       status: 'PENDING_CONFIRMATION',
-      opponentName,
-      opponentAvatarUrl: null,
       leagueId: row.leagueId ?? null,
       leagueName: row.leagueName ?? null,
-      playedAt: this.toNullableIso(row.playedAt) ?? undefined,
-      score: this.formatScore(row),
+      playedAt:
+        this.toNullableIso(row.playedAt) ??
+        this.toNullableIso(row.createdAt) ??
+        undefined,
+      teams: {
+        teamA: {
+          player1Id: row.teamA1Id ?? '',
+          player2Id: row.teamA2Id ?? null,
+        },
+        teamB: {
+          player1Id: row.teamB1Id ?? '',
+          player2Id: row.teamB2Id ?? null,
+        },
+      },
+      participants,
+      score,
       cta: {
         primary: 'Confirmar',
-        href: `/matches/${row.matchId}`,
+        href: row.leagueId
+          ? `/leagues/${row.leagueId}?tab=partidos&confirm=${row.matchId}`
+          : `/matches/${row.matchId}`,
       },
+      opponentName,
+      opponentAvatarUrl: null,
+      scoreSummary: score.summary || null,
     };
   }
 
@@ -465,17 +496,111 @@ export class InboxService {
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   }
 
-  private formatScore(row: PendingConfirmationRawRow): string | null {
-    const sets: string[] = [];
+  private getOrderedParticipantIds(
+    input: Array<string | null | undefined>,
+  ): string[] {
+    return [...new Set(input.filter((id): id is string => Boolean(id)))];
+  }
+
+  private buildParticipantLabelMap(
+    row: PendingConfirmationRawRow,
+  ): Map<string, string | null> {
+    return new Map<string, string | null>([
+      [
+        row.teamA1Id ?? '',
+        this.coalesceDisplay(row.teamA1DisplayName, row.teamA1Email),
+      ],
+      [
+        row.teamA2Id ?? '',
+        this.coalesceDisplay(row.teamA2DisplayName, row.teamA2Email),
+      ],
+      [
+        row.teamB1Id ?? '',
+        this.coalesceDisplay(row.teamB1DisplayName, row.teamB1Email),
+      ],
+      [
+        row.teamB2Id ?? '',
+        this.coalesceDisplay(row.teamB2DisplayName, row.teamB2Email),
+      ],
+    ]);
+  }
+
+  private buildParticipants(row: PendingConfirmationRawRow): ParticipantDto[] {
+    const labels = this.buildParticipantLabelMap(row);
+    return this.getOrderedParticipantIds([
+      row.teamA1Id,
+      row.teamA2Id,
+      row.teamB1Id,
+      row.teamB2Id,
+    ]).map((participantId) => ({
+      userId: participantId,
+      displayName: labels.get(participantId) ?? 'Jugador',
+      avatarUrl: null,
+    }));
+  }
+
+  private extractSetScores(row: PendingConfirmationRawRow): ScoreDto['sets'] {
+    const sets: ScoreDto['sets'] = [];
     if (row.teamASet1 != null && row.teamBSet1 != null) {
-      sets.push(`${row.teamASet1}-${row.teamBSet1}`);
+      sets.push({ a: row.teamASet1, b: row.teamBSet1 });
     }
     if (row.teamASet2 != null && row.teamBSet2 != null) {
-      sets.push(`${row.teamASet2}-${row.teamBSet2}`);
+      sets.push({ a: row.teamASet2, b: row.teamBSet2 });
     }
     if (row.teamASet3 != null && row.teamBSet3 != null) {
-      sets.push(`${row.teamASet3}-${row.teamBSet3}`);
+      sets.push({ a: row.teamASet3, b: row.teamBSet3 });
     }
-    return sets.length > 0 ? sets.join(' ') : null;
+    return sets;
+  }
+
+  private buildScore(
+    row: PendingConfirmationRawRow,
+    fallbackSummary?: string | null,
+  ): ScoreDto {
+    const setsFromColumns = this.extractSetScores(row);
+    const summaryFromColumns = buildScoreSummary(setsFromColumns);
+    const normalizedFallback = (fallbackSummary ?? '').trim();
+    const summary =
+      summaryFromColumns.length > 0 ? summaryFromColumns : normalizedFallback;
+    const sets =
+      setsFromColumns.length > 0
+        ? setsFromColumns
+        : parseScoreSummary(normalizedFallback);
+
+    return { summary, sets };
+  }
+
+  private async resolveScoreSummaryByMatchIds(
+    matchIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueMatchIds = [...new Set(matchIds.filter(Boolean))];
+    if (uniqueMatchIds.length === 0) return new Map();
+
+    const rows = await this.dataSource
+      .getRepository(LeagueActivity)
+      .createQueryBuilder('a')
+      .select('a."entityId"', 'entityId')
+      .addSelect('a.payload', 'payload')
+      .where('a.type = :type', { type: LeagueActivityType.MATCH_REPORTED })
+      .andWhere('a."entityId" IN (:...matchIds)', { matchIds: uniqueMatchIds })
+      .orderBy('a."createdAt"', 'DESC')
+      .getRawMany<{ entityId: string; payload: unknown }>();
+
+    const summaryByMatchId = new Map<string, string>();
+    for (const row of rows) {
+      if (summaryByMatchId.has(row.entityId)) continue;
+      const summary = this.extractScoreSummaryFromPayload(row.payload);
+      if (summary) summaryByMatchId.set(row.entityId, summary);
+    }
+
+    return summaryByMatchId;
+  }
+
+  private extractScoreSummaryFromPayload(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const summary = (payload as Record<string, unknown>).scoreSummary;
+    if (typeof summary !== 'string') return null;
+    const normalized = summary.trim();
+    return normalized.length > 0 ? normalized : null;
   }
 }

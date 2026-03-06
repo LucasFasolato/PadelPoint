@@ -50,6 +50,13 @@ export type MatchRankingImpact = {
 
 @Entity('match_results')
 @Index(['challenge'], { unique: true })
+@Index(
+  'IDX_match_results_pending_confirm_league_createdAt',
+  ['leagueId', 'createdAt'],
+  {
+    where: `"status" = 'pending_confirm'`,
+  },
+)
 export class MatchResult {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

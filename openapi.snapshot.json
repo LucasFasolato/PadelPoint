@@ -59,6 +59,7 @@
             "enum": [
               "match_reported",
               "match_confirmed",
+              "match_rejected",
               "match_disputed",
               "match_resolved",
               "member_joined",
@@ -321,6 +322,10 @@
       },
       "ConfirmLeaguePendingConfirmationResponseDto": {
         "properties": {
+          "confirmationId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "matchId": {
             "format": "uuid",
             "type": "string"
@@ -340,6 +345,7 @@
         },
         "required": [
           "status",
+          "confirmationId",
           "matchId"
         ],
         "type": "object"
@@ -1159,6 +1165,122 @@
         ],
         "type": "object"
       },
+      "LeagueMatchResponseDto": {
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "impactRanking": {
+            "type": "boolean"
+          },
+          "leagueId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "COMPETITIVE",
+              "FRIENDLY"
+            ],
+            "type": "string"
+          },
+          "participants": {
+            "description": "Participants in display order (teamA then teamB)",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantDto"
+            },
+            "type": "array"
+          },
+          "playedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "score": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScoreDto"
+              }
+            ],
+            "nullable": true
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "pending_confirm",
+              "confirmed",
+              "rejected",
+              "disputed",
+              "resolved"
+            ],
+            "type": "string"
+          },
+          "teamA1Id": {
+            "deprecated": true,
+            "description": "Legacy field. Use teams.teamA.player1Id.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "teamA2Id": {
+            "deprecated": true,
+            "description": "Legacy field. Use teams.teamA.player2Id.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "teamB1Id": {
+            "deprecated": true,
+            "description": "Legacy field. Use teams.teamB.player1Id.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "teamB2Id": {
+            "deprecated": true,
+            "description": "Legacy field. Use teams.teamB.player2Id.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "teams": {
+            "$ref": "#/components/schemas/TeamsDto"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "leagueId",
+          "challengeId",
+          "matchType",
+          "impactRanking",
+          "status",
+          "teams",
+          "participants",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "LeagueMatchScoreDto": {
         "properties": {
           "sets": {
@@ -1191,6 +1313,11 @@
             "nullable": true,
             "type": "string"
           },
+          "id": {
+            "description": "Canonical pending confirmation id.",
+            "format": "uuid",
+            "type": "string"
+          },
           "impactRanking": {
             "type": "boolean"
           },
@@ -1209,21 +1336,34 @@
             ],
             "type": "string"
           },
+          "participants": {
+            "description": "Resolved participants in display order (teamA then teamB), for stable UI rendering.",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantDto"
+            },
+            "type": "array"
+          },
           "reportedByUserId": {
             "format": "uuid",
             "type": "string"
           },
+          "score": {
+            "$ref": "#/components/schemas/ScoreDto"
+          },
           "sets": {
+            "deprecated": true,
+            "description": "Legacy field kept for backward compatibility. Use score.sets.",
             "items": {
-              "$ref": "#/components/schemas/LeaguePendingConfirmationSetDto"
+              "$ref": "#/components/schemas/SetDto"
             },
             "type": "array"
           },
           "teams": {
-            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamsDto"
+            "$ref": "#/components/schemas/TeamsDto"
           }
         },
         "required": [
+          "id",
           "confirmationId",
           "leagueId",
           "matchId",
@@ -1232,56 +1372,8 @@
           "matchType",
           "impactRanking",
           "teams",
-          "sets"
-        ],
-        "type": "object"
-      },
-      "LeaguePendingConfirmationSetDto": {
-        "properties": {
-          "a": {
-            "example": 6,
-            "type": "number"
-          },
-          "b": {
-            "example": 4,
-            "type": "number"
-          }
-        },
-        "required": [
-          "a",
-          "b"
-        ],
-        "type": "object"
-      },
-      "LeaguePendingConfirmationTeamDto": {
-        "properties": {
-          "player1Id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "player2Id": {
-            "format": "uuid",
-            "nullable": true,
-            "type": "string"
-          }
-        },
-        "required": [
-          "player1Id"
-        ],
-        "type": "object"
-      },
-      "LeaguePendingConfirmationTeamsDto": {
-        "properties": {
-          "teamA": {
-            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamDto"
-          },
-          "teamB": {
-            "$ref": "#/components/schemas/LeaguePendingConfirmationTeamDto"
-          }
-        },
-        "required": [
-          "teamA",
-          "teamB"
+          "participants",
+          "score"
         ],
         "type": "object"
       },
@@ -1922,6 +2014,29 @@
         ],
         "type": "object"
       },
+      "ParticipantDto": {
+        "properties": {
+          "avatarUrl": {
+            "description": "Optional avatar URL if available",
+            "nullable": true,
+            "type": "string"
+          },
+          "displayName": {
+            "description": "Display name for UI labels. Never a raw email.",
+            "example": "Lucas Fasolato",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object"
+      },
       "PasswordResetConfirmDto": {
         "properties": {},
         "type": "object"
@@ -1981,16 +2096,30 @@
             "type": "string"
           },
           "opponentAvatarUrl": {
+            "deprecated": true,
             "nullable": true,
             "type": "string"
           },
           "opponentName": {
+            "deprecated": true,
+            "description": "Legacy singles-friendly opponent label derived relative to the viewer.",
             "type": "string"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantDto"
+            },
+            "type": "array"
           },
           "playedAt": {
             "type": "string"
           },
           "score": {
+            "$ref": "#/components/schemas/ScoreDto"
+          },
+          "scoreSummary": {
+            "deprecated": true,
+            "description": "Legacy string projection. Mirrors score.summary.",
             "nullable": true,
             "type": "string"
           },
@@ -1999,6 +2128,9 @@
               "PENDING_CONFIRMATION"
             ],
             "type": "string"
+          },
+          "teams": {
+            "$ref": "#/components/schemas/TeamsDto"
           }
         },
         "required": [
@@ -2006,6 +2138,9 @@
           "matchId",
           "status",
           "opponentName",
+          "teams",
+          "participants",
+          "score",
           "cta"
         ],
         "type": "object"
@@ -2358,6 +2493,10 @@
       },
       "RejectLeaguePendingConfirmationResponseDto": {
         "properties": {
+          "confirmationId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "matchId": {
             "format": "uuid",
             "type": "string"
@@ -2377,6 +2516,7 @@
         },
         "required": [
           "status",
+          "confirmationId",
           "matchId"
         ],
         "type": "object"
@@ -2586,6 +2726,26 @@
         "properties": {},
         "type": "object"
       },
+      "ScoreDto": {
+        "properties": {
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/SetDto"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "description": "Human readable score summary",
+            "example": "6-4 6-4",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "sets"
+        ],
+        "type": "object"
+      },
       "SemanticErrorDto": {
         "properties": {
           "code": {
@@ -2607,6 +2767,33 @@
         "required": [
           "code",
           "message"
+        ],
+        "type": "object"
+      },
+      "SetDto": {
+        "properties": {
+          "a": {
+            "example": 6,
+            "type": "number"
+          },
+          "b": {
+            "example": 4,
+            "type": "number"
+          },
+          "tbA": {
+            "description": "Optional tiebreak games won by team A in this set",
+            "example": 7,
+            "type": "number"
+          },
+          "tbB": {
+            "description": "Optional tiebreak games won by team B in this set",
+            "example": 5,
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
         ],
         "type": "object"
       },
@@ -2859,6 +3046,38 @@
         "required": [
           "playedAt",
           "score"
+        ],
+        "type": "object"
+      },
+      "TeamDto": {
+        "properties": {
+          "player1Id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "player2Id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "player1Id"
+        ],
+        "type": "object"
+      },
+      "TeamsDto": {
+        "properties": {
+          "teamA": {
+            "$ref": "#/components/schemas/TeamDto"
+          },
+          "teamB": {
+            "$ref": "#/components/schemas/TeamDto"
+          }
+        },
+        "required": [
+          "teamA",
+          "teamB"
         ],
         "type": "object"
       },
@@ -6191,6 +6410,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LeagueMatchResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": ""
           }
         },

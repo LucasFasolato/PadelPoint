@@ -2,39 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { MatchType } from '../enums/match-type.enum';
 import { ScoreDto, SetDto } from './score.dto';
-
-export class LeaguePendingConfirmationTeamDto {
-  @ApiProperty({ format: 'uuid' })
-  player1Id!: string;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  player2Id?: string | null;
-}
-
-export class LeaguePendingConfirmationTeamsDto {
-  @ApiProperty({ type: LeaguePendingConfirmationTeamDto })
-  teamA!: LeaguePendingConfirmationTeamDto;
-
-  @ApiProperty({ type: LeaguePendingConfirmationTeamDto })
-  teamB!: LeaguePendingConfirmationTeamDto;
-}
-
-export class LeaguePendingConfirmationParticipantDto {
-  @ApiProperty({ format: 'uuid' })
-  userId!: string;
-
-  @ApiProperty({
-    description: 'Display name for UI labels. Never a raw email.',
-    example: 'Lucas Fasolato',
-  })
-  displayName!: string;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    description: 'Optional avatar URL if available',
-  })
-  avatarUrl?: string | null;
-}
+import { ParticipantDto, TeamsDto } from './match-view.dto';
 
 export class LeaguePendingConfirmationItemDto {
   @ApiProperty({
@@ -71,22 +39,23 @@ export class LeaguePendingConfirmationItemDto {
   @ApiProperty()
   impactRanking!: boolean;
 
-  @ApiProperty({ type: LeaguePendingConfirmationTeamsDto })
-  teams!: LeaguePendingConfirmationTeamsDto;
+  @ApiProperty({ type: TeamsDto })
+  teams!: TeamsDto;
 
   @ApiProperty({
-    type: [LeaguePendingConfirmationParticipantDto],
+    type: [ParticipantDto],
     description:
       'Resolved participants in display order (teamA then teamB), for stable UI rendering.',
   })
-  participants!: LeaguePendingConfirmationParticipantDto[];
+  participants!: ParticipantDto[];
 
   @ApiProperty({ type: ScoreDto })
   score!: ScoreDto;
 
   @ApiPropertyOptional({
     type: [SetDto],
-    description: 'Legacy field kept for backward compatibility. Use score.sets.',
+    description:
+      'Legacy field kept for backward compatibility. Use score.sets.',
     deprecated: true,
   })
   sets?: SetDto[];

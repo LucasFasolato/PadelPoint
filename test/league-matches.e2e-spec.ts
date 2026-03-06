@@ -386,9 +386,15 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
             ],
             score: {
               summary: '6-4 6-2',
-              sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
+              sets: [
+                { a: 6, b: 4 },
+                { a: 6, b: 2 },
+              ],
             },
-            sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
+            sets: [
+              { a: 6, b: 4 },
+              { a: 6, b: 2 },
+            ],
           },
         ],
         nextCursor: null,
@@ -433,7 +439,10 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
           ],
           score: {
             summary: '6-4 6-2',
-            sets: [{ a: 6, b: 4 }, { a: 6, b: 2 }],
+            sets: [
+              { a: 6, b: 4 },
+              { a: 6, b: 2 },
+            ],
           },
           teamA1Id: 'u1',
           teamA2Id: 'u3',
@@ -460,6 +469,75 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
   });
 
   describe('POST/PATCH /leagues/:leagueId/pending-confirmations/:id/{confirm|reject}', () => {
+    it('confirm removes the match from pending confirmations on the next fetch', async () => {
+      const state = {
+        items: [
+          {
+            id: MATCH_ID,
+            confirmationId: MATCH_ID,
+            matchId: MATCH_ID,
+            leagueId: LEAGUE_ID,
+            reportedByUserId: 'reporter-1',
+            createdAt: '2025-06-10T10:00:00.000Z',
+            expiresAt: null,
+            matchType: 'COMPETITIVE',
+            impactRanking: true,
+            teams: {
+              teamA: { player1Id: 'u1', player2Id: null },
+              teamB: { player1Id: 'u2', player2Id: null },
+            },
+            participants: [
+              { userId: 'u1', displayName: 'A1', avatarUrl: null },
+              { userId: 'u2', displayName: 'B1', avatarUrl: null },
+            ],
+            score: {
+              summary: '6-4 6-2',
+              sets: [
+                { a: 6, b: 4 },
+                { a: 6, b: 2 },
+              ],
+            },
+            sets: [
+              { a: 6, b: 4 },
+              { a: 6, b: 2 },
+            ],
+          },
+        ],
+      };
+
+      matchesService.getLeaguePendingConfirmations!.mockImplementation(
+        async () => ({
+          items: [...state.items],
+          nextCursor: null,
+        }),
+      );
+      matchesService.confirmLeaguePendingConfirmation!.mockImplementation(
+        async () => {
+          state.items = [];
+          return {
+            status: 'CONFIRMED',
+            confirmationId: MATCH_ID,
+            matchId: MATCH_ID,
+            recomputeTriggered: true,
+          };
+        },
+      );
+
+      const before = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/pending-confirmations?limit=10`)
+        .expect(200);
+      expect(before.body.items).toHaveLength(1);
+
+      await request(app.getHttpServer())
+        .post(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/confirm`)
+        .expect(201);
+
+      const after = await request(app.getHttpServer())
+        .get(`/leagues/${LEAGUE_ID}/pending-confirmations?limit=10`)
+        .expect(200);
+      expect(after.body.items).toEqual([]);
+    });
+
     it('uses the same service method for confirm with POST and PATCH', async () => {
       matchesService.confirmLeaguePendingConfirmation!.mockResolvedValue({
         status: 'CONFIRMED',
@@ -509,9 +587,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         .send({ reason: 'Wrong score' })
         .expect(201);
       const patchRes = await request(app.getHttpServer())
-        .patch(
-          `/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`,
-        )
+        .patch(`/leagues/${LEAGUE_ID}/pending-confirmations/${MATCH_ID}/reject`)
         .send({ reason: 'Wrong score' })
         .expect(200);
 

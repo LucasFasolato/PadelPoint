@@ -9,8 +9,8 @@ describe('score-summary utils', () => {
       ]);
     });
 
-    it('parses comma and slash separators', () => {
-      expect(parseScoreSummary('6-3,6-4 / 7-5')).toEqual([
+    it('parses comma and slash separators with irregular spacing', () => {
+      expect(parseScoreSummary('6-3,  6-4   / 7-5')).toEqual([
         { a: 6, b: 3 },
         { a: 6, b: 4 },
         { a: 7, b: 5 },
@@ -40,10 +40,12 @@ describe('score-summary utils', () => {
 
   describe('buildScoreSummary', () => {
     it('builds summary from structured sets', () => {
-      expect(buildScoreSummary([{ a: 6, b: 4 }, { a: 6, b: 2 }])).toBe(
-        '6-4 6-2',
-      );
+      expect(
+        buildScoreSummary([
+          { a: 6, b: 4 },
+          { a: 6, b: 2 },
+        ]),
+      ).toBe('6-4 6-2');
     });
   });
 });
-

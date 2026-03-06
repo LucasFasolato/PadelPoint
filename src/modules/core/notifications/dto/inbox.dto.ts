@@ -1,27 +1,36 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ParticipantDto,
+  TeamsDto,
+} from '@/modules/core/matches/dto/match-view.dto';
+import { ScoreDto } from '@/modules/core/matches/dto/score.dto';
 
 export class InboxSectionErrorDto {
   @ApiProperty()
-  code: string;
+  code!: string;
 
   @ApiProperty()
-  errorId: string;
+  errorId!: string;
 }
 
 export class PendingConfirmationInboxItemDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  matchId: string;
+  matchId!: string;
 
   @ApiProperty({ enum: ['PENDING_CONFIRMATION'] })
-  status: 'PENDING_CONFIRMATION';
+  status!: 'PENDING_CONFIRMATION';
 
-  @ApiProperty()
-  opponentName: string;
+  @ApiProperty({
+    deprecated: true,
+    description:
+      'Legacy singles-friendly opponent label derived relative to the viewer.',
+  })
+  opponentName!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, deprecated: true })
   opponentAvatarUrl?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -33,8 +42,21 @@ export class PendingConfirmationInboxItemDto {
   @ApiPropertyOptional()
   playedAt?: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  score?: string | null;
+  @ApiProperty({ type: TeamsDto })
+  teams!: TeamsDto;
+
+  @ApiProperty({ type: [ParticipantDto] })
+  participants!: ParticipantDto[];
+
+  @ApiProperty({ type: ScoreDto })
+  score!: ScoreDto;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    deprecated: true,
+    description: 'Legacy string projection. Mirrors score.summary.',
+  })
+  scoreSummary?: string | null;
 
   @ApiProperty({
     type: 'object',
@@ -43,21 +65,21 @@ export class PendingConfirmationInboxItemDto {
       href: { type: 'string', nullable: true },
     },
   })
-  cta: { primary: 'Confirmar' | 'Ver'; href?: string };
+  cta!: { primary: 'Confirmar' | 'Ver'; href?: string };
 }
 
 export class ChallengeInboxItemDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  type: string;
+  type!: string;
 
   @ApiProperty()
-  status: string;
+  status!: string;
 
   @ApiProperty()
-  opponentName: string;
+  opponentName!: string;
 
   @ApiPropertyOptional({ nullable: true })
   message?: string | null;
@@ -72,21 +94,21 @@ export class ChallengeInboxItemDto {
       href: { type: 'string', nullable: true },
     },
   })
-  cta: { primary: 'Ver' | 'Responder'; href?: string };
+  cta!: { primary: 'Ver' | 'Responder'; href?: string };
 }
 
 export class InviteInboxItemDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiPropertyOptional({ nullable: true })
   leagueId?: string | null;
 
   @ApiProperty()
-  leagueName: string;
+  leagueName!: string;
 
   @ApiProperty()
-  status: string;
+  status!: string;
 
   @ApiPropertyOptional({ nullable: true })
   expiresAt?: string | null;
@@ -98,18 +120,18 @@ export class InviteInboxItemDto {
       href: { type: 'string', nullable: true },
     },
   })
-  cta: { primary: 'Ver'; href?: string };
+  cta!: { primary: 'Ver'; href?: string };
 }
 
 export class NotificationInboxItemDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  type: string;
+  type!: string;
 
   @ApiProperty()
-  title: string;
+  title!: string;
 
   @ApiPropertyOptional({ nullable: true })
   body?: string | null;
@@ -118,7 +140,7 @@ export class NotificationInboxItemDto {
   readAt?: string | null;
 
   @ApiProperty()
-  createdAt: string;
+  createdAt!: string;
 
   @ApiPropertyOptional({ nullable: true })
   data?: Record<string, unknown> | null;
@@ -126,7 +148,7 @@ export class NotificationInboxItemDto {
 
 export class PendingConfirmationsInboxSectionDto {
   @ApiProperty({ type: [PendingConfirmationInboxItemDto] })
-  items: PendingConfirmationInboxItemDto[];
+  items!: PendingConfirmationInboxItemDto[];
 
   @ApiPropertyOptional({ type: InboxSectionErrorDto })
   error?: InboxSectionErrorDto;
@@ -134,7 +156,7 @@ export class PendingConfirmationsInboxSectionDto {
 
 export class ChallengesInboxSectionDto {
   @ApiProperty({ type: [ChallengeInboxItemDto] })
-  items: ChallengeInboxItemDto[];
+  items!: ChallengeInboxItemDto[];
 
   @ApiPropertyOptional({ type: InboxSectionErrorDto })
   error?: InboxSectionErrorDto;
@@ -142,7 +164,7 @@ export class ChallengesInboxSectionDto {
 
 export class InvitesInboxSectionDto {
   @ApiProperty({ type: [InviteInboxItemDto] })
-  items: InviteInboxItemDto[];
+  items!: InviteInboxItemDto[];
 
   @ApiPropertyOptional({ type: InboxSectionErrorDto })
   error?: InboxSectionErrorDto;
@@ -150,7 +172,7 @@ export class InvitesInboxSectionDto {
 
 export class NotificationsInboxSectionDto {
   @ApiProperty({ type: [NotificationInboxItemDto] })
-  items: NotificationInboxItemDto[];
+  items!: NotificationInboxItemDto[];
 
   @ApiPropertyOptional({ type: InboxSectionErrorDto })
   error?: InboxSectionErrorDto;
@@ -158,14 +180,14 @@ export class NotificationsInboxSectionDto {
 
 export class InboxResponseDto {
   @ApiProperty({ type: PendingConfirmationsInboxSectionDto })
-  pendingConfirmations: PendingConfirmationsInboxSectionDto;
+  pendingConfirmations!: PendingConfirmationsInboxSectionDto;
 
   @ApiProperty({ type: ChallengesInboxSectionDto })
-  challenges: ChallengesInboxSectionDto;
+  challenges!: ChallengesInboxSectionDto;
 
   @ApiProperty({ type: InvitesInboxSectionDto })
-  invites: InvitesInboxSectionDto;
+  invites!: InvitesInboxSectionDto;
 
   @ApiProperty({ type: NotificationsInboxSectionDto })
-  notifications: NotificationsInboxSectionDto;
+  notifications!: NotificationsInboxSectionDto;
 }

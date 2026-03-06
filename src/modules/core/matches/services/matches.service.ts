@@ -149,6 +149,14 @@ type LeaguePendingConfirmationRawRow = {
   teamA2Id: string | null;
   teamB1Id: string;
   teamB2Id: string | null;
+  teamA1DisplayName: string | null;
+  teamA1Email: string | null;
+  teamA2DisplayName: string | null;
+  teamA2Email: string | null;
+  teamB1DisplayName: string | null;
+  teamB1Email: string | null;
+  teamB2DisplayName: string | null;
+  teamB2Email: string | null;
 };
 
 type LeaguePendingConfirmationItem = {
@@ -437,7 +445,8 @@ export class MatchesService {
         throw new BadRequestException({
           statusCode: 400,
           code: 'SETS_COUNT_INVALID',
-          message: 'third set is only allowed when first two sets are split 1-1',
+          message:
+            'third set is only allowed when first two sets are split 1-1',
         });
       }
     }
@@ -809,12 +818,20 @@ export class MatchesService {
     return sets;
   }
 
-  private getOrderedParticipantIds(input: Array<string | null | undefined>): string[] {
+  private getOrderedParticipantIds(
+    input: Array<string | null | undefined>,
+  ): string[] {
     return [...new Set(input.filter((id): id is string => !!id))];
   }
 
-  private async resolveUserDisplayNames(userIds: string[]): Promise<Map<string, string>> {
-    const unique = [...new Set(userIds.filter((id) => typeof id === 'string' && id.length > 0))];
+  private async resolveUserDisplayNames(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const unique = [
+      ...new Set(
+        userIds.filter((id) => typeof id === 'string' && id.length > 0),
+      ),
+    ];
     if (unique.length === 0) return new Map();
 
     const users = await this.userRepo.find({
@@ -846,9 +863,14 @@ export class MatchesService {
         .select('a."entityId"', 'entityId')
         .addSelect('a.payload', 'payload')
         .where('a.type = :type', { type: LeagueActivityType.MATCH_REPORTED })
-        .andWhere('a."entityId" IN (:...entityIds)', { entityIds: uniqueMatchIds })
+        .andWhere('a."entityId" IN (:...entityIds)', {
+          entityIds: uniqueMatchIds,
+        })
         .orderBy('a."createdAt"', 'DESC')
-        .getRawMany<{ entityId: string; payload: Record<string, unknown> | null }>();
+        .getRawMany<{
+          entityId: string;
+          payload: Record<string, unknown> | null;
+        }>();
 
       const summaryByMatchId = new Map<string, string>();
       for (const row of rows) {
@@ -891,10 +913,14 @@ export class MatchesService {
   } {
     const setsFromColumns = this.extractSetScores(score);
     const sets =
-      setsFromColumns.length > 0 ? setsFromColumns : parseScoreSummary(fallbackSummary);
+      setsFromColumns.length > 0
+        ? setsFromColumns
+        : parseScoreSummary(fallbackSummary);
     const normalizedFallback = (fallbackSummary ?? '').trim();
     const summary =
-      normalizedFallback.length > 0 ? normalizedFallback : buildScoreSummary(sets);
+      normalizedFallback.length > 0
+        ? normalizedFallback
+        : buildScoreSummary(sets);
 
     return { summary, sets };
   }
@@ -906,6 +932,45 @@ export class MatchesService {
     return participantIds.map((participantId) => ({
       userId: participantId,
       displayName: displayMap.get(participantId) ?? 'Jugador',
+      avatarUrl: null,
+    }));
+  }
+
+  private buildParticipantLabelsFromRawRow(
+    row: PendingConfirmationRawRow | LeaguePendingConfirmationRawRow,
+  ): Map<string, string | null> {
+    return new Map<string, string | null>([
+      [
+        row.teamA1Id ?? '',
+        this.coalesceDisplay(row.teamA1DisplayName, row.teamA1Email),
+      ],
+      [
+        row.teamA2Id ?? '',
+        this.coalesceDisplay(row.teamA2DisplayName, row.teamA2Email),
+      ],
+      [
+        row.teamB1Id ?? '',
+        this.coalesceDisplay(row.teamB1DisplayName, row.teamB1Email),
+      ],
+      [
+        row.teamB2Id ?? '',
+        this.coalesceDisplay(row.teamB2DisplayName, row.teamB2Email),
+      ],
+    ]);
+  }
+
+  private buildParticipantsViewFromRawRow(
+    row: PendingConfirmationRawRow | LeaguePendingConfirmationRawRow,
+  ): Array<{ userId: string; displayName: string; avatarUrl: null }> {
+    const labels = this.buildParticipantLabelsFromRawRow(row);
+    return this.getOrderedParticipantIds([
+      row.teamA1Id,
+      row.teamA2Id,
+      row.teamB1Id,
+      row.teamB2Id,
+    ]).map((participantId) => ({
+      userId: participantId,
+      displayName: labels.get(participantId) ?? 'Jugador',
       avatarUrl: null,
     }));
   }
@@ -1044,7 +1109,8 @@ export class MatchesService {
       const [s1, s2, s3] = dto.sets;
 
       if (existing) {
-        const effectiveLeagueId = existing.leagueId ?? requestedLeagueId ?? null;
+        const effectiveLeagueId =
+          existing.leagueId ?? requestedLeagueId ?? null;
         if (
           requestedLeagueId &&
           existing.leagueId &&
@@ -1369,11 +1435,7 @@ export class MatchesService {
   // report manual (no reservation)
   // ------------------------
 
-  async reportManual(
-    userId: string,
-    leagueId: string,
-    dto: ManualReportInput,
-  ) {
+  async reportManual(userId: string, leagueId: string, dto: ManualReportInput) {
     return this.dataSource.transaction(async (manager) => {
       this.assertLeagueIdRequired(leagueId);
 
@@ -1928,6 +1990,10 @@ export class MatchesService {
     const qb = this.matchRepo
       .createQueryBuilder('m')
       .innerJoin(Challenge, 'c', 'c.id = m."challengeId"')
+      .leftJoin(User, 'a1', 'a1.id = c."teamA1Id"')
+      .leftJoin(User, 'a2', 'a2.id = c."teamA2Id"')
+      .leftJoin(User, 'b1', 'b1.id = c."teamB1Id"')
+      .leftJoin(User, 'b2', 'b2.id = c."teamB2Id"')
       .select('m.id', 'matchId')
       .addSelect('m."leagueId"', 'leagueId')
       .addSelect('m."reportedByUserId"', 'reportedByUserId')
@@ -1945,6 +2011,14 @@ export class MatchesService {
       .addSelect('c."teamA2Id"', 'teamA2Id')
       .addSelect('c."teamB1Id"', 'teamB1Id')
       .addSelect('c."teamB2Id"', 'teamB2Id')
+      .addSelect('a1."displayName"', 'teamA1DisplayName')
+      .addSelect('a1.email', 'teamA1Email')
+      .addSelect('a2."displayName"', 'teamA2DisplayName')
+      .addSelect('a2.email', 'teamA2Email')
+      .addSelect('b1."displayName"', 'teamB1DisplayName')
+      .addSelect('b1.email', 'teamB1Email')
+      .addSelect('b2."displayName"', 'teamB2DisplayName')
+      .addSelect('b2.email', 'teamB2Email')
       .where('m."leagueId" = :leagueId', { leagueId })
       .andWhere('m.status = :status', {
         status: MatchResultStatus.PENDING_CONFIRM,
@@ -1986,33 +2060,16 @@ export class MatchesService {
           })()
         : null;
 
-    const participantIds = pagedRows.flatMap((row) =>
-      this.getOrderedParticipantIds([
-        row.teamA1Id,
-        row.teamA2Id,
-        row.teamB1Id,
-        row.teamB2Id,
-      ]),
+    const scoreSummaryByMatchId = await this.resolveScoreSummaryByMatchIds(
+      pagedRows.map((row) => row.matchId),
     );
-    const [displayMap, scoreSummaryByMatchId] = await Promise.all([
-      this.resolveUserDisplayNames(participantIds),
-      this.resolveScoreSummaryByMatchIds(pagedRows.map((row) => row.matchId)),
-    ]);
 
     const items: LeaguePendingConfirmationItem[] = pagedRows.map((row) => {
       const score = this.buildScoreView(
         row,
         scoreSummaryByMatchId.get(row.matchId) ?? null,
       );
-      const participants = this.buildParticipantsView(
-        this.getOrderedParticipantIds([
-          row.teamA1Id,
-          row.teamA2Id,
-          row.teamB1Id,
-          row.teamB2Id,
-        ]),
-        displayMap,
-      );
+      const participants = this.buildParticipantsViewFromRawRow(row);
 
       const matchType = this.normalizeMatchType(row.matchType ?? undefined);
       const impactRanking =
@@ -2026,8 +2083,7 @@ export class MatchesService {
         leagueId: row.leagueId,
         matchId: row.matchId,
         reportedByUserId: row.reportedByUserId,
-        createdAt:
-          this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+        createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
         expiresAt: null,
         matchType,
         impactRanking,
@@ -2084,9 +2140,8 @@ export class MatchesService {
         .createQueryBuilder('m')
         .setLock('pessimistic_write')
         .where('m.id = :id', { id: confirmationId })
-        .andWhere('m."leagueId" = :leagueId', { leagueId })
         .getOne();
-      if (!match) {
+      if (!match || match.leagueId !== leagueId) {
         throw new NotFoundException({
           statusCode: 404,
           code: 'PENDING_CONFIRMATION_NOT_FOUND',
@@ -2127,7 +2182,10 @@ export class MatchesService {
       }
       const participants = this.getParticipantsOrThrow(challenge);
 
-      if (!participants.all.includes(userId) || userId === match.reportedByUserId) {
+      if (
+        !participants.all.includes(userId) ||
+        userId === match.reportedByUserId
+      ) {
         throw new ForbiddenException({
           statusCode: 403,
           code: 'MATCH_FORBIDDEN',
@@ -2206,9 +2264,8 @@ export class MatchesService {
         .createQueryBuilder('m')
         .setLock('pessimistic_write')
         .where('m.id = :id', { id: confirmationId })
-        .andWhere('m."leagueId" = :leagueId', { leagueId })
         .getOne();
-      if (!match) {
+      if (!match || match.leagueId !== leagueId) {
         throw new NotFoundException({
           statusCode: 404,
           code: 'PENDING_CONFIRMATION_NOT_FOUND',
@@ -2249,7 +2306,10 @@ export class MatchesService {
       }
       const participants = this.getParticipantsOrThrow(challenge);
 
-      if (!participants.all.includes(userId) || userId === match.reportedByUserId) {
+      if (
+        !participants.all.includes(userId) ||
+        userId === match.reportedByUserId
+      ) {
         throw new ForbiddenException({
           statusCode: 403,
           code: 'MATCH_FORBIDDEN',
@@ -2275,7 +2335,7 @@ export class MatchesService {
 
       this.logLeagueActivity(
         leagueId,
-        LeagueActivityType.MATCH_RESOLVED,
+        LeagueActivityType.MATCH_REJECTED,
         userId,
         match.id,
         { participantIds: participants.all },

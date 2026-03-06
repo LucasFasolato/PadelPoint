@@ -2,35 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MatchResultStatus } from '../entities/match-result.entity';
 import { MatchType } from '../enums/match-type.enum';
 import { ScoreDto } from './score.dto';
-
-export class LeagueMatchTeamDto {
-  @ApiProperty({ format: 'uuid', nullable: true })
-  player1Id!: string | null;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  player2Id?: string | null;
-}
-
-export class LeagueMatchTeamsDto {
-  @ApiProperty({ type: LeagueMatchTeamDto })
-  teamA!: LeagueMatchTeamDto;
-
-  @ApiProperty({ type: LeagueMatchTeamDto })
-  teamB!: LeagueMatchTeamDto;
-}
-
-export class LeagueMatchParticipantDto {
-  @ApiProperty({ format: 'uuid' })
-  userId!: string;
-
-  @ApiProperty({
-    description: 'Display name for UI labels. Never a raw email.',
-  })
-  displayName!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  avatarUrl?: string | null;
-}
+import { ParticipantDto, TeamsDto } from './match-view.dto';
 
 export class LeagueMatchResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -57,14 +29,14 @@ export class LeagueMatchResponseDto {
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   playedAt!: string | null;
 
-  @ApiProperty({ type: LeagueMatchTeamsDto })
-  teams!: LeagueMatchTeamsDto;
+  @ApiProperty({ type: TeamsDto })
+  teams!: TeamsDto;
 
   @ApiProperty({
-    type: [LeagueMatchParticipantDto],
+    type: [ParticipantDto],
     description: 'Participants in display order (teamA then teamB)',
   })
-  participants!: LeagueMatchParticipantDto[];
+  participants!: ParticipantDto[];
 
   @ApiPropertyOptional({ type: ScoreDto, nullable: true })
   score!: ScoreDto | null;
@@ -107,4 +79,3 @@ export class LeagueMatchResponseDto {
   @ApiProperty({ format: 'date-time' })
   updatedAt!: string;
 }
-

@@ -98,7 +98,11 @@ describe('LeagueActivityService', () => {
         email: 'alice@example.com',
       } as User);
 
-      await service.create({ leagueId: LEAGUE_ID, type: LeagueActivityType.MATCH_CONFIRMED, actorId: ACTOR_ID });
+      await service.create({
+        leagueId: LEAGUE_ID,
+        type: LeagueActivityType.MATCH_CONFIRMED,
+        actorId: ACTOR_ID,
+      });
 
       expect(gateway.emitToLeague).toHaveBeenCalledWith(
         LEAGUE_ID,
@@ -112,7 +116,10 @@ describe('LeagueActivityService', () => {
       repo.create.mockReturnValue(saved);
       repo.save.mockResolvedValue(saved);
 
-      await service.create({ leagueId: LEAGUE_ID, type: LeagueActivityType.MEMBER_JOINED });
+      await service.create({
+        leagueId: LEAGUE_ID,
+        type: LeagueActivityType.MEMBER_JOINED,
+      });
 
       expect(userRepo.findOne).not.toHaveBeenCalled();
       expect(gateway.emitToLeague).toHaveBeenCalledWith(
@@ -129,7 +136,10 @@ describe('LeagueActivityService', () => {
       gateway.emitToLeague.mockReturnValue(false);
 
       await expect(
-        service.create({ leagueId: LEAGUE_ID, type: LeagueActivityType.MEMBER_JOINED }),
+        service.create({
+          leagueId: LEAGUE_ID,
+          type: LeagueActivityType.MEMBER_JOINED,
+        }),
       ).resolves.toBe(saved);
     });
   });
@@ -145,7 +155,9 @@ describe('LeagueActivityService', () => {
         { id: ACTOR_ID, displayName: 'Alice', email: 'alice@example.com' },
       ] as User[]);
 
-      const { items, nextCursor } = await service.list(LEAGUE_ID, { limit: 20 });
+      const { items, nextCursor } = await service.list(LEAGUE_ID, {
+        limit: 20,
+      });
 
       expect(items).toHaveLength(1);
       expect(items[0].actorName).toBe('Alice');
@@ -212,48 +224,79 @@ describe('LeagueActivityService', () => {
   describe('buildPresentation (title/subtitle) via list()', () => {
     const ACTOR_NAME = 'Alice';
 
-    async function getTitleSubtitle(type: LeagueActivityType, payload: Record<string, unknown> | null = null) {
+    async function getTitleSubtitle(
+      type: LeagueActivityType,
+      payload: Record<string, unknown> | null = null,
+    ) {
       const act = fakeActivity({ type, payload: payload as any });
       const qb = makeQb([act]);
       repo.createQueryBuilder.mockReturnValue(qb);
-      userRepo.find.mockResolvedValue([{ id: ACTOR_ID, displayName: ACTOR_NAME, email: 'alice@x.com' }] as User[]);
+      userRepo.find.mockResolvedValue([
+        { id: ACTOR_ID, displayName: ACTOR_NAME, email: 'alice@x.com' },
+      ] as User[]);
       const { items } = await service.list(LEAGUE_ID, {});
       return { title: items[0].title, subtitle: items[0].subtitle };
     }
 
     it('MATCH_REPORTED: title is "Se reportó un partido"', async () => {
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_REPORTED);
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MATCH_REPORTED,
+      );
       expect(title).toBe('Se reportó un partido');
       expect(subtitle).toContain(ACTOR_NAME);
     });
 
     it('MATCH_CONFIRMED: title is "Partido confirmado"', async () => {
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_CONFIRMED);
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MATCH_CONFIRMED,
+      );
       expect(title).toBe('Partido confirmado');
       expect(subtitle).toContain(ACTOR_NAME);
     });
 
+    it('MATCH_REJECTED: title is "Resultado rechazado"', async () => {
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MATCH_REJECTED,
+      );
+      expect(title).toBe('Resultado rechazado');
+      expect(subtitle).toContain(ACTOR_NAME);
+    });
+
     it('MATCH_DISPUTED: title is "Partido en disputa"', async () => {
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_DISPUTED);
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MATCH_DISPUTED,
+      );
       expect(title).toBe('Partido en disputa');
       expect(subtitle).toContain(ACTOR_NAME);
     });
 
     it('MATCH_RESOLVED: title is "Disputa resuelta"', async () => {
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MATCH_RESOLVED);
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MATCH_RESOLVED,
+      );
       expect(title).toBe('Disputa resuelta');
       expect(subtitle).toContain(ACTOR_NAME);
     });
 
     it('MEMBER_JOINED: title is "Nuevo miembro"', async () => {
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.MEMBER_JOINED);
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.MEMBER_JOINED,
+      );
       expect(title).toBe('Nuevo miembro');
       expect(subtitle).toContain(ACTOR_NAME);
     });
 
     it('RANKINGS_UPDATED: title is "Ranking actualizado" and subtitle is non-null', async () => {
-      const payload = { topMovers: { up: [{ userId: 'u1', delta: 2, newPosition: 1 }], down: [] } };
-      const { title, subtitle } = await getTitleSubtitle(LeagueActivityType.RANKINGS_UPDATED, payload);
+      const payload = {
+        topMovers: {
+          up: [{ userId: 'u1', delta: 2, newPosition: 1 }],
+          down: [],
+        },
+      };
+      const { title, subtitle } = await getTitleSubtitle(
+        LeagueActivityType.RANKINGS_UPDATED,
+        payload,
+      );
       expect(title).toBe('Ranking actualizado');
       expect(subtitle).toBeTruthy();
     });

@@ -1,6 +1,6 @@
 # Inbox API Contract (v1)
 
-Last updated: 2026-02-27
+Last updated: 2026-03-06
 
 This document defines:
 
@@ -33,14 +33,40 @@ Aggregates actionable cards from multiple sources:
       {
         "id": "uuid",
         "matchId": "uuid",
-        "status": "PENDING_CONFIRMATION",
-        "opponentName": "Rival",
-        "opponentAvatarUrl": null,
         "leagueId": "uuid",
         "leagueName": "Liga Verano",
         "playedAt": "2026-02-20T21:00:00.000Z",
-        "score": "6-4 6-3",
-        "cta": { "primary": "Confirmar", "href": "/matches/uuid" }
+        "status": "PENDING_CONFIRMATION",
+        "teams": {
+          "teamA": { "player1Id": "uuid", "player2Id": null },
+          "teamB": { "player1Id": "uuid", "player2Id": null }
+        },
+        "participants": [
+          {
+            "userId": "uuid",
+            "displayName": "Jugador A",
+            "avatarUrl": null
+          },
+          {
+            "userId": "uuid",
+            "displayName": "Jugador B",
+            "avatarUrl": null
+          }
+        ],
+        "score": {
+          "summary": "6-4 6-3",
+          "sets": [
+            { "a": 6, "b": 4 },
+            { "a": 6, "b": 3 }
+          ]
+        },
+        "scoreSummary": "6-4 6-3",
+        "opponentName": "Rival",
+        "opponentAvatarUrl": null,
+        "cta": {
+          "primary": "Confirmar",
+          "href": "/leagues/uuid?tab=partidos&confirm=uuid"
+        }
       }
     ]
   },
@@ -106,6 +132,12 @@ Possible section-level error codes:
 - `CHALLENGES_UNAVAILABLE`
 - `INVITES_UNAVAILABLE`
 - `NOTIFICATIONS_UNAVAILABLE`
+
+### Pending confirmation guarantees
+
+- `teams`, `participants`, and `score` follow the same canon used by league match cards.
+- `score.sets` is always present as an array.
+- `opponentName` and `scoreSummary` remain as derived legacy helpers for old clients.
 
 ## GET /me/notifications
 

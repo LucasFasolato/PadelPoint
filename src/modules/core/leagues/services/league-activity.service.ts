@@ -57,7 +57,8 @@ export class LeagueActivityService {
         where: { id: saved.actorId },
         select: ['id', 'displayName', 'email'],
       });
-      actorName = user?.displayName ?? (user?.email ? user.email.split('@')[0] : null);
+      actorName =
+        user?.displayName ?? (user?.email ? user.email.split('@')[0] : null);
     }
 
     // Build view with resolved actorName so title/subtitle include the actor's name
@@ -102,7 +103,9 @@ export class LeagueActivityService {
       : null;
 
     // Bulk-resolve actorNames — single query, no N+1
-    const actorIds = [...new Set(items.map((a) => a.actorId).filter(Boolean) as string[])];
+    const actorIds = [
+      ...new Set(items.map((a) => a.actorId).filter(Boolean) as string[]),
+    ];
     const actorMap = new Map<string, string | null>();
     if (actorIds.length > 0) {
       const users = await this.userRepo.find({
@@ -111,7 +114,10 @@ export class LeagueActivityService {
       });
       for (const u of users) {
         // Never expose full email — use displayName or email prefix only
-        actorMap.set(u.id, u.displayName ?? (u.email ? u.email.split('@')[0] : null));
+        actorMap.set(
+          u.id,
+          u.displayName ?? (u.email ? u.email.split('@')[0] : null),
+        );
       }
     }
 
@@ -121,9 +127,16 @@ export class LeagueActivityService {
     };
   }
 
-  private toView(a: LeagueActivity, actorMap?: Map<string, string | null>): ActivityView {
+  private toView(
+    a: LeagueActivity,
+    actorMap?: Map<string, string | null>,
+  ): ActivityView {
     const actorName = actorMap ? (actorMap.get(a.actorId ?? '') ?? null) : null;
-    const { title, subtitle } = this.buildPresentation(a.type, actorName, a.payload);
+    const { title, subtitle } = this.buildPresentation(
+      a.type,
+      actorName,
+      a.payload,
+    );
     return {
       id: a.id,
       leagueId: a.leagueId,
@@ -154,6 +167,11 @@ export class LeagueActivityService {
         return {
           title: 'Partido confirmado',
           subtitle: `${actor} confirmó el resultado`,
+        };
+      case LeagueActivityType.MATCH_REJECTED:
+        return {
+          title: 'Resultado rechazado',
+          subtitle: `${actor} rechazÃ³ el resultado reportado`,
         };
       case LeagueActivityType.MATCH_DISPUTED:
         return {
@@ -201,10 +219,20 @@ export class LeagueActivityService {
           subtitle: 'Un desafío expiró sin respuesta',
         };
       case LeagueActivityType.RANKINGS_UPDATED: {
-        const topMovers = payload?.topMovers as {
-          up?: Array<{ userId: string; delta: number; newPosition: number }>;
-          down?: Array<{ userId: string; delta: number; newPosition: number }>;
-        } | undefined;
+        const topMovers = payload?.topMovers as
+          | {
+              up?: Array<{
+                userId: string;
+                delta: number;
+                newPosition: number;
+              }>;
+              down?: Array<{
+                userId: string;
+                delta: number;
+                newPosition: number;
+              }>;
+            }
+          | undefined;
         const topUp = topMovers?.up?.[0];
         const subtitle = topUp
           ? `Ranking actualizado — alguien subió ${topUp.delta} lugar${topUp.delta === 1 ? '' : 'es'}`

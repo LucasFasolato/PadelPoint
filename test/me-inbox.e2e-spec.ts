@@ -90,6 +90,34 @@ describe('Me Inbox (e2e)', () => {
     });
   });
 
+  it('GET /me/inbox keeps 200 and section-level errors for partial failures', async () => {
+    inboxService.listInbox?.mockResolvedValue({
+      pendingConfirmations: {
+        items: [],
+        error: {
+          code: 'PENDING_CONFIRMATIONS_UNAVAILABLE',
+          errorId: 'error-1',
+        },
+      },
+      challenges: { items: [] },
+      invites: { items: [] },
+      notifications: { items: [] },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/me/inbox?limit=10')
+      .expect(200);
+
+    expect(res.body.pendingConfirmations).toEqual({
+      items: [],
+      error: {
+        code: 'PENDING_CONFIRMATIONS_UNAVAILABLE',
+        errorId: 'error-1',
+      },
+    });
+    expect(res.body.challenges).toEqual({ items: [] });
+  });
+
   it('GET /me/notifications is a thin wrapper over notifications list', async () => {
     notificationsService.listLegacyFromCanonical?.mockResolvedValue({
       items: [],
