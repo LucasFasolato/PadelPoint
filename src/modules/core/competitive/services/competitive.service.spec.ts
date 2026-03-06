@@ -16,16 +16,20 @@ import { decodeEloHistoryCursor } from '../utils/elo-history-cursor.util';
 import { PlayerProfile } from '../../players/entities/player-profile.entity';
 import { PlayerFavorite } from '../../players/entities/player-favorite.entity';
 import { decodeMatchmakingRivalsCursor } from '../utils/matchmaking-rivals-cursor.util';
+import { User } from '../../users/entities/user.entity';
+import { City } from '../../geo/entities/city.entity';
 
 const FAKE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 function fakeProfile(
   overrides: Partial<CompetitiveProfile> = {},
 ): CompetitiveProfile {
+  const { user: userOverride, ...restOverrides } = overrides;
+  const defaultUser = { id: FAKE_USER_ID, email: 'a@b.com', displayName: 'Test', cityId: 'city-001' };
   return {
     id: 'profile-1',
     userId: FAKE_USER_ID,
-    user: { id: FAKE_USER_ID, email: 'a@b.com', displayName: 'Test' } as any,
+    user: { ...defaultUser, ...(userOverride as any) } as any,
     elo: 1200,
     initialCategory: null,
     categoryLocked: false,
@@ -39,7 +43,7 @@ function fakeProfile(
     onboardingComplete: false,
     createdAt: new Date(),
     updatedAt: new Date(),
-    ...overrides,
+    ...restOverrides,
   };
 }
 
@@ -51,6 +55,8 @@ describe('CompetitiveService', () => {
   let challengeRepo: MockRepo<Challenge>;
   let playerProfileRepo: MockRepo<PlayerProfile>;
   let favoriteRepo: MockRepo<PlayerFavorite>;
+  let userRepo: MockRepo<User>;
+  let cityRepo: MockRepo<City>;
   let usersService: { findById: jest.Mock };
 
   // Build a chainable query-builder stub that always resolves to empty/null
@@ -84,6 +90,8 @@ describe('CompetitiveService', () => {
     challengeRepo = createMockRepo<Challenge>();
     playerProfileRepo = createMockRepo<PlayerProfile>();
     favoriteRepo = createMockRepo<PlayerFavorite>();
+    userRepo = createMockRepo<User>();
+    cityRepo = createMockRepo<City>();
 
     // getConfirmedMatchOutcomes uses matchRepo.createQueryBuilder
     matchRepo.createQueryBuilder.mockReturnValue(makeQb([]));
@@ -91,6 +99,16 @@ describe('CompetitiveService', () => {
     historyRepo.createQueryBuilder.mockReturnValue(makeQb(null));
     challengeRepo.createQueryBuilder.mockReturnValue(makeQb([]));
     favoriteRepo.find.mockResolvedValue([]);
+    userRepo.find.mockResolvedValue([]);
+    userRepo.findOne.mockResolvedValue({
+      id: FAKE_USER_ID,
+      email: 'a@b.com',
+      displayName: 'Test',
+      cityId: 'city-001',
+      city: null,
+    } as any);
+    cityRepo.find.mockResolvedValue([]);
+    cityRepo.findOne.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -105,6 +123,8 @@ describe('CompetitiveService', () => {
         { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
         { provide: getRepositoryToken(PlayerProfile), useValue: playerProfileRepo },
         { provide: getRepositoryToken(PlayerFavorite), useValue: favoriteRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getRepositoryToken(City), useValue: cityRepo },
       ],
     }).compile();
 
@@ -140,6 +160,12 @@ describe('CompetitiveService', () => {
         onboardingComplete: true,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
+        cityId: 'city-001',
+        city: null,
+        provinceId: null,
+        province: null,
+        countryId: null,
+        country: null,
       });
     });
 
@@ -832,7 +858,7 @@ describe('CompetitiveService', () => {
         id: 'me-profile',
         userId: FAKE_USER_ID,
         elo: 1250,
-        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me', cityId: 'city-001' } as any,
       });
       const u2 = fakeProfile({
         id: 'p2',
@@ -942,6 +968,7 @@ describe('CompetitiveService', () => {
       ] as any);
       matchRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
       historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      cityRepo.findOne.mockResolvedValueOnce({ id: 'city-001', name: 'Cordoba', province: null });
 
       const result = await service.findRivalSuggestions(FAKE_USER_ID, {
         city: '  CORDOBA ',
@@ -957,7 +984,7 @@ describe('CompetitiveService', () => {
         id: 'me-profile',
         userId: FAKE_USER_ID,
         elo: 1590, // category 4
-        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me', cityId: 'city-001' } as any,
       });
       const sameCat = fakeProfile({
         id: 'p-same',
@@ -1276,7 +1303,7 @@ describe('CompetitiveService', () => {
         id: 'me-profile',
         userId: FAKE_USER_ID,
         elo: 1250,
-        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me', cityId: 'city-001' } as any,
       });
       const u2 = fakeProfile({
         id: 'p2',
@@ -1356,6 +1383,7 @@ describe('CompetitiveService', () => {
       };
       matchRepo.createQueryBuilder.mockReturnValueOnce(matchesQb);
       historyRepo.createQueryBuilder.mockReturnValueOnce(makeQb([]));
+      cityRepo.findOne.mockResolvedValueOnce({ id: 'city-001', name: 'Cordoba', province: null });
 
       const result = await service.findPartnerSuggestions(FAKE_USER_ID, {
         city: 'CORDOBA',
@@ -1372,7 +1400,7 @@ describe('CompetitiveService', () => {
         id: 'me-profile',
         userId: FAKE_USER_ID,
         elo: 1590,
-        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me' } as any,
+        user: { id: FAKE_USER_ID, email: 'me@test.com', displayName: 'Me', cityId: 'city-001' } as any,
       });
       const sameCat = fakeProfile({
         id: 'p-same',
