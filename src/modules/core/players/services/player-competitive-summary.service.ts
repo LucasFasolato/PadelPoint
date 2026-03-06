@@ -73,6 +73,14 @@ type RecentMatchRow = {
   b2Name: string | null;
 };
 
+type MatchOutcomeRow = {
+  winnerTeam: 'A' | 'B' | null;
+  teamA1Id: string | null;
+  teamA2Id: string | null;
+  teamB1Id: string | null;
+  teamB2Id: string | null;
+};
+
 type StrengthRow = {
   strength: string;
   count: number | string;
@@ -115,9 +123,18 @@ export class PlayerCompetitiveSummaryService {
       this.fetchRecentMatches(targetUserId),
       this.fetchStrengths(targetUserId),
     ]);
+    const currentStreak = await this.resolveCurrentStreak(
+      recentMatchRows,
+      targetUserId,
+    );
 
     const city = this.buildCity(playerRow);
-    const competitive = this.buildCompetitive(playerRow, recentMatchRows, targetUserId);
+    const competitive = this.buildCompetitive(
+      playerRow,
+      recentMatchRows,
+      currentStreak,
+      targetUserId,
+    );
     const strengths = this.buildStrengths(strengthRows);
     const recentMatches = this.buildRecentMatches(recentMatchRows, targetUserId);
     const activity = this.buildActivity(recentMatchRows);
@@ -198,6 +215,7 @@ export class PlayerCompetitiveSummaryService {
       LEFT   JOIN users ub1 ON ub1.id = c."teamB1Id"
       LEFT   JOIN users ub2 ON ub2.id = c."teamB2Id"
       WHERE  m.status = 'confirmed'
+        AND  m."playedAt" IS NOT NULL
         AND  (
           c."teamA1Id" = $1 OR c."teamA2Id" = $1
           OR c."teamB1Id" = $1 OR c."teamB2Id" = $1
@@ -227,6 +245,33 @@ export class PlayerCompetitiveSummaryService {
     );
   }
 
+  private async fetchCurrentStreakOutcomes(
+    userId: string,
+  ): Promise<MatchOutcomeRow[]> {
+    return this.dataSource.query<MatchOutcomeRow[]>(
+      `
+      SELECT
+        m."winnerTeam",
+        c."teamA1Id",
+        c."teamA2Id",
+        c."teamB1Id",
+        c."teamB2Id"
+      FROM   match_results m
+      INNER  JOIN challenges c ON c.id = m."challengeId"
+      WHERE  m.status = 'confirmed'
+        AND  m."playedAt" IS NOT NULL
+        AND  (
+          c."teamA1Id" = $1 OR c."teamA2Id" = $1
+          OR c."teamB1Id" = $1 OR c."teamB2Id" = $1
+        )
+      ORDER  BY m."playedAt" DESC NULLS LAST,
+                m."createdAt" DESC,
+                m.id DESC
+      `,
+      [userId],
+    );
+  }
+
   // ─── Builders ────────────────────────────────────────────────────────────
 
   private buildCity(row: PlayerDataRow | null): CompetitiveSummaryCityDto | null {
@@ -241,6 +286,7 @@ export class PlayerCompetitiveSummaryService {
   private buildCompetitive(
     row: PlayerDataRow | null,
     matchRows: RecentMatchRow[],
+    currentStreak: CompetitiveStreakDto | null,
     userId: string,
   ): CompetitiveStatsDto | null {
     if (!row) return null;
@@ -255,7 +301,6 @@ export class PlayerCompetitiveSummaryService {
     const winRate = matchesPlayed > 0 ? wins / matchesPlayed : 0;
 
     const recentForm = this.deriveRecentForm(matchRows, userId);
-    const currentStreak = this.deriveCurrentStreak(recentForm);
     const cat = categoryFromElo(elo);
 
     return {
@@ -332,10 +377,38 @@ export class PlayerCompetitiveSummaryService {
     return { lastPlayedAt, isActiveLast7Days };
   }
 
+  private async resolveCurrentStreak(
+    recentMatchRows: RecentMatchRow[],
+    userId: string,
+  ): Promise<CompetitiveStreakDto | null> {
+    const recentForm = this.deriveRecentForm(recentMatchRows, userId);
+    const compactStreak = this.deriveCurrentStreak(recentForm);
+    if (!compactStreak) return null;
+
+    if (recentForm.length < RECENT_FORM_LIMIT) {
+      return compactStreak;
+    }
+
+    const firstOutcome = recentForm[0];
+    if (recentForm.some((outcome) => outcome !== firstOutcome)) {
+      return compactStreak;
+    }
+
+    const outcomeRows = await this.fetchCurrentStreakOutcomes(userId);
+    const fullForm = outcomeRows.map((row) => {
+      const outcome = this.resolveMatchResult(row, userId);
+      if (outcome === 'WIN') return 'W';
+      if (outcome === 'LOSS') return 'L';
+      return 'D';
+    });
+
+    return this.deriveCurrentStreak(fullForm);
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   private resolveMatchResult(
-    row: RecentMatchRow,
+    row: RecentMatchRow | MatchOutcomeRow,
     userId: string,
   ): 'WIN' | 'LOSS' | 'DRAW' {
     if (!row.winnerTeam) return 'DRAW';

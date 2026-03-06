@@ -11,6 +11,7 @@ import { PlayersMeProfileController } from './controllers/players-me-profile.con
 import { PlayersFavoritesController } from './controllers/players-favorites.controller';
 import { PlayerCompetitiveSummaryService } from './services/player-competitive-summary.service';
 import { PlayersPublicController } from './controllers/players-public.controller';
+import { PlayerCompetitiveProfileService } from './services/player-competitive-profile.service';
 
 @Module({
   imports: [
@@ -23,7 +24,11 @@ import { PlayersPublicController } from './controllers/players-public.controller
       City,
     ]),
   ],
-  providers: [PlayersService, PlayerCompetitiveSummaryService],
+  providers: [
+    PlayersService,
+    PlayerCompetitiveSummaryService,
+    PlayerCompetitiveProfileService,
+  ],
   controllers: [
     PlayersMeProfileController,
     PlayersFavoritesController,

@@ -2347,6 +2347,156 @@
         ],
         "type": "object"
       },
+      "PlayerCompetitiveCareerDto": {
+        "properties": {
+          "draws": {
+            "example": 3,
+            "type": "number"
+          },
+          "losses": {
+            "example": 39,
+            "type": "number"
+          },
+          "matchesPlayed": {
+            "example": 124,
+            "type": "number"
+          },
+          "winRate": {
+            "example": 0.6613,
+            "type": "number"
+          },
+          "wins": {
+            "example": 82,
+            "type": "number"
+          }
+        },
+        "required": [
+          "matchesPlayed",
+          "wins",
+          "losses",
+          "draws",
+          "winRate"
+        ],
+        "type": "object"
+      },
+      "PlayerCompetitiveProfileActivityDto": {
+        "properties": {
+          "lastPlayedAt": {
+            "example": "2026-03-05T03:33:03.677Z",
+            "nullable": true,
+            "type": "string"
+          },
+          "matchesLast30Days": {
+            "example": 8,
+            "type": "number"
+          }
+        },
+        "required": [
+          "matchesLast30Days"
+        ],
+        "type": "object"
+      },
+      "PlayerCompetitiveProfileDto": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/PlayerCompetitiveProfileActivityDto"
+          },
+          "avatarUrl": {
+            "example": "https://cdn.test/user-avatar.png",
+            "nullable": true,
+            "type": "string"
+          },
+          "career": {
+            "$ref": "#/components/schemas/PlayerCompetitiveCareerDto"
+          },
+          "displayName": {
+            "example": "Lucas Fasolato",
+            "nullable": true,
+            "type": "string"
+          },
+          "ranking": {
+            "$ref": "#/components/schemas/PlayerCompetitiveRankingDto"
+          },
+          "streaks": {
+            "$ref": "#/components/schemas/PlayerCompetitiveProfileStreaksDto"
+          },
+          "userId": {
+            "example": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "career",
+          "ranking",
+          "streaks",
+          "activity"
+        ],
+        "type": "object"
+      },
+      "PlayerCompetitiveProfileStreakDto": {
+        "properties": {
+          "count": {
+            "example": 3,
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "WIN",
+              "LOSS",
+              "DRAW"
+            ],
+            "example": "WIN",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "count"
+        ],
+        "type": "object"
+      },
+      "PlayerCompetitiveProfileStreaksDto": {
+        "properties": {
+          "best": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlayerCompetitiveProfileStreakDto"
+              }
+            ],
+            "nullable": true
+          },
+          "current": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlayerCompetitiveProfileStreakDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "type": "object"
+      },
+      "PlayerCompetitiveRankingDto": {
+        "properties": {
+          "currentPosition": {
+            "example": 14,
+            "nullable": true,
+            "type": "number"
+          },
+          "elo": {
+            "example": 1470,
+            "nullable": true,
+            "type": "number"
+          },
+          "peakPosition": {
+            "example": 9,
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "PlayerCompetitiveSummaryDto": {
         "properties": {
           "activity": {
@@ -2782,6 +2932,62 @@
           "categoryKey",
           "recentMovement",
           "eligibility"
+        ],
+        "type": "object"
+      },
+      "RankingMovementFeedItemDto": {
+        "properties": {
+          "displayName": {
+            "example": "Juan Perez",
+            "nullable": true,
+            "type": "string"
+          },
+          "newPosition": {
+            "example": 14,
+            "type": "number"
+          },
+          "oldPosition": {
+            "example": 16,
+            "type": "number"
+          },
+          "timestamp": {
+            "example": "2026-03-07T10:00:00.000Z",
+            "type": "string"
+          },
+          "type": {
+            "example": "PASSED_BY",
+            "type": "string"
+          },
+          "userId": {
+            "example": "11111111-1111-4111-8111-111111111111",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "oldPosition",
+          "newPosition",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "RankingMovementFeedResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RankingMovementFeedItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "example": "2026-03-07T10:00:00.000Z|notification-id|YOU_MOVED|14|self",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -9244,9 +9450,49 @@
         ]
       }
     },
+    "/players/{id}/competitive-profile": {
+      "get": {
+        "description": "Returns the public full-page competitive profile for a given player, including career totals, ranking positions, streaks and recent activity. Use GET /players/:id/competitive-summary for compact scouting/hover-card data such as recent form, strengths and recent match previews. This endpoint intentionally overlaps only on core identity and top-level competitive indicators.",
+        "operationId": "PlayersPublicController_getCompetitiveProfile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerCompetitiveProfileDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "Player not found"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get public competitive profile",
+        "tags": [
+          "players"
+        ]
+      }
+    },
     "/players/{id}/competitive-summary": {
       "get": {
-        "description": "Returns a compact, UI-ready competitive snapshot for a given player. Includes ELO, category, recent form, top strengths/endorsements and last confirmed matches. Intended for hover/tap cards from the ranking view. All sections that lack data return null/empty — never invented.",
+        "description": "Returns a compact, UI-ready competitive snapshot for a given player. Includes ELO, category, recent form, top strengths/endorsements and last confirmed matches. Use this for scouting hover cards, compact quick previews and ranking list context. For a public full-page profile, use GET /players/:id/competitive-profile. All sections that lack data return null/empty and are never invented.",
         "operationId": "PlayersPublicController_getCompetitiveSummary",
         "parameters": [
           {
@@ -9972,6 +10218,56 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "rankings"
+        ]
+      }
+    },
+    "/rankings/me/movement-feed": {
+      "get": {
+        "description": "Returns ranking movement events relevant to the authenticated user, ordered newest first. This is a cursor-paginated feed with a hard limit cap of 20 items per request.",
+        "operationId": "RankingsController_listMyMovementFeed",
+        "parameters": [
+          {
+            "description": "Page size from 1 to 20. Defaults to 20.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "description": "Opaque cursor returned by the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankingMovementFeedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "description": "Invalid cursor"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get ranking movement feed",
         "tags": [
           "rankings"
         ]

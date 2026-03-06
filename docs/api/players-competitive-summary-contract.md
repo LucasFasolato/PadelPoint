@@ -14,6 +14,17 @@ Endpoint requires JWT auth.
 
 Returns a compact, UI-ready competitive snapshot for a given player.
 Intended for **hover/tap scouting cards** from ranking or player-list views.
+
+Use this endpoint for **scouting compacto / quick preview**. It is not the public full-page profile.
+
+### Positioning vs `competitive-profile`
+
+- `GET /players/:id/competitive-summary` is the compact scouting contract.
+- `GET /players/:id/competitive-profile` is the public full-page profile contract.
+- Overlap is intentional on identity plus a few competitive indicators (`userId`, `displayName`, `avatarUrl`, `elo`, totals, current streak, `lastPlayedAt`).
+- `competitive-summary` is the only one that currently includes `city`, `strengths`, `recentMatches`, `competitive.category`, and `competitive.recentForm`.
+- `competitive-profile` is the only one that currently includes `ranking.currentPosition`, `ranking.peakPosition`, `streaks.best`, and `activity.matchesLast30Days`.
+- `competitive-profile` is not a superset of `competitive-summary`; clients should choose based on UX intent, not on "more fields".
 Aggregates all relevant data in a single request — no need to combine endpoints on the frontend.
 
 ### Path params

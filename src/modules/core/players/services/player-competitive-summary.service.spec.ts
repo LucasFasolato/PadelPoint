@@ -330,6 +330,30 @@ describe('PlayerCompetitiveSummaryService', () => {
     expect(result.competitive!.recentForm).toEqual(['W', 'W', 'W', 'L']);
   });
 
+  it('does not cap currentStreak to the recentForm window', async () => {
+    userRepo.findOne.mockResolvedValue(makeUser());
+
+    const winRow = makeMatchRow({ winnerTeam: 'A' });
+    const extendedWinRows = Array.from({ length: 6 }, () => ({
+      winnerTeam: 'A',
+      teamA1Id: USER_ID,
+      teamA2Id: null,
+      teamB1Id: '00000000-0000-4000-8000-000000000099',
+      teamB2Id: null,
+    }));
+
+    mockDataSource.query
+      .mockResolvedValueOnce([makePlayerDataRow()])
+      .mockResolvedValueOnce([winRow, winRow, winRow, winRow, winRow])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(extendedWinRows);
+
+    const result = await service.getSummary(USER_ID);
+
+    expect(result.competitive!.recentForm).toEqual(['W', 'W', 'W', 'W', 'W']);
+    expect(result.competitive!.currentStreak).toEqual({ type: 'WIN', count: 6 });
+  });
+
   // ─── Response shape ──────────────────────────────────────────────────────
 
   it('response shape always has all required top-level keys', async () => {
