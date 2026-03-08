@@ -1,4 +1,5 @@
 import { ChallengeInviteStatus } from '@core/challenges/entities/challenge-invite.entity';
+import { ChallengeCoordinationStatus } from '@core/challenges/enums/challenge-coordination-status.enum';
 import { ChallengeStatus } from '@core/challenges/enums/challenge-status.enum';
 import { ChallengeType } from '@core/challenges/enums/challenge-type.enum';
 import { MatchResultStatus } from '@core/matches/entities/match-result.entity';
@@ -44,6 +45,9 @@ export type MatchIntentItem = {
     cityName?: string | null;
     provinceCode?: string | null;
   };
+  coordinationStatus?: ChallengeCoordinationStatus | null;
+  scheduledAt?: string | null;
+  locationLabel?: string | null;
   matchId?: string | null;
   cta: {
     primary: 'Aceptar' | 'Rechazar' | 'Confirmar' | 'Ver' | 'Cargar resultado';
@@ -80,6 +84,9 @@ export type ChallengeIntentSource = {
   invitedOpponent?: IntentUserRef | null;
   message?: string | null;
   location?: IntentLocationRef | null;
+  coordinationStatus?: ChallengeCoordinationStatus | null;
+  scheduledAt?: Date | string | null;
+  locationLabel?: string | null;
   matchId?: string | null;
 };
 
@@ -130,6 +137,9 @@ export function mapChallengeIntent(
     opponentName: opponentAndPartner.opponentName,
     partnerName: opponentAndPartner.partnerName,
     location: source.location ?? {},
+    coordinationStatus: source.coordinationStatus ?? null,
+    scheduledAt: toIsoOrNull(source.scheduledAt),
+    locationLabel: source.locationLabel ?? null,
     matchId: source.matchId ?? null,
     cta: challengeCta(challengeId, status, myRole),
   };
@@ -140,7 +150,10 @@ export function mapPendingConfirmationIntent(
   userId: string,
 ): MatchIntentItem {
   const challenge = source.challenge ?? {};
-  const opponentAndPartner = resolveChallengeOpponentAndPartner(challenge, userId);
+  const opponentAndPartner = resolveChallengeOpponentAndPartner(
+    challenge,
+    userId,
+  );
   const intentType = resolveChallengeIntentType(challenge, userId);
   const status = mapPendingStatus(source.status);
   const matchId = source.id ?? '';
@@ -200,7 +213,8 @@ function resolveChallengeRole(
   source: ChallengeIntentSource,
   userId: string,
 ): MatchIntentRole {
-  if (source.teamA1Id === userId || source.teamA2Id === userId) return 'CREATOR';
+  if (source.teamA1Id === userId || source.teamA2Id === userId)
+    return 'CREATOR';
   return 'INVITEE';
 }
 
@@ -235,7 +249,9 @@ function resolveChallengeOpponentAndPartner(
 
   if (isTeamA) {
     return {
-      opponentName: toDisplayName(source.teamB1 ?? source.invitedOpponent ?? null),
+      opponentName: toDisplayName(
+        source.teamB1 ?? source.invitedOpponent ?? null,
+      ),
       partnerName: resolvePartnerForTeam(userId, source.teamA1, source.teamA2),
     };
   }
@@ -296,7 +312,9 @@ function mapChallengeStatus(
   return 'PENDING';
 }
 
-function mapPendingStatus(status?: MatchResultStatus | null): MatchIntentStatus {
+function mapPendingStatus(
+  status?: MatchResultStatus | null,
+): MatchIntentStatus {
   if (status === MatchResultStatus.PENDING_CONFIRM) return 'PENDING';
   if (status === MatchResultStatus.CONFIRMED) return 'MATCH_CREATED';
   if (
@@ -331,7 +349,10 @@ function challengeCta(
   role: MatchIntentRole,
 ): MatchIntentItem['cta'] {
   if (status === 'PENDING' && role === 'INVITEE') {
-    return { primary: 'Aceptar', href: challengeId ? `/challenges/${challengeId}` : undefined };
+    return {
+      primary: 'Aceptar',
+      href: challengeId ? `/challenges/${challengeId}` : undefined,
+    };
   }
   if (status === 'ACCEPTED') {
     return {
@@ -345,7 +366,10 @@ function challengeCta(
       href: challengeId ? `/matches?challengeId=${challengeId}` : undefined,
     };
   }
-  return { primary: 'Ver', href: challengeId ? `/challenges/${challengeId}` : undefined };
+  return {
+    primary: 'Ver',
+    href: challengeId ? `/challenges/${challengeId}` : undefined,
+  };
 }
 
 function findPartnerCta(
@@ -394,6 +418,15 @@ function toIsoOrEpoch(value?: Date | string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return new Date(0).toISOString();
   return parsed.toISOString();
+}
+
+function toIsoOrNull(value?: Date | string | null): string | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 export function isFindPartnerTaggedMessage(

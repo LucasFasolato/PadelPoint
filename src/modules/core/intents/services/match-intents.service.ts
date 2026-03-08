@@ -9,7 +9,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ChallengeInvite } from '@core/challenges/entities/challenge-invite.entity';
 import { Challenge } from '@core/challenges/entities/challenge.entity';
-import { MatchResult, MatchResultStatus } from '@core/matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '@core/matches/entities/match-result.entity';
 import { MatchType } from '@core/matches/enums/match-type.enum';
 import { ChallengeStatus } from '@core/challenges/enums/challenge-status.enum';
 import { ChallengeType } from '@core/challenges/enums/challenge-type.enum';
@@ -82,7 +85,11 @@ export class MatchIntentsService {
       userId,
       dto.leagueId,
     );
-    const exists = await this.hasActiveDirectIntent(userId, opponentUserId, mode);
+    const exists = await this.hasActiveDirectIntent(
+      userId,
+      opponentUserId,
+      mode,
+    );
     if (exists) {
       this.throwAlreadyActive('An active direct intent already exists');
     }
@@ -178,13 +185,16 @@ export class MatchIntentsService {
     const modeFilter = query.mode ?? MatchIntentModeFilter.ALL;
 
     try {
-      const [challengeItems, pendingItems, findPartnerItems] = await Promise.all([
-        this.safeLoad('challenges', () => this.loadChallengeIntents(userId)),
-        this.safeLoad('pending-confirmations', () =>
-          this.loadPendingConfirmationIntents(userId),
-        ),
-        this.safeLoad('find-partner', () => this.loadFindPartnerIntents(userId)),
-      ]);
+      const [challengeItems, pendingItems, findPartnerItems] =
+        await Promise.all([
+          this.safeLoad('challenges', () => this.loadChallengeIntents(userId)),
+          this.safeLoad('pending-confirmations', () =>
+            this.loadPendingConfirmationIntents(userId),
+          ),
+          this.safeLoad('find-partner', () =>
+            this.loadFindPartnerIntents(userId),
+          ),
+        ]);
 
       const items = [...challengeItems, ...pendingItems, ...findPartnerItems]
         .filter((item) => this.matchesStatusFilter(item, statusFilter))
@@ -217,7 +227,9 @@ export class MatchIntentsService {
     }
   }
 
-  private async loadChallengeIntents(userId: string): Promise<MatchIntentItem[]> {
+  private async loadChallengeIntents(
+    userId: string,
+  ): Promise<MatchIntentItem[]> {
     const challenges = await this.challengeRepo.find({
       where: [
         { teamA1Id: userId },
@@ -246,7 +258,9 @@ export class MatchIntentsService {
       where: { challengeId: In(challengeIds) },
       select: ['id', 'challengeId'],
     });
-    const matchByChallenge = new Map(matches.map((match) => [match.challengeId, match.id]));
+    const matchByChallenge = new Map(
+      matches.map((match) => [match.challengeId, match.id]),
+    );
 
     return challenges.map((challenge) =>
       mapChallengeIntent(
@@ -271,6 +285,9 @@ export class MatchIntentsService {
             cityName: challenge.teamA1?.city?.name ?? null,
             provinceCode: challenge.teamA1?.city?.province?.code ?? null,
           },
+          coordinationStatus: challenge.coordinationStatus ?? null,
+          scheduledAt: challenge.scheduledAt ?? null,
+          locationLabel: challenge.locationLabel ?? null,
           matchId: matchByChallenge.get(challenge.id) ?? null,
         },
         userId,
@@ -290,7 +307,9 @@ export class MatchIntentsService {
       .leftJoinAndSelect('c.teamA2', 'teamA2')
       .leftJoinAndSelect('c.teamB1', 'teamB1')
       .leftJoinAndSelect('c.teamB2', 'teamB2')
-      .where('m.status = :status', { status: MatchResultStatus.PENDING_CONFIRM })
+      .where('m.status = :status', {
+        status: MatchResultStatus.PENDING_CONFIRM,
+      })
       .andWhere('m."reportedByUserId" != :userId', { userId })
       .andWhere(
         '(c."teamA1Id" = :userId OR c."teamA2Id" = :userId OR c."teamB1Id" = :userId OR c."teamB2Id" = :userId)',
@@ -330,7 +349,8 @@ export class MatchIntentsService {
             message: match.challenge?.message,
             location: {
               cityName: match.challenge?.teamA1?.city?.name ?? null,
-              provinceCode: match.challenge?.teamA1?.city?.province?.code ?? null,
+              provinceCode:
+                match.challenge?.teamA1?.city?.province?.code ?? null,
             },
           },
         },
@@ -339,7 +359,9 @@ export class MatchIntentsService {
     );
   }
 
-  private async loadFindPartnerIntents(userId: string): Promise<MatchIntentItem[]> {
+  private async loadFindPartnerIntents(
+    userId: string,
+  ): Promise<MatchIntentItem[]> {
     const invites = await this.challengeInviteRepo.find({
       where: [{ inviteeId: userId }, { inviterId: userId }],
       relations: [
@@ -360,7 +382,9 @@ export class MatchIntentsService {
 
     if (invites.length === 0) return [];
 
-    const challengeIds = [...new Set(invites.map((invite) => invite.challengeId).filter(Boolean))];
+    const challengeIds = [
+      ...new Set(invites.map((invite) => invite.challengeId).filter(Boolean)),
+    ];
     const matches =
       challengeIds.length > 0
         ? await this.matchRepo.find({
@@ -368,7 +392,9 @@ export class MatchIntentsService {
             select: ['id', 'challengeId'],
           })
         : [];
-    const matchByChallenge = new Map(matches.map((match) => [match.challengeId, match.id]));
+    const matchByChallenge = new Map(
+      matches.map((match) => [match.challengeId, match.id]),
+    );
 
     return invites.map((invite) =>
       mapFindPartnerIntent(
@@ -571,6 +597,9 @@ export class MatchIntentsService {
           cityName: challenge.teamA1?.city?.name ?? null,
           provinceCode: challenge.teamA1?.city?.province?.code ?? null,
         },
+        coordinationStatus: challenge.coordinationStatus ?? null,
+        scheduledAt: challenge.scheduledAt ?? null,
+        locationLabel: challenge.locationLabel ?? null,
         matchId: match?.id ?? null,
       },
       userId,
@@ -640,7 +669,9 @@ export class MatchIntentsService {
     if (!expiresInHours) return null;
     const created = new Date(createdAtIso);
     if (Number.isNaN(created.getTime())) return null;
-    const expires = new Date(created.getTime() + expiresInHours * 60 * 60 * 1000);
+    const expires = new Date(
+      created.getTime() + expiresInHours * 60 * 60 * 1000,
+    );
     return expires.toISOString();
   }
 

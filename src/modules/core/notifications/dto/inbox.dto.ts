@@ -78,11 +78,20 @@ export class ChallengeInboxItemDto {
   @ApiProperty()
   status!: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  coordinationStatus?: string | null;
+
   @ApiProperty()
   opponentName!: string;
 
   @ApiPropertyOptional({ nullable: true })
   message?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
+  scheduledAt?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  locationLabel?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   updatedAt?: string | null;

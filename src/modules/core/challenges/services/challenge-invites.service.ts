@@ -9,13 +9,17 @@ import { DataSource, Repository } from 'typeorm';
 
 import { UsersService } from '../../users/services/users.service';
 import { Challenge } from '../entities/challenge.entity';
+import { ChallengeCoordinationStatus } from '../enums/challenge-coordination-status.enum';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import {
   ChallengeInvite,
   ChallengeInviteStatus,
   ChallengeSide,
 } from '../entities/challenge-invite.entity';
-import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '../../matches/entities/match-result.entity';
 import { MatchType } from '../../matches/enums/match-type.enum';
 import { MatchSource } from '../../matches/enums/match-source.enum';
 import { extractLeagueIntentContextLeagueId } from '../utils/league-intent-context.util';
@@ -255,6 +259,7 @@ export class ChallengeInvitesService {
 
       invite.status = ChallengeInviteStatus.ACCEPTED;
       ch.status = this.computeChallengeStatus(ch);
+      ch.coordinationStatus = ChallengeCoordinationStatus.ACCEPTED;
 
       await chRepo.save(ch);
       await this.materializeLeagueMatchDraftIfNeeded(

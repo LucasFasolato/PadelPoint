@@ -21,6 +21,7 @@ import {
   WinnerTeam,
 } from '../entities/match-result.entity';
 import { Challenge } from '../../challenges/entities/challenge.entity';
+import { ChallengeCoordinationStatus } from '../../challenges/enums/challenge-coordination-status.enum';
 import { ChallengeStatus } from '../../challenges/enums/challenge-status.enum';
 import { EloService } from '../../competitive/services/elo.service';
 import { LeagueStandingsService } from '../../leagues/services/league-standings.service';
@@ -839,7 +840,8 @@ export class MatchesService {
     const response: NonNullable<MatchResult['rankingImpact']> = {
       applied: value.applied,
       multiplier:
-        typeof value.multiplier === 'number' && Number.isFinite(value.multiplier)
+        typeof value.multiplier === 'number' &&
+        Number.isFinite(value.multiplier)
           ? value.multiplier
           : 0,
     };
@@ -889,7 +891,9 @@ export class MatchesService {
     if (args.history) return true;
     if (!this.shouldImpactRanking(args.match)) return false;
 
-    const rankingImpact = this.parseMatchRankingImpact(args.match.rankingImpact);
+    const rankingImpact = this.parseMatchRankingImpact(
+      args.match.rankingImpact,
+    );
     if (!rankingImpact || rankingImpact.applied !== true) {
       return false;
     }
@@ -900,8 +904,8 @@ export class MatchesService {
 
     const finalDelta =
       args.viewerTeam === WinnerTeam.A
-        ? rankingImpact.finalDelta?.teamA ?? 0
-        : rankingImpact.finalDelta?.teamB ?? 0;
+        ? (rankingImpact.finalDelta?.teamA ?? 0)
+        : (rankingImpact.finalDelta?.teamB ?? 0);
     return finalDelta !== 0;
   }
 
@@ -922,7 +926,9 @@ export class MatchesService {
     return rows
       .filter((row) => this.toIntegerOrNull(row.matchesPlayed) !== null)
       .filter(
-        (row) => (this.toIntegerOrNull(row.matchesPlayed) ?? 0) >= this.rankingMinMatches,
+        (row) =>
+          (this.toIntegerOrNull(row.matchesPlayed) ?? 0) >=
+          this.rankingMinMatches,
       )
       .map((row, index) => ({
         userId: String(row.userId ?? ''),
@@ -1979,18 +1985,26 @@ export class MatchesService {
       const challenge = manager.getRepository(Challenge).create({
         type: ChallengeType.DIRECT,
         status: ChallengeStatus.READY,
+        coordinationStatus:
+          dto.type === LeagueMatchType.SCHEDULED
+            ? ChallengeCoordinationStatus.SCHEDULED
+            : null,
         matchType: this.normalizeMatchType(dto.matchType),
         teamA1Id: dto.teamA1Id,
         teamA2Id: hasA2 ? teamA2Id : null,
         teamB1Id: dto.teamB1Id,
         teamB2Id: hasB2 ? teamB2Id : null,
         reservationId: null,
+        scheduledAt: dto.scheduledAt
+          ? this.parseMatchDateOrThrow(dto.scheduledAt, 'scheduledAt')
+          : null,
+        locationLabel: null,
+        clubId: null,
+        courtId: null,
       });
       await manager.getRepository(Challenge).save(challenge);
 
-      const scheduledAt = dto.scheduledAt
-        ? this.parseMatchDateOrThrow(dto.scheduledAt, 'scheduledAt')
-        : null;
+      const scheduledAt = challenge.scheduledAt;
 
       if (dto.type === LeagueMatchType.PLAYED) {
         if (!dto.playedAt) {
@@ -4068,7 +4082,10 @@ export class MatchesService {
       ? WinnerTeam.A
       : WinnerTeam.B;
     const result = this.resolveViewerMatchResult(match.winnerTeam, viewerTeam);
-    const eloHistory = await this.getViewerMatchEloHistory(viewerUserId, matchId);
+    const eloHistory = await this.getViewerMatchEloHistory(
+      viewerUserId,
+      matchId,
+    );
     const impactRanking = this.didMatchActuallyImpactRanking({
       match,
       viewerTeam,

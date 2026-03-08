@@ -14,10 +14,13 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengesService } from '../services/challenges.service';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
+import { ChallengeCoordinationService } from '../services/challenge-coordination.service';
 
 import { CreateDirectChallengeDto } from '../dto/create-direct-challenge.dto';
 import { CreateOpenChallengeDto } from '../dto/create-open-challenge.dto';
 import { ListOpenQueryDto } from '../dto/list-open-query.dto';
+import { CreateChallengeProposalDto } from '../dto/create-challenge-proposal.dto';
+import { CreateChallengeMessageDto } from '../dto/create-challenge-message.dto';
 
 type AuthUser = {
   userId: string;
@@ -29,7 +32,10 @@ type AuthUser = {
 @UseGuards(JwtAuthGuard, CityRequiredGuard)
 @Controller('challenges')
 export class ChallengesController {
-  constructor(private readonly service: ChallengesService) {}
+  constructor(
+    private readonly service: ChallengesService,
+    private readonly coordinationService: ChallengeCoordinationService,
+  ) {}
 
   @Post('direct')
   createDirect(@Req() req: Request, @Body() dto: CreateDirectChallengeDto) {
@@ -83,6 +89,58 @@ export class ChallengesController {
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.service.getById(id);
+  }
+
+  @Get(':id/coordination')
+  getCoordination(@Req() req: Request, @Param('id') id: string) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.getCoordinationState(id, me.userId);
+  }
+
+  @Get(':id/messages')
+  getMessages(@Req() req: Request, @Param('id') id: string) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.listMessages(id, me.userId);
+  }
+
+  @Post(':id/proposals')
+  createProposal(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: CreateChallengeProposalDto,
+  ) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.createProposal(id, me.userId, dto);
+  }
+
+  @Post(':id/proposals/:proposalId/accept')
+  acceptProposal(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('proposalId') proposalId: string,
+  ) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.acceptProposal(id, proposalId, me.userId);
+  }
+
+  @Post(':id/proposals/:proposalId/reject')
+  rejectProposal(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('proposalId') proposalId: string,
+  ) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.rejectProposal(id, proposalId, me.userId);
+  }
+
+  @Post(':id/messages')
+  createMessage(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: CreateChallengeMessageDto,
+  ) {
+    const me = req.user as AuthUser;
+    return this.coordinationService.createMessage(id, me.userId, dto);
   }
 
   // DIRECT: accept/reject by invited opponent

@@ -23,7 +23,12 @@ export class MatchIntentItemDto {
   id: string;
 
   @ApiProperty({
-    enum: ['CHALLENGE', 'OPEN_CHALLENGE', 'PENDING_CONFIRMATION', 'FIND_PARTNER'],
+    enum: [
+      'CHALLENGE',
+      'OPEN_CHALLENGE',
+      'PENDING_CONFIRMATION',
+      'FIND_PARTNER',
+    ],
   })
   sourceType:
     | 'CHALLENGE'
@@ -61,6 +66,15 @@ export class MatchIntentItemDto {
 
   @ApiPropertyOptional({ type: MatchIntentLocationDto })
   location?: MatchIntentLocationDto;
+
+  @ApiPropertyOptional({ nullable: true })
+  coordinationStatus?: 'accepted' | 'coordinating' | 'scheduled' | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
+  scheduledAt?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  locationLabel?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   matchId?: string | null;

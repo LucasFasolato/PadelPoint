@@ -14,10 +14,14 @@ import { UserNotificationsService } from '@/modules/core/notifications/services/
 import { NotificationsGateway } from '@/modules/core/notifications/gateways/notifications.gateway';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
 import { Challenge } from '../entities/challenge.entity';
+import { ChallengeCoordinationStatus } from '../enums/challenge-coordination-status.enum';
 import { ChallengeStatus } from '../enums/challenge-status.enum';
 import { ChallengeType } from '../enums/challenge-type.enum';
 import { User } from '../../users/entities/user.entity';
-import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '../../matches/entities/match-result.entity';
 import { MatchType } from '../../matches/enums/match-type.enum';
 import { MatchSource } from '../../matches/enums/match-source.enum';
 import {
@@ -128,6 +132,11 @@ export class ChallengesService {
       targetCategory: null,
       message: params.message?.trim() || null,
       matchType: params.matchType ?? MatchType.COMPETITIVE,
+      coordinationStatus: null,
+      scheduledAt: null,
+      locationLabel: null,
+      clubId: null,
+      courtId: null,
     });
 
     const saved = await this.repo.save(ent);
@@ -222,6 +231,11 @@ export class ChallengesService {
       targetCategory: params.targetCategory,
       message: params.message?.trim() || null,
       matchType: params.matchType ?? MatchType.COMPETITIVE,
+      coordinationStatus: null,
+      scheduledAt: null,
+      locationLabel: null,
+      clubId: null,
+      courtId: null,
     });
 
     const saved = await this.repo.save(ent);
@@ -325,6 +339,7 @@ export class ChallengesService {
     }
 
     ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
+    ch.coordinationStatus = ChallengeCoordinationStatus.ACCEPTED;
     const saved = await this.repo.save(ch);
     await this.materializeLeagueMatchDraftIfNeeded(saved, meUserId);
 
@@ -517,6 +532,7 @@ export class ChallengesService {
       ch.teamB2Id = partner ? partner.id : null;
 
       ch.status = this.computeStatus(ch, ChallengeStatus.ACCEPTED);
+      ch.coordinationStatus = ChallengeCoordinationStatus.ACCEPTED;
 
       await repo.save(ch);
       await this.materializeLeagueMatchDraftIfNeeded(
@@ -673,17 +689,24 @@ export class ChallengesService {
 
   private toView(c: Challenge) {
     const status = c.status;
+    const coordinationStatus = this.resolveCoordinationStatus(c);
 
     return {
       id: c.id,
       type: c.type,
       status,
+      coordinationStatus,
       matchType: c.matchType ?? MatchType.COMPETITIVE,
-      impactRanking: (c.matchType ?? MatchType.COMPETITIVE) === MatchType.COMPETITIVE,
+      impactRanking:
+        (c.matchType ?? MatchType.COMPETITIVE) === MatchType.COMPETITIVE,
 
       targetCategory: c.targetCategory,
       reservationId: c.reservationId,
       message: c.message,
+      scheduledAt: c.scheduledAt ? c.scheduledAt.toISOString() : null,
+      locationLabel: c.locationLabel ?? null,
+      clubId: c.clubId ?? null,
+      courtId: c.courtId ?? null,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
 
@@ -790,6 +813,24 @@ export class ChallengesService {
     if (value instanceof Date) return value.toISOString();
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  private resolveCoordinationStatus(
+    challenge: Pick<Challenge, 'status' | 'coordinationStatus' | 'scheduledAt'>,
+  ): ChallengeCoordinationStatus | null {
+    if (challenge.coordinationStatus) {
+      return challenge.coordinationStatus;
+    }
+    if (challenge.scheduledAt) {
+      return ChallengeCoordinationStatus.SCHEDULED;
+    }
+    if (
+      challenge.status === ChallengeStatus.ACCEPTED ||
+      challenge.status === ChallengeStatus.READY
+    ) {
+      return ChallengeCoordinationStatus.ACCEPTED;
+    }
+    return null;
   }
 
   private async materializeLeagueMatchDraftIfNeeded(

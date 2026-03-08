@@ -49,8 +49,11 @@ export type ChallengeDTO = {
   id: string;
   type: string;
   status: string;
+  coordinationStatus?: string | null;
   opponentName: string;
   message?: string | null;
+  scheduledAt?: string | null;
+  locationLabel?: string | null;
   updatedAt?: string | null;
   cta: { primary: 'Ver' | 'Responder'; href?: string };
 };
@@ -112,7 +115,10 @@ type ChallengeRawRow = {
   id: string;
   type: string | null;
   status: string | null;
+  coordinationStatus: string | null;
   message: string | null;
+  scheduledAt: Date | string | null;
+  locationLabel: string | null;
   updatedAt: Date | string | null;
   teamA1Id: string | null;
   teamB1Id: string | null;
@@ -389,7 +395,10 @@ export class InboxService {
         'c.id AS id',
         'c.type AS type',
         'c.status AS status',
+        'c."coordinationStatus" AS "coordinationStatus"',
         'c.message AS message',
+        'c."scheduledAt" AS "scheduledAt"',
+        'c."locationLabel" AS "locationLabel"',
         'c."updatedAt" AS "updatedAt"',
         'c."teamA1Id" AS "teamA1Id"',
         'c."teamB1Id" AS "teamB1Id"',
@@ -445,8 +454,13 @@ export class InboxService {
       id: row.id,
       type,
       status,
+      coordinationStatus: row.coordinationStatus
+        ? row.coordinationStatus.toUpperCase()
+        : null,
       opponentName,
       message: row.message ?? null,
+      scheduledAt: this.toNullableIso(row.scheduledAt),
+      locationLabel: row.locationLabel ?? null,
       updatedAt: this.toNullableIso(row.updatedAt),
       cta: {
         primary: needsResponse ? 'Responder' : 'Ver',
