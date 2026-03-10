@@ -31,6 +31,13 @@ import { ChallengeCoordinationService } from './challenge-coordination.service';
 
 type KnownUser = Pick<User, 'id' | 'displayName' | 'email'>;
 
+// Flow ownership map for challenge coordination compatibility:
+// - `getCoordinationState`, `listMessages`, `createProposal`, `createMessage`:
+//   fallback flows. Delegate when the legacy challenge already correlates to a
+//   canonical match; otherwise legacy keeps ownership.
+// - `acceptProposal`, `rejectProposal`: fallback flows with an extra invariant:
+//   the public proposal id must resolve canonically, otherwise legacy keeps the
+//   old proposal-id contract and avoids reader/writer drift.
 @Injectable()
 export class ChallengesV2CoordinationBridgeService {
   constructor(
@@ -51,11 +58,12 @@ export class ChallengesV2CoordinationBridgeService {
     challengeId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
+    );
 
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
+    if (this.shouldFallbackToLegacyCoordinationRead(context.match)) {
       // Keep pre-v2 challenges readable until the legacy scheduling writes
       // switch over to the canonical match aggregate in the next bridge lot.
       return this.legacyCoordinationService.getCoordinationState(
@@ -64,7 +72,8 @@ export class ChallengesV2CoordinationBridgeService {
       );
     }
 
-    const usersById = await this.loadUsersById(challenge, match);
+    const match = context.match;
+    const usersById = await this.loadUsersById(context.challenge, match);
     const clubsById = await this.loadClubNamesById(match);
     const courtsById = await this.loadCourtNamesById(match);
     const proposals = this.sortByCreatedDesc(match.proposals ?? []);
@@ -76,17 +85,20 @@ export class ChallengesV2CoordinationBridgeService {
       ) ?? null;
 
     return {
-      challengeId: challenge.id,
-      challengeStatus: challenge.status,
-      coordinationStatus: this.resolveCoordinationStatus(challenge, match),
-      matchType: challenge.matchType,
+      challengeId: context.challenge.id,
+      challengeStatus: context.challenge.status,
+      coordinationStatus: this.resolveCoordinationStatus(
+        context.challenge,
+        match,
+      ),
+      matchType: context.challenge.matchType,
       matchId: match.id,
-      participants: this.getParticipants(challenge).map((participant) =>
+      participants: this.getParticipants(context.challenge).map((participant) =>
         this.toRequiredUserDto(participant),
       ),
-      opponent: this.resolveOpponent(challenge, actorUserId),
+      opponent: this.resolveOpponent(context.challenge, actorUserId),
       acceptedSchedule: this.resolveAcceptedSchedule(
-        challenge,
+        context.challenge,
         match,
         clubsById,
         courtsById,
@@ -107,18 +119,20 @@ export class ChallengesV2CoordinationBridgeService {
     challengeId: string,
     actorUserId: string,
   ): Promise<ChallengeMessageResponseDto[]> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
+    );
 
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
+    if (this.shouldFallbackToLegacyCoordinationRead(context.match)) {
       return this.legacyCoordinationService.listMessages(
         challengeId,
         actorUserId,
       );
     }
 
-    const usersById = await this.loadUsersById(challenge, match);
+    const match = context.match;
+    const usersById = await this.loadUsersById(context.challenge, match);
     return this.sortByCreatedAsc(match.messages ?? []).map((message) =>
       this.toMessageDto(message, usersById),
     );
@@ -129,11 +143,12 @@ export class ChallengesV2CoordinationBridgeService {
     actorUserId: string,
     dto: CreateChallengeProposalDto,
   ): Promise<ChallengeCoordinationResponseDto> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
+    );
 
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
+    if (this.shouldFallbackToLegacyCoordinationWrite(context.match)) {
       return this.legacyCoordinationService.createProposal(
         challengeId,
         actorUserId,
@@ -141,6 +156,7 @@ export class ChallengesV2CoordinationBridgeService {
       );
     }
 
+    const match = context.match;
     await this.matchSchedulingService.createProposal(match.id, actorUserId, {
       scheduledAt: dto.scheduledAt,
       locationLabel: dto.locationLabel,
@@ -157,26 +173,14 @@ export class ChallengesV2CoordinationBridgeService {
     proposalId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
-
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
-      return this.legacyCoordinationService.acceptProposal(
-        challengeId,
-        proposalId,
-        actorUserId,
-      );
-    }
-
-    const canonicalProposalId = this.resolveCanonicalProposalId(
-      match,
-      proposalId,
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
     );
-    if (!canonicalProposalId) {
-      // Keep legacy proposal ids working while pre-v2 clients and cached reads
-      // are still in circulation. Canonical ids are already exposed by the
-      // delegated coordination reads when a correlated match exists.
+
+    if (
+      this.shouldFallbackToLegacyProposalDecision(context.match, proposalId)
+    ) {
       return this.legacyCoordinationService.acceptProposal(
         challengeId,
         proposalId,
@@ -184,9 +188,10 @@ export class ChallengesV2CoordinationBridgeService {
       );
     }
 
+    const match = context.match;
     await this.matchSchedulingService.acceptProposal(
       match.id,
-      canonicalProposalId,
+      proposalId,
       actorUserId,
     );
 
@@ -198,23 +203,14 @@ export class ChallengesV2CoordinationBridgeService {
     proposalId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
-
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
-      return this.legacyCoordinationService.rejectProposal(
-        challengeId,
-        proposalId,
-        actorUserId,
-      );
-    }
-
-    const canonicalProposalId = this.resolveCanonicalProposalId(
-      match,
-      proposalId,
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
     );
-    if (!canonicalProposalId) {
+
+    if (
+      this.shouldFallbackToLegacyProposalDecision(context.match, proposalId)
+    ) {
       return this.legacyCoordinationService.rejectProposal(
         challengeId,
         proposalId,
@@ -222,9 +218,10 @@ export class ChallengesV2CoordinationBridgeService {
       );
     }
 
+    const match = context.match;
     await this.matchSchedulingService.rejectProposal(
       match.id,
-      canonicalProposalId,
+      proposalId,
       actorUserId,
       {},
     );
@@ -237,11 +234,12 @@ export class ChallengesV2CoordinationBridgeService {
     actorUserId: string,
     dto: CreateChallengeMessageDto,
   ): Promise<ChallengeMessageResponseDto> {
-    const challenge = await this.getChallengeOrThrow(challengeId);
-    this.assertParticipantOrThrow(challenge, actorUserId);
+    const context = await this.resolveCoordinationContext(
+      challengeId,
+      actorUserId,
+    );
 
-    const match = await this.findCanonicalMatch(challengeId);
-    if (!match) {
+    if (this.shouldFallbackToLegacyCoordinationWrite(context.match)) {
       return this.legacyCoordinationService.createMessage(
         challengeId,
         actorUserId,
@@ -249,6 +247,7 @@ export class ChallengesV2CoordinationBridgeService {
       );
     }
 
+    const match = context.match;
     const createdMessage = await this.matchSchedulingService.postMessage(
       match.id,
       actorUserId,
@@ -263,10 +262,23 @@ export class ChallengesV2CoordinationBridgeService {
       return hydratedMessage;
     }
 
-    const usersById = await this.loadUsersByIds(challenge, [
+    const usersById = await this.loadUsersByIds(context.challenge, [
       createdMessage.senderUserId,
     ]);
     return this.toMessageDto(createdMessage, usersById);
+  }
+
+  private async resolveCoordinationContext(
+    challengeId: string,
+    actorUserId: string,
+  ): Promise<{ challenge: Challenge; match: MatchResponseDto | null }> {
+    const challenge = await this.getChallengeOrThrow(challengeId);
+    this.assertParticipantOrThrow(challenge, actorUserId);
+
+    return {
+      challenge,
+      match: await this.resolveCanonicalMatchForChallenge(challengeId),
+    };
   }
 
   private async getChallengeOrThrow(challengeId: string): Promise<Challenge> {
@@ -405,10 +417,48 @@ export class ChallengesV2CoordinationBridgeService {
     return null;
   }
 
-  private async findCanonicalMatch(
+  private async resolveCanonicalMatchForChallenge(
     challengeId: string,
   ): Promise<MatchResponseDto | null> {
-    return this.matchQueryService.findByLegacyChallengeId(challengeId);
+    const match =
+      await this.matchQueryService.findByLegacyChallengeId(challengeId);
+
+    return this.hasSafeLegacyChallengeCorrelation(match, challengeId)
+      ? match
+      : null;
+  }
+
+  private hasSafeLegacyChallengeCorrelation(
+    match: MatchResponseDto | null,
+    challengeId: string,
+  ): match is MatchResponseDto {
+    return Boolean(match) && match.legacyChallengeId === challengeId;
+  }
+
+  private shouldFallbackToLegacyCoordinationRead(
+    match: MatchResponseDto | null,
+  ): boolean {
+    return !match;
+  }
+
+  private shouldFallbackToLegacyCoordinationWrite(
+    match: MatchResponseDto | null,
+  ): boolean {
+    return !match;
+  }
+
+  private shouldFallbackToLegacyProposalDecision(
+    match: MatchResponseDto | null,
+    proposalId: string,
+  ): boolean {
+    if (!match) {
+      return true;
+    }
+
+    // Keep legacy proposal ids working while pre-v2 clients and cached reads
+    // are still in circulation. Canonical ids are exposed only after a safe
+    // delegated read, so unresolved public ids must stay on legacy.
+    return !this.isResolvableCanonicalProposalId(match, proposalId);
   }
 
   private resolveCanonicalProposalId(
@@ -419,6 +469,13 @@ export class ChallengesV2CoordinationBridgeService {
       (candidate) => candidate.id === proposalId,
     );
     return proposal?.id ?? null;
+  }
+
+  private isResolvableCanonicalProposalId(
+    match: MatchResponseDto,
+    proposalId: string,
+  ): boolean {
+    return this.resolveCanonicalProposalId(match, proposalId) !== null;
   }
 
   private resolveAcceptedSchedule(

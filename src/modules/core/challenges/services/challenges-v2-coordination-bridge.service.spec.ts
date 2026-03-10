@@ -365,6 +365,35 @@ describe('ChallengesV2CoordinationBridgeService', () => {
     );
   });
 
+  it('falls back to the legacy proposal writer when the canonical lookup loses the observable legacy challenge correlation', async () => {
+    const proposalDto: CreateChallengeProposalDto = {
+      scheduledAt: '2026-03-12T19:00:00.000Z',
+    };
+
+    matchQueryService.findByLegacyChallengeId.mockResolvedValue(
+      makeCanonicalMatch({
+        legacyChallengeId: 'challenge-other',
+      }),
+    );
+    legacyCoordinationService.createProposal.mockResolvedValue({
+      challengeId: 'challenge-1',
+      source: 'legacy-drift-guard',
+    });
+
+    await expect(
+      service.createProposal('challenge-1', 'user-1', proposalDto),
+    ).resolves.toEqual({
+      challengeId: 'challenge-1',
+      source: 'legacy-drift-guard',
+    });
+    expect(legacyCoordinationService.createProposal).toHaveBeenCalledWith(
+      'challenge-1',
+      'user-1',
+      proposalDto,
+    );
+    expect(matchSchedulingService.createProposal).not.toHaveBeenCalled();
+  });
+
   it('accepts a canonical proposal when the public proposal id is resolvable', async () => {
     const correlatedMatch = makeCanonicalMatch({
       proposals: [
@@ -671,6 +700,29 @@ describe('ChallengesV2CoordinationBridgeService', () => {
       'user-1',
     );
     expect(legacyCoordinationService.listMessages).toHaveBeenCalledWith(
+      'challenge-1',
+      'user-1',
+    );
+  });
+
+  it('falls back to the legacy coordination reader when the canonical lookup does not preserve the observable challenge id', async () => {
+    matchQueryService.findByLegacyChallengeId.mockResolvedValue(
+      makeCanonicalMatch({
+        legacyChallengeId: 'challenge-other',
+      }),
+    );
+    legacyCoordinationService.getCoordinationState.mockResolvedValue({
+      challengeId: 'challenge-1',
+      source: 'legacy-drift-guard',
+    });
+
+    await expect(
+      service.getCoordinationState('challenge-1', 'user-1'),
+    ).resolves.toEqual({
+      challengeId: 'challenge-1',
+      source: 'legacy-drift-guard',
+    });
+    expect(legacyCoordinationService.getCoordinationState).toHaveBeenCalledWith(
       'challenge-1',
       'user-1',
     );

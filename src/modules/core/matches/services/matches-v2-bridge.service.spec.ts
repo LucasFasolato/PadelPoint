@@ -355,6 +355,25 @@ describe('MatchesV2BridgeService', () => {
     expect(matchResultLifecycleService.reportResult).not.toHaveBeenCalled();
   });
 
+  it('falls back to legacy reportMatch when the canonical lookup does not preserve the observable legacy challenge correlation', async () => {
+    matchQueryService.findByLegacyChallengeId.mockResolvedValue({
+      id: 'match-v2-1',
+      legacyChallengeId: 'challenge-other',
+      legacyMatchResultId: 'legacy-match-1',
+    });
+    matchesService.reportMatch.mockResolvedValue({ id: 'legacy-match-1' });
+
+    const dto = {
+      challengeId: 'challenge-1',
+      sets: [{ a: 6, b: 4 }],
+    };
+    const result = await service.reportResult('user-1', dto as any);
+
+    expect(result).toEqual({ id: 'legacy-match-1' });
+    expect(matchesService.reportMatch).toHaveBeenCalledWith('user-1', dto);
+    expect(matchResultLifecycleService.reportResult).not.toHaveBeenCalled();
+  });
+
   it('delegates confirmResult to matches-v2 when there is a correlated legacy result id', async () => {
     matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
       id: 'match-v2-1',
@@ -388,6 +407,29 @@ describe('MatchesV2BridgeService', () => {
 
   it('falls back to legacy confirmMatch when no canonical correlation exists', async () => {
     matchQueryService.findByLegacyMatchResultId.mockResolvedValue(null);
+    matchesService.confirmMatch.mockResolvedValue({
+      id: 'legacy-match-1',
+      status: MatchResultStatus.CONFIRMED,
+    });
+
+    const result = await service.confirmResult('user-2', 'legacy-match-1');
+
+    expect(result).toEqual({
+      id: 'legacy-match-1',
+      status: MatchResultStatus.CONFIRMED,
+    });
+    expect(matchesService.confirmMatch).toHaveBeenCalledWith(
+      'user-2',
+      'legacy-match-1',
+    );
+    expect(matchResultLifecycleService.confirmResult).not.toHaveBeenCalled();
+  });
+
+  it('falls back to legacy confirmMatch when the canonical lookup does not preserve the observable legacy result id', async () => {
+    matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
+      id: 'match-v2-1',
+      legacyMatchResultId: 'legacy-match-other',
+    });
     matchesService.confirmMatch.mockResolvedValue({
       id: 'legacy-match-1',
       status: MatchResultStatus.CONFIRMED,

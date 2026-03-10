@@ -27,6 +27,17 @@ type LegacyPendingConfirmationsCursorPayload = {
   id: string;
 };
 
+// Flow ownership map for legacy `/matches` compatibility:
+// - `listMyMatches`, `listPendingConfirmations`: v2-owned reads.
+// - `reportResult`, `confirmResult`, `rejectResult`: fallback flows that
+//   delegate only when canonical correlation preserves the observable legacy id.
+// - `openDispute`: fallback-only. Legacy confirmed-only windowed semantics do
+//   not overlap cleanly with canonical dispute opening.
+// - `resolveDispute`: fallback flow with a narrow delegated subset; all other
+//   admin-only or semantically incompatible cases stay on legacy.
+// - `admin-confirm`, `resolve-confirm-as-is`: legacy-owned in the controller
+//   because league-admin override semantics and audit contracts are not modeled
+//   in matches-v2 yet.
 @Injectable()
 export class MatchesV2BridgeService {
   constructor(
@@ -113,20 +124,18 @@ export class MatchesV2BridgeService {
   }
 
   async reportResult(userId: string, dto: ReportMatchDto) {
-    const canonicalMatch = await this.matchQueryService.findByLegacyChallengeId(
+    const canonicalMatch = await this.resolveCanonicalMatchForLegacyChallenge(
       dto.challengeId,
     );
 
-    // Legacy callers still chain match detail and other legacy routes by the
-    // observable match_result id. Until those paths move to matches-v2 as
-    // well, only delegate reportResult when the canonical aggregate already
-    // carries a stable legacy correlation.
-    if (!canonicalMatch?.legacyMatchResultId) {
+    if (this.shouldFallbackLegacyReportResult(canonicalMatch)) {
       return this.matchesService.reportMatch(userId, dto);
     }
 
+    const delegatedMatch = canonicalMatch;
+
     const result = await this.matchResultLifecycleService.reportResult(
-      canonicalMatch.id,
+      delegatedMatch.id,
       userId,
       {
         playedAt: dto.playedAt,
@@ -139,16 +148,16 @@ export class MatchesV2BridgeService {
 
   async confirmResult(userId: string, legacyMatchResultId: string) {
     const canonicalMatch =
-      await this.matchQueryService.findByLegacyMatchResultId(
-        legacyMatchResultId,
-      );
+      await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
-    if (!canonicalMatch) {
+    if (this.shouldFallbackLegacyResultLifecycle(canonicalMatch)) {
       return this.matchesService.confirmMatch(userId, legacyMatchResultId);
     }
 
+    const delegatedMatch = canonicalMatch;
+
     const result = await this.matchResultLifecycleService.confirmResult(
-      canonicalMatch.id,
+      delegatedMatch.id,
       userId,
       {},
     );
@@ -162,11 +171,9 @@ export class MatchesV2BridgeService {
     reason?: string,
   ) {
     const canonicalMatch =
-      await this.matchQueryService.findByLegacyMatchResultId(
-        legacyMatchResultId,
-      );
+      await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
-    if (!canonicalMatch) {
+    if (this.shouldFallbackLegacyResultLifecycle(canonicalMatch)) {
       return this.matchesService.rejectMatch(
         userId,
         legacyMatchResultId,
@@ -174,8 +181,10 @@ export class MatchesV2BridgeService {
       );
     }
 
+    const delegatedMatch = canonicalMatch;
+
     const result = await this.matchResultLifecycleService.rejectResult(
-      canonicalMatch.id,
+      delegatedMatch.id,
       userId,
       {
         reasonCode: MatchRejectionReasonCode.OTHER,
@@ -192,21 +201,12 @@ export class MatchesV2BridgeService {
     dto: DisputeMatchDto,
   ) {
     const canonicalMatch =
-      await this.matchQueryService.findByLegacyMatchResultId(
-        legacyMatchResultId,
-      );
-    const canonicalReasonCode = this.toCanonicalDisputeReasonCode(
-      dto.reasonCode,
-    );
+      await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
-    if (!canonicalMatch || !canonicalReasonCode) {
+    if (this.shouldFallbackLegacyOpenDispute(canonicalMatch, dto)) {
       return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
     }
 
-    // Legacy dispute is confirmed-only, enforces a dispute window and is
-    // idempotent when the match is already disputed. Canonical dispute is for
-    // reported/rejected results and rejects already-open disputes, so there is
-    // no clean overlap to delegate yet without changing the public contract.
     return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
   }
 
@@ -216,14 +216,9 @@ export class MatchesV2BridgeService {
     dto: ResolveDisputeDto,
   ) {
     const canonicalMatch =
-      await this.matchQueryService.findByLegacyMatchResultId(
-        legacyMatchResultId,
-      );
-    const canonicalResolution = this.toCanonicalDisputeResolution(
-      dto.resolution,
-    );
+      await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
-    if (!canonicalMatch || !canonicalResolution) {
+    if (this.shouldFallbackLegacyResolveDispute(canonicalMatch, userId, dto)) {
       return this.matchesService.resolveDispute(
         userId,
         legacyMatchResultId,
@@ -231,22 +226,13 @@ export class MatchesV2BridgeService {
       );
     }
 
-    // Safe subset only: the public route is admin-owned, but matches-v2 models
-    // participant resolution. Delegate only when the admin caller also matches
-    // canonical participant semantics and the dispute is already canonical.
-    if (!this.canDelegateLegacyDisputeResolution(canonicalMatch, userId)) {
-      return this.matchesService.resolveDispute(
-        userId,
-        legacyMatchResultId,
-        dto,
-      );
-    }
+    const delegatedMatch = canonicalMatch;
 
     const result = await this.matchResultLifecycleService.resolveDispute(
-      canonicalMatch.id,
+      delegatedMatch.id,
       userId,
       {
-        resolution: canonicalResolution,
+        resolution: this.toCanonicalDisputeResolution(dto.resolution),
         message: this.normalizeOptionalText(dto.note),
       },
     );
@@ -256,6 +242,105 @@ export class MatchesV2BridgeService {
       legacyMatchResultId,
       dto.resolution,
     );
+  }
+
+  private async resolveCanonicalMatchForLegacyChallenge(
+    legacyChallengeId: string,
+  ): Promise<MatchResponseDto | null> {
+    const match =
+      await this.matchQueryService.findByLegacyChallengeId(legacyChallengeId);
+
+    return this.hasSafeLegacyChallengeCorrelation(match, legacyChallengeId)
+      ? match
+      : null;
+  }
+
+  private async resolveCanonicalMatchForLegacyResult(
+    legacyMatchResultId: string,
+  ): Promise<MatchResponseDto | null> {
+    const match =
+      await this.matchQueryService.findByLegacyMatchResultId(
+        legacyMatchResultId,
+      );
+
+    return this.hasSafeLegacyResultCorrelation(match, legacyMatchResultId)
+      ? match
+      : null;
+  }
+
+  private hasSafeLegacyChallengeCorrelation(
+    match: MatchResponseDto | null,
+    legacyChallengeId: string,
+  ): match is MatchResponseDto {
+    return Boolean(match) && match.legacyChallengeId === legacyChallengeId;
+  }
+
+  private hasSafeLegacyResultCorrelation(
+    match: MatchResponseDto | null,
+    legacyMatchResultId: string,
+  ): match is MatchResponseDto {
+    return Boolean(match) && match.legacyMatchResultId === legacyMatchResultId;
+  }
+
+  private shouldFallbackLegacyReportResult(
+    match: MatchResponseDto | null,
+  ): boolean {
+    // Legacy callers still chain the observable `match_result.id` into other
+    // legacy endpoints. Do not delegate until canonical correlation preserves
+    // that public id end-to-end.
+    return !match?.legacyMatchResultId;
+  }
+
+  private shouldFallbackLegacyResultLifecycle(
+    match: MatchResponseDto | null,
+  ): boolean {
+    return !match;
+  }
+
+  private shouldFallbackLegacyOpenDispute(
+    match: MatchResponseDto | null,
+    dto: DisputeMatchDto,
+  ): boolean {
+    if (!match) {
+      return true;
+    }
+
+    if (!this.isSupportedLegacyDisputeReasonCode(dto.reasonCode)) {
+      return true;
+    }
+
+    // Contract gap kept explicit: legacy dispute is confirmed-only, enforces a
+    // dispute window and returns the current open dispute idempotently. The
+    // canonical lifecycle disputes reported/rejected results and rejects when
+    // an open dispute already exists.
+    return true;
+  }
+
+  private shouldFallbackLegacyResolveDispute(
+    match: MatchResponseDto | null,
+    userId: string,
+    dto: ResolveDisputeDto,
+  ): boolean {
+    if (!match) {
+      return true;
+    }
+
+    if (!this.isSupportedLegacyDisputeResolution(dto.resolution)) {
+      return true;
+    }
+
+    if (!this.hasCanonicalOpenDispute(match)) {
+      return true;
+    }
+
+    // Public legacy `/matches/:id/resolve` is admin-only. Delegate only when
+    // that admin already satisfies canonical participant semantics; otherwise
+    // legacy keeps ownership of the admin-only contract.
+    return !this.isCanonicalParticipant(match, userId);
+  }
+
+  private hasCanonicalOpenDispute(match: MatchResponseDto): boolean {
+    return match.status === MatchStatus.DISPUTED && match.hasOpenDispute;
   }
 
   private normalizeLimit(limit?: number): number {
@@ -500,17 +585,6 @@ export class MatchesV2BridgeService {
     }
   }
 
-  private canDelegateLegacyDisputeResolution(
-    match: MatchResponseDto,
-    userId: string,
-  ): boolean {
-    if (match.status !== MatchStatus.DISPUTED || !match.hasOpenDispute) {
-      return false;
-    }
-
-    return this.isCanonicalParticipant(match, userId);
-  }
-
   private isCanonicalParticipant(
     match: MatchResponseDto,
     userId: string,
@@ -560,6 +634,12 @@ export class MatchesV2BridgeService {
     }
   }
 
+  private isSupportedLegacyDisputeReasonCode(
+    reasonCode: DisputeMatchDto['reasonCode'],
+  ): boolean {
+    return this.toCanonicalDisputeReasonCode(reasonCode) !== null;
+  }
+
   private toCanonicalDisputeResolution(
     resolution: ResolveDisputeDto['resolution'],
   ): MatchDisputeResolutionV2 | null {
@@ -571,5 +651,11 @@ export class MatchesV2BridgeService {
       default:
         return null;
     }
+  }
+
+  private isSupportedLegacyDisputeResolution(
+    resolution: ResolveDisputeDto['resolution'],
+  ): boolean {
+    return this.toCanonicalDisputeResolution(resolution) !== null;
   }
 }
