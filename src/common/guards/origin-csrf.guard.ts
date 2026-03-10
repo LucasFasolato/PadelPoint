@@ -26,7 +26,9 @@ export class OriginCsrfGuard implements CanActivate {
     if (!origin) return true;
 
     const allowedOriginRaw = process.env.APP_URL ?? '';
-    const allowedOrigin = allowedOriginRaw ? normalizeOrigin(allowedOriginRaw) : '';
+    const allowedOrigin = allowedOriginRaw
+      ? normalizeOrigin(allowedOriginRaw)
+      : '';
     const requestOrigin = normalizeOrigin(origin);
 
     if (requestOrigin !== allowedOrigin) {

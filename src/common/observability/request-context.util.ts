@@ -29,7 +29,7 @@ export function ensureRequestContext(
 ): RequestContext {
   const scopedReq = req as RequestWithContext;
   if (scopedReq[REQUEST_CONTEXT_KEY]?.requestId) {
-    const existing = scopedReq[REQUEST_CONTEXT_KEY] as RequestContext;
+    const existing = scopedReq[REQUEST_CONTEXT_KEY];
     if (res && !res.getHeader(REQUEST_ID_HEADER)) {
       res.setHeader(REQUEST_ID_HEADER, existing.requestId);
     }
