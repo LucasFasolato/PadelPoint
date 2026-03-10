@@ -19,6 +19,8 @@ import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '@/modules/core/notifications/notifications.module';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { GlobalRankingSnapshot } from '../rankings/entities/global-ranking-snapshot.entity';
+import { MatchesV2Module } from '../matches-v2/matches-v2.module';
+import { MatchesV2BridgeService } from './services/matches-v2-bridge.service';
 
 @Module({
   imports: [
@@ -39,8 +41,9 @@ import { GlobalRankingSnapshot } from '../rankings/entities/global-ranking-snaps
     CompetitiveModule,
     LeaguesModule,
     NotificationsModule,
+    MatchesV2Module,
   ],
-  providers: [MatchesService, CityRequiredGuard],
+  providers: [MatchesService, MatchesV2BridgeService, CityRequiredGuard],
   controllers: [MatchesController, LeagueMatchesController],
 })
 export class MatchesModule {}

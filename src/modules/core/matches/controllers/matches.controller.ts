@@ -24,13 +24,17 @@ import { MyPendingConfirmationsResponseDto } from '../dto/my-pending-confirmatio
 import { PendingConfirmationsQueryDto } from '../dto/pending-confirmations-query.dto';
 import { ensureRequestContext } from '@/common/observability/request-context.util';
 import { MatchRankingImpactResponseDto } from '../dto/match-ranking-impact-response.dto';
+import { MatchesV2BridgeService } from '../services/matches-v2-bridge.service';
 
 type AuthUser = { userId: string; email: string; role: string };
 
 @Controller('matches')
 @UseGuards(JwtAuthGuard, CityRequiredGuard)
 export class MatchesController {
-  constructor(private readonly service: MatchesService) {}
+  constructor(
+    private readonly service: MatchesService,
+    private readonly matchesV2BridgeService: MatchesV2BridgeService,
+  ) {}
 
   @Get('me')
   @ApiOperation({
@@ -78,14 +82,10 @@ export class MatchesController {
   })
   async getMyMatches(@Req() req: Request, @Query('legacy') legacy?: string) {
     const user = req.user as AuthUser;
-    const items = await this.service.getMyMatches(user.userId);
     if (legacy === '1' || legacy?.toLowerCase() === 'true') {
-      return items;
+      return this.service.getMyMatches(user.userId);
     }
-    return {
-      items,
-      nextCursor: null,
-    };
+    return this.matchesV2BridgeService.listMyMatches(user.userId);
   }
 
   @Get('me/pending-confirmations')
