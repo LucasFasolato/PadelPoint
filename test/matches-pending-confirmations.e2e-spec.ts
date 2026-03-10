@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { MatchesController } from '@/modules/core/matches/controllers/matches.controller';
 import { MatchesService } from '@/modules/core/matches/services/matches.service';
+import { MatchesV2BridgeService } from '@/modules/core/matches/services/matches-v2-bridge.service';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 
@@ -27,15 +28,25 @@ function fakeGuard() {
 describe('Matches Pending Confirmations (e2e)', () => {
   let app: INestApplication<App>;
   let matchesService: Partial<Record<keyof MatchesService, jest.Mock>>;
+  let matchesV2BridgeService: { listPendingConfirmations: jest.Mock };
 
   beforeEach(async () => {
     matchesService = {
       getPendingConfirmations: jest.fn(),
     };
+    matchesV2BridgeService = {
+      listPendingConfirmations: jest.fn(),
+    };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [MatchesController],
-      providers: [{ provide: MatchesService, useValue: matchesService }],
+      providers: [
+        { provide: MatchesService, useValue: matchesService },
+        {
+          provide: MatchesV2BridgeService,
+          useValue: matchesV2BridgeService,
+        },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue(fakeGuard())
@@ -60,7 +71,7 @@ describe('Matches Pending Confirmations (e2e)', () => {
   });
 
   it('returns 200 with empty items when user has no pending confirmations', async () => {
-    matchesService.getPendingConfirmations?.mockResolvedValue({
+    matchesV2BridgeService.listPendingConfirmations.mockResolvedValue({
       items: [],
       nextCursor: null,
     });
@@ -74,9 +85,8 @@ describe('Matches Pending Confirmations (e2e)', () => {
       items: [],
       nextCursor: null,
     });
-    expect(matchesService.getPendingConfirmations).toHaveBeenCalledWith(
-      FAKE_USER.userId,
-      { cursor: undefined, limit: 10, requestId: 'req-pending-1' },
-    );
+    expect(
+      matchesV2BridgeService.listPendingConfirmations,
+    ).toHaveBeenCalledWith(FAKE_USER.userId, { cursor: undefined, limit: 10 });
   });
 });

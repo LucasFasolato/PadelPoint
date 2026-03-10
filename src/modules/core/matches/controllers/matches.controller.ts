@@ -89,17 +89,32 @@ export class MatchesController {
   }
 
   @Get('me/pending-confirmations')
+  @ApiQuery({
+    name: 'legacy',
+    required: false,
+    type: String,
+    description:
+      'Compatibility flag. Use legacy=1 to force the legacy pending confirmations query path.',
+    example: '1',
+  })
   @ApiOkResponse({ type: MyPendingConfirmationsResponseDto })
   async getPendingConfirmations(
     @Req() req: Request,
     @Query() query: PendingConfirmationsQueryDto,
+    @Query('legacy') legacy?: string,
   ) {
     const user = req.user as AuthUser;
     const { requestId } = ensureRequestContext(req, req.res);
-    return this.service.getPendingConfirmations(user.userId, {
+    if (legacy === '1' || legacy?.toLowerCase() === 'true') {
+      return this.service.getPendingConfirmations(user.userId, {
+        cursor: query.cursor,
+        limit: query.limit,
+        requestId,
+      });
+    }
+    return this.matchesV2BridgeService.listPendingConfirmations(user.userId, {
       cursor: query.cursor,
       limit: query.limit,
-      requestId,
     });
   }
 

@@ -8,6 +8,7 @@ describe('MatchesController', () => {
   let controller: MatchesController;
   let matchesService: {
     getMyMatches: jest.Mock;
+    getPendingConfirmations: jest.Mock;
     getRankingImpact: jest.Mock;
     reportMatch: jest.Mock;
     confirmMatch: jest.Mock;
@@ -17,11 +18,13 @@ describe('MatchesController', () => {
   };
   let matchesV2BridgeService: {
     listMyMatches: jest.Mock;
+    listPendingConfirmations: jest.Mock;
   };
 
   beforeEach(async () => {
     matchesService = {
       getMyMatches: jest.fn(),
+      getPendingConfirmations: jest.fn(),
       getRankingImpact: jest.fn(),
       reportMatch: jest.fn(),
       confirmMatch: jest.fn(),
@@ -31,6 +34,7 @@ describe('MatchesController', () => {
     };
     matchesV2BridgeService = {
       listMyMatches: jest.fn(),
+      listPendingConfirmations: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -84,5 +88,100 @@ describe('MatchesController', () => {
     expect(result).toEqual([{ id: 'match-1' }]);
     expect(matchesService.getMyMatches).toHaveBeenCalledWith('user-1');
     expect(matchesV2BridgeService.listMyMatches).not.toHaveBeenCalled();
+  });
+
+  it('delegates GET /matches/me/pending-confirmations to matches-v2 by default', async () => {
+    matchesV2BridgeService.listPendingConfirmations.mockResolvedValue({
+      items: [
+        {
+          id: 'match-v2-1',
+          matchId: 'match-v2-1',
+          status: 'PENDING_CONFIRMATION',
+          opponentName: 'Rival 1',
+          cta: { primary: 'Confirmar', href: '/matches/match-v2-1' },
+        },
+      ],
+      nextCursor: 'cursor-1',
+    });
+
+    const result = await controller.getPendingConfirmations(
+      {
+        user: { userId: 'user-1' },
+        headers: { 'x-request-id': 'req-1' },
+        res: {
+          getHeader: jest.fn().mockReturnValue(undefined),
+          setHeader: jest.fn(),
+        },
+      } as any,
+      { cursor: 'legacy-cursor-1', limit: 10 },
+    );
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'match-v2-1',
+          matchId: 'match-v2-1',
+          status: 'PENDING_CONFIRMATION',
+          opponentName: 'Rival 1',
+          cta: { primary: 'Confirmar', href: '/matches/match-v2-1' },
+        },
+      ],
+      nextCursor: 'cursor-1',
+    });
+    expect(
+      matchesV2BridgeService.listPendingConfirmations,
+    ).toHaveBeenCalledWith('user-1', {
+      cursor: 'legacy-cursor-1',
+      limit: 10,
+    });
+    expect(matchesService.getPendingConfirmations).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy path for GET /matches/me/pending-confirmations?legacy=1', async () => {
+    matchesService.getPendingConfirmations.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
+
+    const result = await controller.getPendingConfirmations(
+      {
+        user: { userId: 'user-1' },
+        headers: { 'x-request-id': 'req-legacy-1' },
+        res: {
+          getHeader: jest.fn().mockReturnValue(undefined),
+          setHeader: jest.fn(),
+        },
+      } as any,
+      { cursor: undefined, limit: 20 },
+      '1',
+    );
+
+    expect(result).toEqual({ items: [], nextCursor: null });
+    expect(matchesService.getPendingConfirmations).toHaveBeenCalledWith(
+      'user-1',
+      {
+        cursor: undefined,
+        limit: 20,
+        requestId: 'req-legacy-1',
+      },
+    );
+    expect(
+      matchesV2BridgeService.listPendingConfirmations,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('keeps GET /matches/:id on the legacy service', async () => {
+    matchesService.getById.mockResolvedValue({ id: 'match-legacy-1' });
+
+    const result = await controller.getById(
+      { user: { userId: 'user-1' } } as any,
+      'match-legacy-1',
+    );
+
+    expect(result).toEqual({ id: 'match-legacy-1' });
+    expect(matchesService.getById).toHaveBeenCalledWith(
+      'match-legacy-1',
+      'user-1',
+    );
   });
 });
