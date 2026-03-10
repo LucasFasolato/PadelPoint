@@ -11,7 +11,8 @@ function frontendBaseUrl(): string {
   const env = process.env.APP_ENV ?? 'staging';
   return env === 'production'
     ? (process.env.FRONT_PROD_URL ?? 'https://padel-point-front.vercel.app')
-    : (process.env.FRONT_STAGING_URL ?? 'https://staging-padel-point-front.vercel.app');
+    : (process.env.FRONT_STAGING_URL ??
+        'https://staging-padel-point-front.vercel.app');
 }
 
 @Controller('auth')
@@ -40,14 +41,24 @@ export class AuthGoogleController {
     try {
       const profile = req.user as OAuthProfile;
       const user = await this.oauth.linkOrCreateFromOAuth(profile);
-      const tokens = await this.auth.issueTokens(user.id, user.email, user.role);
+      const tokens = await this.auth.issueTokens(
+        user.id,
+        user.email,
+        user.role,
+      );
 
       const cookieOpts = cookieBaseOptions();
-      res.cookie('pp_at', tokens.accessToken, { ...cookieOpts, maxAge: AT_MAX_AGE });
-      res.cookie('pp_rt', tokens.refreshToken, { ...cookieOpts, maxAge: RT_MAX_AGE });
+      res.cookie('pp_at', tokens.accessToken, {
+        ...cookieOpts,
+        maxAge: AT_MAX_AGE,
+      });
+      res.cookie('pp_rt', tokens.refreshToken, {
+        ...cookieOpts,
+        maxAge: RT_MAX_AGE,
+      });
 
       res.redirect(302, `${base}/auth/callback`);
-    } catch (_err) {
+    } catch {
       res.redirect(302, `${base}/auth/callback?error=oauth_failed`);
     }
   }

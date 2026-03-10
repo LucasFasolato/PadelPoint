@@ -1,28 +1,64 @@
 import { Global, Module } from '@nestjs/common';
-import {
-  TypeOrmModule,
-  getEntityManagerToken,
-} from '@nestjs/typeorm';
+import { TypeOrmModule, getEntityManagerToken } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { DataSource } from 'typeorm';
+import {
+  DataSource,
+  type DataSourceOptions,
+  type EntityManager,
+  type EntityTarget,
+  type MongoRepository,
+  type ObjectLiteral,
+  type Repository,
+  type TreeRepository,
+} from 'typeorm';
 
 const OPENAPI_SNAPSHOT_MODE = process.env.OPENAPI_SNAPSHOT_MODE === '1';
 
 function createOpenApiSnapshotDataSourceStub(): Partial<DataSource> {
-  const manager = {};
-  const stub: any = {
+  const manager = {} as EntityManager;
+  const transaction = (<T>(
+    isolationLevelOrRunInTransaction:
+      | string
+      | ((entityManager: EntityManager) => Promise<T>),
+    maybeRunInTransaction?: (entityManager: EntityManager) => Promise<T>,
+  ): Promise<T> => {
+    const runInTransaction =
+      typeof isolationLevelOrRunInTransaction === 'function'
+        ? isolationLevelOrRunInTransaction
+        : maybeRunInTransaction;
+
+    if (!runInTransaction) {
+      return Promise.reject(new Error('Transaction callback is required'));
+    }
+
+    return runInTransaction(manager);
+  }) as DataSource['transaction'];
+  const stub = {
     entityMetadatas: [],
-    manager: manager as any,
-    options: { type: 'postgres' },
-    getRepository: () => ({} as any),
-    getTreeRepository: () => ({} as any),
-    getMongoRepository: () => ({} as any),
-    createEntityManager: () => manager as any,
-    transaction: async (
-      cb: (entityManager: unknown) => unknown | Promise<unknown>,
-    ) => cb(manager),
+    manager,
+    options: { type: 'postgres' } as DataSourceOptions,
+    getRepository: <Entity extends ObjectLiteral>(
+      target: EntityTarget<Entity>,
+    ): Repository<Entity> => {
+      void target;
+      return {} as Repository<Entity>;
+    },
+    getTreeRepository: <Entity extends ObjectLiteral>(
+      target: EntityTarget<Entity>,
+    ): TreeRepository<Entity> => {
+      void target;
+      return {} as TreeRepository<Entity>;
+    },
+    getMongoRepository: <Entity extends ObjectLiteral>(
+      target: EntityTarget<Entity>,
+    ): MongoRepository<Entity> => {
+      void target;
+      return {} as MongoRepository<Entity>;
+    },
+    createEntityManager: (): EntityManager => manager,
+    transaction,
   };
-  return stub as Partial<DataSource>;
+  return stub;
 }
 
 const databaseImports = OPENAPI_SNAPSHOT_MODE

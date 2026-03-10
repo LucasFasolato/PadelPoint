@@ -307,8 +307,9 @@ export class RankingsService {
     private readonly config: ConfigService,
     @InjectRepository(Challenge)
     private readonly challengeRepo: Repository<Challenge> = null as any,
-    private readonly telemetry: DomainTelemetryService =
-      ({ track: () => undefined } as unknown as DomainTelemetryService),
+    private readonly telemetry: DomainTelemetryService = {
+      track: () => undefined,
+    } as unknown as DomainTelemetryService,
   ) {
     this.rankingMinMatches = this.resolveMinMatches();
   }
@@ -397,7 +398,9 @@ export class RankingsService {
     const myCurrent = mySnapshotRow?.matchesPlayed ?? 0;
     const myRemaining = Math.max(0, this.rankingMinMatches - myCurrent);
     const myEligible = myRemaining === 0;
-    const myVisibleRow = visibleRows.find((row) => row.userId === params.userId);
+    const myVisibleRow = visibleRows.find(
+      (row) => row.userId === params.userId,
+    );
 
     const my = !myEligible
       ? {
@@ -462,11 +465,13 @@ export class RankingsService {
       modeKey: context.modeKey,
       currentVersion: context.snapshot.version,
     });
-    const previousVisibleRows = this.toVisibleRows(previousSnapshot?.rows ?? []);
+    const previousVisibleRows = this.toVisibleRows(
+      previousSnapshot?.rows ?? [],
+    );
     const previousPosition =
       context.myVisibleRow && previousVisibleRows.length > 0
-        ? (previousVisibleRows.find((row) => row.userId === params.userId)?.position ??
-          null)
+        ? (previousVisibleRows.find((row) => row.userId === params.userId)
+            ?.position ?? null)
         : null;
     const currentPosition = context.myVisibleRow?.position ?? null;
     const deltaPosition =
@@ -478,9 +483,13 @@ export class RankingsService {
       previousPosition,
       deltaPosition,
     );
-    const fallbackIdentity = await this.getUserCompetitiveIdentity(params.userId);
+    const fallbackIdentity = await this.getUserCompetitiveIdentity(
+      params.userId,
+    );
     const currentElo =
-      context.mySnapshotRow?.elo ?? context.myVisibleRow?.elo ?? fallbackIdentity.elo;
+      context.mySnapshotRow?.elo ??
+      context.myVisibleRow?.elo ??
+      fallbackIdentity.elo;
     const currentCategory =
       context.mySnapshotRow?.category ??
       context.myVisibleRow?.category ??
@@ -568,7 +577,8 @@ export class RankingsService {
 
     const selectedRows: VisibleRankingRow[] = [];
     const seenUserIds = new Set<string>([params.userId]);
-    const aboveRow = context.visibleRows[context.myVisibleRow.position - 2] ?? null;
+    const aboveRow =
+      context.visibleRows[context.myVisibleRow.position - 2] ?? null;
     const belowRow = context.visibleRows[context.myVisibleRow.position] ?? null;
 
     for (const row of [aboveRow, belowRow]) {
@@ -579,9 +589,7 @@ export class RankingsService {
 
     const nearbyRows = context.visibleRows
       .filter((row) => !seenUserIds.has(row.userId))
-      .sort((a, b) =>
-        this.compareNearbyRivals(a, b, context.myVisibleRow as VisibleRankingRow),
-      )
+      .sort((a, b) => this.compareNearbyRivals(a, b, context.myVisibleRow))
       .slice(0, 3);
 
     for (const row of nearbyRows) {
@@ -704,8 +712,12 @@ export class RankingsService {
       relations: ['city', 'city.province'],
     });
 
-    const items: Array<Record<string, unknown>> = [{ scope: RankingScope.COUNTRY }];
-    const provinceCode = this.normalizeProvinceCode(user?.city?.province?.code ?? null);
+    const items: Array<Record<string, unknown>> = [
+      { scope: RankingScope.COUNTRY },
+    ];
+    const provinceCode = this.normalizeProvinceCode(
+      user?.city?.province?.code ?? null,
+    );
 
     if (provinceCode) {
       items.push({
@@ -743,7 +755,9 @@ export class RankingsService {
     }
 
     const reasons: RankingEligibilityReason[] = [];
-    const provinceCode = this.normalizeProvinceCode(user.city?.province?.code ?? null);
+    const provinceCode = this.normalizeProvinceCode(
+      user.city?.province?.code ?? null,
+    );
     const missingScopeLocation =
       (scope === RankingScope.CITY && !user.cityId) ||
       (scope === RankingScope.PROVINCE && !provinceCode);
@@ -778,7 +792,10 @@ export class RankingsService {
         { userId: params.userId },
       )
       .andWhere('m.status IN (:...statuses)', {
-        statuses: [MatchResultStatus.CONFIRMED, MatchResultStatus.PENDING_CONFIRM],
+        statuses: [
+          MatchResultStatus.CONFIRMED,
+          MatchResultStatus.PENDING_CONFIRM,
+        ],
       })
       .getRawMany<RawRankingEligibilityMatch>();
 
@@ -789,7 +806,9 @@ export class RankingsService {
     let lastValidMatchAt: Date | null = null;
 
     for (const row of rows) {
-      const status = String(row.status ?? '').trim().toLowerCase();
+      const status = String(row.status ?? '')
+        .trim()
+        .toLowerCase();
       const isConfirmed = status === MatchResultStatus.CONFIRMED;
       const isPending = status === MatchResultStatus.PENDING_CONFIRM;
       const competitiveOrImpact = this.isCompetitiveOrImpactMatch(row);
@@ -805,7 +824,8 @@ export class RankingsService {
           const playedAt = this.toDateOrNull(row.playedAt);
           if (
             playedAt &&
-            (!lastValidMatchAt || playedAt.getTime() > lastValidMatchAt.getTime())
+            (!lastValidMatchAt ||
+              playedAt.getTime() > lastValidMatchAt.getTime())
           ) {
             lastValidMatchAt = playedAt;
           }
@@ -902,7 +922,8 @@ export class RankingsService {
       snapshot,
       visibleRows,
       mySnapshotRow:
-        (snapshot.rows ?? []).find((row) => row.userId === params.userId) ?? null,
+        (snapshot.rows ?? []).find((row) => row.userId === params.userId) ??
+        null,
       myVisibleRow:
         visibleRows.find((row) => row.userId === params.userId) ?? null,
     };
@@ -992,7 +1013,7 @@ export class RankingsService {
       };
     }
     if (input.movementType === 'UP' && (input.deltaPosition ?? 0) > 0) {
-      const delta = input.deltaPosition as number;
+      const delta = input.deltaPosition;
       const label = delta === 1 ? 'posicion' : 'posiciones';
       return {
         summary: `Subiste ${delta} ${label} desde el ultimo snapshot`,
@@ -1000,7 +1021,7 @@ export class RankingsService {
       };
     }
     if (input.movementType === 'DOWN' && (input.deltaPosition ?? 0) < 0) {
-      const delta = Math.abs(input.deltaPosition as number);
+      const delta = Math.abs(input.deltaPosition);
       const label = delta === 1 ? 'posicion' : 'posiciones';
       return {
         summary: `Bajaste ${delta} ${label} desde el ultimo snapshot`,
@@ -1025,8 +1046,10 @@ export class RankingsService {
       return aPositionDiff - bPositionDiff;
     }
 
-    const aEloGap = this.computeEloGap(me.elo, a.elo) ?? Number.MAX_SAFE_INTEGER;
-    const bEloGap = this.computeEloGap(me.elo, b.elo) ?? Number.MAX_SAFE_INTEGER;
+    const aEloGap =
+      this.computeEloGap(me.elo, a.elo) ?? Number.MAX_SAFE_INTEGER;
+    const bEloGap =
+      this.computeEloGap(me.elo, b.elo) ?? Number.MAX_SAFE_INTEGER;
     if (aEloGap !== bEloGap) {
       return aEloGap - bEloGap;
     }
@@ -1058,7 +1081,7 @@ export class RankingsService {
     const active = new Set<string>();
     if (userIds.length === 0) return active;
 
-    const rows = await this.matchRepo
+    const rows = this.matchRepo
       .createQueryBuilder('m')
       .innerJoin('m.challenge', 'c')
       .select('c."teamA1Id"', 'teamA1Id')
@@ -1223,14 +1246,19 @@ export class RankingsService {
         : null;
 
       if (currentSnapshot) {
-        const currentVisibleRows = this.toVisibleRows(currentSnapshot.rows ?? []);
-        const previousVisibleRows = this.toVisibleRows(previousSnapshot?.rows ?? []);
+        const currentVisibleRows = this.toVisibleRows(
+          currentSnapshot.rows ?? [],
+        );
+        const previousVisibleRows = this.toVisibleRows(
+          previousSnapshot?.rows ?? [],
+        );
         const userCurrentRow =
           currentVisibleRows.find((row) => row.userId === userId) ?? null;
         const userPreviousRow =
           previousVisibleRows.find((row) => row.userId === userId) ?? null;
 
-        userPreviousPosition = userPreviousRow?.position ?? userPreviousPosition;
+        userPreviousPosition =
+          userPreviousRow?.position ?? userPreviousPosition;
         userNewPosition = userCurrentRow?.position ?? userNewPosition;
 
         if (
@@ -1251,8 +1279,8 @@ export class RankingsService {
           if (
             currentAbove &&
             previousPositions.has(currentAbove.userId) &&
-            (previousPositions.get(currentAbove.userId) ?? currentAbove.position) !==
-              currentAbove.position
+            (previousPositions.get(currentAbove.userId) ??
+              currentAbove.position) !== currentAbove.position
           ) {
             relevantPlayers.set(currentAbove.userId, currentAbove);
           }
@@ -1358,8 +1386,9 @@ export class RankingsService {
   ): RankingMovementFeedCursor | null {
     if (!cursor || cursor.trim().length === 0) return null;
 
-    const [timestamp, notificationId, type, positionRaw, actorRaw] =
-      cursor.trim().split('|');
+    const [timestamp, notificationId, type, positionRaw, actorRaw] = cursor
+      .trim()
+      .split('|');
     const parsedTimestamp = new Date(timestamp ?? '');
     const positionSort = Number(positionRaw);
     if (
@@ -1381,7 +1410,9 @@ export class RankingsService {
       type,
       positionSort: Math.trunc(positionSort),
       actorUserId:
-        actorRaw && actorRaw !== 'self' && actorRaw.length > 0 ? actorRaw : null,
+        actorRaw && actorRaw !== 'self' && actorRaw.length > 0
+          ? actorRaw
+          : null,
     };
   }
 
@@ -1468,7 +1499,10 @@ export class RankingsService {
       provinceCode: args.provinceCode ?? undefined,
       cityId: args.cityId ?? undefined,
     });
-    return this.createGlobalRankingSnapshotDetailedWithResolution(args, resolution);
+    return this.createGlobalRankingSnapshotDetailedWithResolution(
+      args,
+      resolution,
+    );
   }
 
   private async createGlobalRankingSnapshotDetailedWithResolution(
@@ -1573,7 +1607,9 @@ export class RankingsService {
           continue;
         }
 
-        const saved = await this.snapshotRepo.findOne({ where: { id: snapshotId } });
+        const saved = await this.snapshotRepo.findOne({
+          where: { id: snapshotId },
+        });
         if (!saved) {
           continue;
         }
@@ -1711,7 +1747,8 @@ export class RankingsService {
         cityId: user.cityId ?? null,
         cityNameNormalized:
           cityNameFromCity || profileLocation?.cityNameNormalized || null,
-        provinceCode: provinceCodeFromCity ?? profileLocation?.provinceCode ?? null,
+        provinceCode:
+          provinceCodeFromCity ?? profileLocation?.provinceCode ?? null,
         elo,
         category,
       });
@@ -1720,21 +1757,35 @@ export class RankingsService {
     const statsByUserId = new Map<string, MutablePlayerStats>();
     for (const match of matches) {
       const teamA = [match.teamA1Id, match.teamA2Id].filter(
-        (value): value is string => typeof value === 'string' && value.length > 0,
+        (value): value is string =>
+          typeof value === 'string' && value.length > 0,
       );
       const teamB = [match.teamB1Id, match.teamB2Id].filter(
-        (value): value is string => typeof value === 'string' && value.length > 0,
+        (value): value is string =>
+          typeof value === 'string' && value.length > 0,
       );
 
       if (teamA.length < 2 || teamB.length < 2) continue;
-      if (match.winnerTeam !== WinnerTeam.A && match.winnerTeam !== WinnerTeam.B) {
+      if (
+        match.winnerTeam !== WinnerTeam.A &&
+        match.winnerTeam !== WinnerTeam.B
+      ) {
         continue;
       }
 
       const sets = [
-        [this.toNumberOrNull(match.teamASet1), this.toNumberOrNull(match.teamBSet1)],
-        [this.toNumberOrNull(match.teamASet2), this.toNumberOrNull(match.teamBSet2)],
-        [this.toNumberOrNull(match.teamASet3), this.toNumberOrNull(match.teamBSet3)],
+        [
+          this.toNumberOrNull(match.teamASet1),
+          this.toNumberOrNull(match.teamBSet1),
+        ],
+        [
+          this.toNumberOrNull(match.teamASet2),
+          this.toNumberOrNull(match.teamBSet2),
+        ],
+        [
+          this.toNumberOrNull(match.teamASet3),
+          this.toNumberOrNull(match.teamBSet3),
+        ],
       ];
 
       let setsWonA = 0;
@@ -1818,7 +1869,8 @@ export class RankingsService {
       .filter((value): value is number => typeof value === 'number');
     const opponentAvgElo =
       opponentElos.length > 0
-        ? opponentElos.reduce((sum, value) => sum + value, 0) / opponentElos.length
+        ? opponentElos.reduce((sum, value) => sum + value, 0) /
+          opponentElos.length
         : null;
 
     for (const userId of args.teamUserIds) {
@@ -1827,7 +1879,8 @@ export class RankingsService {
       if (!this.belongsToScope(context, args.resolution)) continue;
       if (
         args.categoryKey !== 'all' &&
-        (args.categoryNumber === null || context.category !== args.categoryNumber)
+        (args.categoryNumber === null ||
+          context.category !== args.categoryNumber)
       ) {
         continue;
       }
@@ -1939,7 +1992,9 @@ export class RankingsService {
     }
 
     if (params.scope === RankingScope.PROVINCE) {
-      const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
+      const normalizedProvinceCode = this.normalizeProvinceCode(
+        params.provinceCode,
+      );
       if (!normalizedProvinceCode) {
         throw new BadRequestException(PROVINCE_REQUIRED_ERROR);
       }
@@ -1982,11 +2037,15 @@ export class RankingsService {
         });
       }
 
-      const provinceCode = this.normalizeProvinceCode(city.province?.code ?? null);
+      const provinceCode = this.normalizeProvinceCode(
+        city.province?.code ?? null,
+      );
       return {
         scope: RankingScope.CITY,
         provinceCode,
-        provinceCodeIso: provinceCode ? this.toIsoProvinceCode(provinceCode) : null,
+        provinceCodeIso: provinceCode
+          ? this.toIsoProvinceCode(provinceCode)
+          : null,
         cityId: city.id,
         cityNameNormalized: this.toCityNameKey(city.name) || null,
         dimensionKey: `CITY|${city.id}`,
@@ -1994,7 +2053,9 @@ export class RankingsService {
     }
 
     const normalizedCityName = this.normalizeCityName(params.cityName);
-    const normalizedProvinceCode = this.normalizeProvinceCode(params.provinceCode);
+    const normalizedProvinceCode = this.normalizeProvinceCode(
+      params.provinceCode,
+    );
     const cityNameNormalized = normalizedCityName
       ? this.toCityNameKey(normalizedCityName)
       : null;
@@ -2058,8 +2119,13 @@ export class RankingsService {
     row: Pick<RawRankingEligibilityMatch, 'matchType' | 'impactRanking'>,
   ): boolean {
     const normalizedMatchType =
-      typeof row.matchType === 'string' ? row.matchType.trim().toUpperCase() : null;
-    return normalizedMatchType === MatchType.COMPETITIVE || row.impactRanking === true;
+      typeof row.matchType === 'string'
+        ? row.matchType.trim().toUpperCase()
+        : null;
+    return (
+      normalizedMatchType === MatchType.COMPETITIVE ||
+      row.impactRanking === true
+    );
   }
 
   private isValidActivationMatch(
@@ -2074,7 +2140,9 @@ export class RankingsService {
       return row.impactRanking === true && row.eloApplied === true;
     }
 
-    const rankingImpact = this.parseRankingImpactForActivation(row.rankingImpact);
+    const rankingImpact = this.parseRankingImpactForActivation(
+      row.rankingImpact,
+    );
     if (!rankingImpact || rankingImpact.applied !== true) {
       return false;
     }
@@ -2211,7 +2279,9 @@ export class RankingsService {
   }
 
   private normalizeTimeframe(timeframe?: string): RankingTimeframe {
-    const value = (timeframe ?? RankingTimeframe.CURRENT_SEASON).trim().toUpperCase();
+    const value = (timeframe ?? RankingTimeframe.CURRENT_SEASON)
+      .trim()
+      .toUpperCase();
     if (value === RankingTimeframe.CURRENT_SEASON) {
       return RankingTimeframe.CURRENT_SEASON;
     }
@@ -2414,7 +2484,7 @@ export class RankingsService {
     if (movements.length === 0) return 0;
 
     const inserts = movements.map((row) => {
-      const delta = row.delta as number;
+      const delta = row.delta;
       const direction = delta > 0 ? 'up' : 'down';
       const absDelta = Math.abs(delta);
       const plural = absDelta === 1 ? '' : 's';

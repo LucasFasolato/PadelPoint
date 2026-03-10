@@ -10,6 +10,10 @@ import { Country } from '../../geo/entities/country.entity';
 import { Province } from '../../geo/entities/province.entity';
 import { City } from '../../geo/entities/city.entity';
 
+function asStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
 describe('PlayersService', () => {
   let service: PlayersService;
   const userRepo = createMockRepo<User>();
@@ -257,15 +261,23 @@ describe('PlayersService', () => {
       } as PlayerFavorite)
       .mockRejectedValueOnce({ code: '23505' });
 
-    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
-    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({
+      ok: true,
+    });
+    await expect(service.addFavorite('u1', 'u2')).resolves.toEqual({
+      ok: true,
+    });
   });
 
   it('DELETE removeFavorite is idempotent', async () => {
     favoriteRepo.delete.mockResolvedValue({ affected: 1 });
 
-    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
-    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({ ok: true });
+    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({
+      ok: true,
+    });
+    await expect(service.removeFavorite('u1', 'u2')).resolves.toEqual({
+      ok: true,
+    });
 
     expect(favoriteRepo.delete).toHaveBeenCalledWith({
       userId: 'u1',
@@ -321,23 +333,31 @@ describe('PlayersService', () => {
       },
     ];
 
-    favoriteRepo.manager.query.mockImplementation(async (_sql, params: unknown[]) => {
-      const [, maybeCursorCreatedAt, maybeCursorId, maybeLimitOrUndefined] = params;
-      const hasCursor = params.length === 4;
-      const limit = Number(hasCursor ? maybeLimitOrUndefined : maybeCursorCreatedAt);
-      const cursorCreatedAt = hasCursor ? String(maybeCursorCreatedAt) : null;
-      const cursorId = hasCursor ? String(maybeCursorId) : null;
+    favoriteRepo.manager.query.mockImplementation(
+      async (_sql, params: unknown[]) => {
+        const [, maybeCursorCreatedAt, maybeCursorId, maybeLimitOrUndefined] =
+          params;
+        const hasCursor = params.length === 4;
+        const limit = Number(
+          hasCursor ? maybeLimitOrUndefined : maybeCursorCreatedAt,
+        );
+        const cursorCreatedAt = hasCursor
+          ? asStringOrNull(maybeCursorCreatedAt)
+          : null;
+        const cursorId = hasCursor ? asStringOrNull(maybeCursorId) : null;
 
-      let filtered = rows;
-      if (cursorCreatedAt && cursorId) {
-        filtered = rows.filter((row) => {
-          if (row.createdAt !== cursorCreatedAt) return row.createdAt < cursorCreatedAt;
-          return row.favoriteId < cursorId;
-        });
-      }
+        let filtered = rows;
+        if (cursorCreatedAt && cursorId) {
+          filtered = rows.filter((row) => {
+            if (row.createdAt !== cursorCreatedAt)
+              return row.createdAt < cursorCreatedAt;
+            return row.favoriteId < cursorId;
+          });
+        }
 
-      return filtered.slice(0, limit);
-    });
+        return filtered.slice(0, limit);
+      },
+    );
 
     const page1 = await service.listFavorites('u1', { limit: 2 });
     expect(page1.items.map((item) => item.userId)).toEqual(['u3', 'u2']);
@@ -348,7 +368,7 @@ describe('PlayersService', () => {
     });
     expect(page1.nextCursor).toEqual(expect.any(String));
 
-    const decoded = decodePlayerFavoritesCursor(page1.nextCursor!);
+    const decoded = decodePlayerFavoritesCursor(page1.nextCursor);
     expect(decoded).toEqual({
       createdAt: '2026-02-24T12:00:00.000Z',
       id: 'fav-b',
@@ -356,7 +376,7 @@ describe('PlayersService', () => {
 
     const page2 = await service.listFavorites('u1', {
       limit: 2,
-      cursor: page1.nextCursor!,
+      cursor: page1.nextCursor,
     });
     expect(page2.items.map((item) => item.userId)).toEqual(['u4']);
     expect(page2.nextCursor).toBeNull();

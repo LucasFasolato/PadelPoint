@@ -15,6 +15,7 @@ import { AuthModule } from './modules/core/auth/auth.module';
 import { CompetitiveModule } from './modules/core/competitive/competitive.module';
 import { ChallengesModule } from './modules/core/challenges/challenges.module';
 import { MatchesModule } from './modules/core/matches/matches.module';
+import { MatchesV2Module } from './modules/core/matches-v2/matches-v2.module';
 import { PaymentsModule } from './modules/legacy/payments/payments.module';
 import { ClubMembersModule } from './modules/legacy/club-members/club-members.module';
 import { MediaModule } from './modules/core/media/media.module';
@@ -49,6 +50,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     CompetitiveModule,
     ChallengesModule,
     MatchesModule,
+    MatchesV2Module,
     PaymentsModule,
     ClubMembersModule,
     MediaModule,

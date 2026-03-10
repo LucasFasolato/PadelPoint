@@ -1,0 +1,6 @@
+export enum MatchRejectionReasonCode {
+  WRONG_SCORE = 'WRONG_SCORE',
+  WRONG_PLAYERS = 'WRONG_PLAYERS',
+  DUPLICATE_MATCH = 'DUPLICATE_MATCH',
+  OTHER = 'OTHER',
+}

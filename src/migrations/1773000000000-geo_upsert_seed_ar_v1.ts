@@ -4,8 +4,12 @@ export class GeoUpsertSeedArV11773000000000 implements MigrationInterface {
   name = 'GeoUpsertSeedArV11773000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "provinces" ADD COLUMN IF NOT EXISTS "code" character varying(16)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_provinces_code" ON "provinces" ("code") `);
+    await queryRunner.query(
+      `ALTER TABLE "provinces" ADD COLUMN IF NOT EXISTS "code" character varying(16)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_provinces_code" ON "provinces" ("code") `,
+    );
     await queryRunner.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_provinces_countryId_code" ON "provinces" ("countryId", "code") WHERE "code" IS NOT NULL`,
     );
@@ -14,7 +18,7 @@ export class GeoUpsertSeedArV11773000000000 implements MigrationInterface {
       `ALTER TABLE "cities" ADD COLUMN IF NOT EXISTS "normalizedName" character varying(160) NOT NULL DEFAULT ''`,
     );
     await queryRunner.query(
-      `UPDATE "cities" SET "normalizedName" = regexp_replace(lower(trim("name")), '\s+', ' ', 'g')`,
+      `UPDATE "cities" SET "normalizedName" = regexp_replace(lower(trim("name")), '\\s+', ' ', 'g')`,
     );
     await queryRunner.query(
       `ALTER TABLE "cities" ALTER COLUMN "normalizedName" DROP DEFAULT`,
@@ -130,9 +134,17 @@ export class GeoUpsertSeedArV11773000000000 implements MigrationInterface {
     await queryRunner.query(
       `DROP INDEX IF EXISTS "public"."UQ_cities_provinceId_normalizedName"`,
     );
-    await queryRunner.query(`ALTER TABLE "cities" DROP COLUMN IF EXISTS "normalizedName"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."UQ_provinces_countryId_code"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_provinces_code"`);
-    await queryRunner.query(`ALTER TABLE "provinces" DROP COLUMN IF EXISTS "code"`);
+    await queryRunner.query(
+      `ALTER TABLE "cities" DROP COLUMN IF EXISTS "normalizedName"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."UQ_provinces_countryId_code"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_provinces_code"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "provinces" DROP COLUMN IF EXISTS "code"`,
+    );
   }
 }

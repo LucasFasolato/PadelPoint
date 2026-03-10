@@ -1,8 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { DEFAULT_ELO, categoryFromElo } from '../../competitive/utils/competitive.constants';
+import {
+  DEFAULT_ELO,
+  categoryFromElo,
+} from '../../competitive/utils/competitive.constants';
 import { Country } from '../../geo/entities/country.entity';
 import { Province } from '../../geo/entities/province.entity';
 import { City } from '../../geo/entities/city.entity';
@@ -21,10 +28,6 @@ import {
 
 function defaultLookingFor(): PlayerLookingFor {
   return { partner: false, rival: false };
-}
-
-function emptyLocation(): PlayerLocation {
-  return { city: null, province: null, country: null };
 }
 
 function uniqueValues<T extends string>(values: T[]): T[] {
@@ -127,7 +130,9 @@ export class PlayersService {
         if (Object.prototype.hasOwnProperty.call(dto.location, 'cityName')) {
           next.city = dto.location.cityName ?? null;
         }
-        if (Object.prototype.hasOwnProperty.call(dto.location, 'provinceCode')) {
+        if (
+          Object.prototype.hasOwnProperty.call(dto.location, 'provinceCode')
+        ) {
           next.province = dto.location.provinceCode ?? null;
         }
         if (Object.prototype.hasOwnProperty.call(dto.location, 'province')) {
@@ -144,7 +149,10 @@ export class PlayersService {
       }
     }
 
-    const syncedCityId = await this.syncUserCityIdFromLocation(user, profile.location);
+    const syncedCityId = await this.syncUserCityIdFromLocation(
+      user,
+      profile.location,
+    );
     if (syncedCityId && user.cityId !== syncedCityId) {
       user.cityId = syncedCityId;
       await this.userRepo.save(user);
@@ -165,7 +173,10 @@ export class PlayersService {
 
     await this.ensureUserExists(targetUserId);
 
-    const favorite = this.favoriteRepo.create({ userId, favoriteUserId: targetUserId });
+    const favorite = this.favoriteRepo.create({
+      userId,
+      favoriteUserId: targetUserId,
+    });
 
     try {
       await this.favoriteRepo.save(favorite);
@@ -190,7 +201,10 @@ export class PlayersService {
     });
 
     return {
-      ids: rows.map((row) => row.favoriteUserId).filter(Boolean).slice(0, 500),
+      ids: rows
+        .map((row) => row.favoriteUserId)
+        .filter(Boolean)
+        .slice(0, 500),
     };
   }
 
@@ -233,7 +247,7 @@ export class PlayersService {
     params.push(limit + 1);
     const limitParam = cursor ? '$4' : '$2';
 
-    const rows = (await this.favoriteRepo.manager.query(
+    const rows = await this.favoriteRepo.manager.query(
       `
       SELECT
         f.id AS "favoriteId",
@@ -251,14 +265,7 @@ export class PlayersService {
       LIMIT ${limitParam}
       `,
       params,
-    )) as Array<{
-      favoriteId: string;
-      userId: string;
-      createdAt: string | Date;
-      displayName: string | null;
-      elo: number | null;
-      location: unknown;
-    }>;
+    );
 
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -281,17 +288,20 @@ export class PlayersService {
     });
 
     const last = pageRows.at(-1);
-    const nextCursor = hasMore && last
-      ? encodePlayerFavoritesCursor({
-          createdAt: new Date(last.createdAt).toISOString(),
-          id: last.favoriteId,
-        })
-      : null;
+    const nextCursor =
+      hasMore && last
+        ? encodePlayerFavoritesCursor({
+            createdAt: new Date(last.createdAt).toISOString(),
+            id: last.favoriteId,
+          })
+        : null;
 
     return { items, nextCursor };
   }
 
-  private async getOrCreateProfileEntity(userId: string): Promise<PlayerProfile> {
+  private async getOrCreateProfileEntity(
+    userId: string,
+  ): Promise<PlayerProfile> {
     await this.ensureUserExists(userId);
 
     let profile = await this.profileRepo.findOne({ where: { userId } });
@@ -340,15 +350,20 @@ export class PlayersService {
 
     const countryInput = location?.country;
     const country = await this.resolveCountryOrCreate(countryInput);
-    const province = await this.resolveProvinceOrThrow(country.id, provinceInput);
+    const province = await this.resolveProvinceOrThrow(
+      country.id,
+      provinceInput,
+    );
     const city = await this.upsertCity(province.id, cityName);
     return city.id;
   }
 
   private async resolveCountryOrCreate(countryInput?: string | null) {
-    const raw = typeof countryInput === 'string' ? normalizeGeoText(countryInput) : '';
+    const raw =
+      typeof countryInput === 'string' ? normalizeGeoText(countryInput) : '';
     const key =
-      !raw || ['ar', 'arg', 'argentina'].includes(raw.toLocaleLowerCase('es-AR'))
+      !raw ||
+      ['ar', 'arg', 'argentina'].includes(raw.toLocaleLowerCase('es-AR'))
         ? 'argentina'
         : normalizeGeoKey(raw);
 
@@ -359,12 +374,16 @@ export class PlayersService {
 
     if (country) return country;
 
-    const countryName = key === 'argentina' ? 'Argentina' : toDisplayGeoName(raw);
+    const countryName =
+      key === 'argentina' ? 'Argentina' : toDisplayGeoName(raw);
     country = this.countryRepo.create({ name: countryName });
     return this.countryRepo.save(country);
   }
 
-  private async resolveProvinceOrThrow(countryId: string, provinceInput: string) {
+  private async resolveProvinceOrThrow(
+    countryId: string,
+    provinceInput: string,
+  ) {
     const normalized = normalizeGeoText(provinceInput);
     const provinceNameKey = normalizeGeoKey(normalized);
     const provinceCode =
@@ -447,7 +466,7 @@ export class PlayersService {
 
   private normalizeFavoritesLimit(limit: number | undefined) {
     if (!Number.isFinite(limit)) return 20;
-    const n = Math.trunc(limit as number);
+    const n = Math.trunc(limit);
     if (n < 1) return 1;
     if (n > 50) return 50;
     return n;

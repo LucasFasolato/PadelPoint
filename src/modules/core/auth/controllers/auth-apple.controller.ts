@@ -45,14 +45,24 @@ export class AuthAppleController {
         await this.users.updateDisplayNameIfEmpty(user.id, profile.displayName);
       }
 
-      const tokens = await this.auth.issueTokens(user.id, user.email, user.role);
+      const tokens = await this.auth.issueTokens(
+        user.id,
+        user.email,
+        user.role,
+      );
 
       const cookieOpts = cookieBaseOptions();
-      res.cookie('pp_at', tokens.accessToken, { ...cookieOpts, maxAge: AT_MAX_AGE });
-      res.cookie('pp_rt', tokens.refreshToken, { ...cookieOpts, maxAge: RT_MAX_AGE });
+      res.cookie('pp_at', tokens.accessToken, {
+        ...cookieOpts,
+        maxAge: AT_MAX_AGE,
+      });
+      res.cookie('pp_rt', tokens.refreshToken, {
+        ...cookieOpts,
+        maxAge: RT_MAX_AGE,
+      });
 
       res.redirect(302, `${this.appUrl}/auth/callback`);
-    } catch (_err) {
+    } catch {
       res.redirect(302, `${this.appUrl}/auth/callback?error=oauth_failed`);
     }
   }

@@ -66,6 +66,14 @@ export type CanonicalNotificationItem = {
   data?: Record<string, unknown> | null;
 };
 
+function errorDetailToString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
+
 export type CanonicalNotificationsInboxResponse = {
   items: CanonicalNotificationItem[];
   nextCursor: string | null;
@@ -397,7 +405,12 @@ export class UserNotificationsService {
     inviteStatusById: Map<string, InviteStatus>,
   ): {
     canAct: boolean;
-    actionStatus: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'NOT_ACTIONABLE';
+    actionStatus:
+      | 'PENDING'
+      | 'ACCEPTED'
+      | 'REJECTED'
+      | 'EXPIRED'
+      | 'NOT_ACTIONABLE';
   } {
     const inviteId = this.pickString(data?.inviteId);
     if (!inviteId) {
@@ -423,7 +436,9 @@ export class UserNotificationsService {
   private async fetchInviteStatusMap(
     inviteIds: Array<string | null>,
   ): Promise<Map<string, InviteStatus>> {
-    const uniqueIds = [...new Set(inviteIds.filter((id): id is string => !!id))];
+    const uniqueIds = [
+      ...new Set(inviteIds.filter((id): id is string => !!id)),
+    ];
     if (uniqueIds.length === 0) {
       return new Map();
     }
@@ -451,9 +466,9 @@ export class UserNotificationsService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = errorDetailToString(anyErr?.driverError?.code ?? anyErr?.code);
+    const rawMessage = errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 

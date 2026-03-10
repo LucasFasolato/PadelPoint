@@ -1,6 +1,8 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
+import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { setupOpenApi } from '@/openapi/openapi';
 import { OriginCsrfGuard } from '@/common/guards/origin-csrf.guard';
@@ -18,9 +20,49 @@ async function bootstrap() {
   bootLogger.log(`Starting PadelPoint backend sha=${gitSha} env=${nodeEnv}`);
 
   const app = await NestFactory.create(AppModule);
+  const cookieParserMiddleware = cookieParser() as (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => void;
+  const corsOptions: CorsOptions = {
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ): void => {
+      // Allow non-browser requests (curl, server-to-server, swagger-internal)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
 
-  app.use(cookieParser());
-  app.use((req, res, next) => {
+      const reqOrigin = normalizeOrigin(origin);
+
+      if (!allowedOrigin) {
+        console.log('[CORS] blocked origin (APP_URL missing):', reqOrigin);
+        callback(new Error('Not allowed by CORS'), false);
+        return;
+      }
+
+      if (reqOrigin === allowedOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      console.log(
+        '[CORS] blocked origin:',
+        reqOrigin,
+        'allowed:',
+        allowedOrigin,
+      );
+      callback(new Error('Not allowed by CORS'), false);
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  };
+
+  app.use(cookieParserMiddleware);
+  app.use((req: Request, res: Response, next: NextFunction) => {
     ensureRequestContext(req, res);
     next();
   });
@@ -28,34 +70,7 @@ async function bootstrap() {
   const appUrlRaw = process.env.APP_URL ?? '';
   const allowedOrigin = appUrlRaw ? normalizeOrigin(appUrlRaw) : '';
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      // Allow non-browser requests (curl, server-to-server, swagger-internal)
-      if (!origin) return callback(null, true);
-
-      const reqOrigin = normalizeOrigin(origin);
-
-      if (!allowedOrigin) {
-        // eslint-disable-next-line no-console
-        console.log('[CORS] blocked origin (APP_URL missing):', reqOrigin);
-        return callback(new Error('Not allowed by CORS'), false);
-      }
-
-      if (reqOrigin === allowedOrigin) return callback(null, true);
-
-      // eslint-disable-next-line no-console
-      console.log(
-        '[CORS] blocked origin:',
-        reqOrigin,
-        'allowed:',
-        allowedOrigin,
-      );
-
-      return callback(new Error('Not allowed by CORS'), false);
-    },
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
-  });
+  app.enableCors(corsOptions);
   app.useGlobalGuards(new OriginCsrfGuard());
 
   app.useGlobalPipes(

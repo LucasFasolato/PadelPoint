@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { createHash, randomBytes } from 'crypto';
@@ -13,6 +18,15 @@ import { EMAIL_SENDER } from '../email/email-sender';
 import type { EmailSender } from '../email/email-sender';
 
 const TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function toLogMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return 'unknown';
+}
 
 @Injectable()
 export class PasswordResetService {
@@ -52,7 +66,12 @@ export class PasswordResetService {
     const tokenHash = this.sha256(plaintext);
     const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
 
-    const tokenRow = this.resetTokenRepo.create({ userId: user.id, tokenHash, expiresAt, usedAt: null });
+    const tokenRow = this.resetTokenRepo.create({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      usedAt: null,
+    });
     await this.resetTokenRepo.save(tokenRow);
 
     const resetLink = `${this.appUrl}/reset-password?token=${plaintext}`;
@@ -60,15 +79,20 @@ export class PasswordResetService {
     try {
       await this.emailSender.sendPasswordReset(normalized, resetLink);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`password reset email failed: email=${normalized} error=${msg}`);
+      const msg = toLogMessage(err);
+      this.logger.error(
+        `password reset email failed: email=${normalized} error=${msg}`,
+      );
       // Do not propagate — caller always gets { ok: true }
     }
 
     return { ok: true };
   }
 
-  async confirmReset(token: string, newPassword: string): Promise<{ ok: true }> {
+  async confirmReset(
+    token: string,
+    newPassword: string,
+  ): Promise<{ ok: true }> {
     const tokenHash = this.sha256(token);
 
     const tokenRow = await this.resetTokenRepo.findOne({

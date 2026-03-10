@@ -83,7 +83,8 @@ export function normalizeCategoryInputToKey(
     return categoryNumberToKey(input) ?? undefined;
   }
 
-  const raw = typeof input === 'string' ? input : String(input);
+  if (typeof input !== 'string') return undefined;
+  const raw = input;
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > maxLength) return undefined;
 
@@ -121,7 +122,11 @@ function scoreRow(row: RankingCoreStats): number {
   }
 
   return Math.round(
-    1000 + row.points * 20 + row.wins * 8 + row.setsDiff * 3 + row.gamesDiff * 0.2,
+    1000 +
+      row.points * 20 +
+      row.wins * 8 +
+      row.setsDiff * 3 +
+      row.gamesDiff * 0.2,
   );
 }
 
@@ -140,7 +145,8 @@ export function computeGlobalRankingRows(
     if (b.wins !== a.wins) return b.wins - a.wins;
     if (b.setsDiff !== a.setsDiff) return b.setsDiff - a.setsDiff;
     if (b.gamesDiff !== a.gamesDiff) return b.gamesDiff - a.gamesDiff;
-    if (b.matchesPlayed !== a.matchesPlayed) return b.matchesPlayed - a.matchesPlayed;
+    if (b.matchesPlayed !== a.matchesPlayed)
+      return b.matchesPlayed - a.matchesPlayed;
     return a.userId.localeCompare(b.userId);
   });
 

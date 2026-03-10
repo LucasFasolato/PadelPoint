@@ -387,8 +387,8 @@ export class MatchesService {
       );
     }
 
-    const teamA = hasA2 ? [a1, a2 as string] : [a1];
-    const teamB = hasB2 ? [b1, b2 as string] : [b1];
+    const teamA = hasA2 ? [a1, a2] : [a1];
+    const teamB = hasB2 ? [b1, b2] : [b1];
     const all = [...teamA, ...teamB];
 
     return {
@@ -811,7 +811,7 @@ export class MatchesService {
   }
 
   private parseMatchRankingImpact(
-    raw: MatchResult['rankingImpact'] | unknown,
+    raw: MatchResult['rankingImpact'],
   ): MatchResult['rankingImpact'] | null {
     if (raw == null) return null;
     const parsed =
@@ -2712,7 +2712,7 @@ export class MatchesService {
         }
 
         const challenge = await challengeRepo.findOne({
-          where: { id: match.challengeId as string },
+          where: { id: match.challengeId },
         });
         if (!challenge) {
           throw new NotFoundException('Challenge not found');
@@ -2955,7 +2955,7 @@ export class MatchesService {
         }
 
         const challenge = await challengeRepo.findOne({
-          where: { id: match.challengeId as string },
+          where: { id: match.challengeId },
         });
         if (!challenge) {
           throw new NotFoundException('Challenge not found');

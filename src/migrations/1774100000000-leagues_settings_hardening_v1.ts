@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class LeaguesSettingsHardeningV11774100000000
-  implements MigrationInterface
-{
+export class LeaguesSettingsHardeningV11774100000000 implements MigrationInterface {
   name = 'LeaguesSettingsHardeningV11774100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -110,7 +108,7 @@ export class LeaguesSettingsHardeningV11774100000000
     `);
   }
 
-  public async down(_queryRunner: QueryRunner): Promise<void> {
+  public async down(): Promise<void> {
     // Irreversible corrective backfill.
   }
 }

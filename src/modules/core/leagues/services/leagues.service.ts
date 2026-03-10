@@ -362,8 +362,7 @@ export class LeaguesService {
           const canFallbackActivity =
             includeActivity && this.isLeagueActivityRelationMissing(err);
           const canFallbackGeoProjection =
-            includeGeoProjection &&
-            this.isLeagueGeoProjectionUnsupported(err);
+            includeGeoProjection && this.isLeagueGeoProjectionUnsupported(err);
           const canFallbackRoleColumn =
             includeRoleColumn && this.isLeagueRoleColumnMissing(err);
 
@@ -514,8 +513,7 @@ export class LeaguesService {
           const canFallbackActivity =
             includeActivity && this.isLeagueActivityRelationMissing(err);
           const canFallbackGeoProjection =
-            includeGeoProjection &&
-            this.isLeagueGeoProjectionUnsupported(err);
+            includeGeoProjection && this.isLeagueGeoProjectionUnsupported(err);
           const canFallbackPublicFilter =
             includeIsPublicFilter && this.isLeaguePublicColumnMissing(err);
 
@@ -632,15 +630,14 @@ export class LeaguesService {
       selectColumns.push('NULL AS "cityName"', 'NULL AS "provinceCode"');
     }
 
-    qb.select(selectColumns)
-      .addSelect(
-        (subQuery) =>
-          subQuery
-            .select('COUNT(1)')
-            .from(LeagueMember, 'lm')
-            .where('lm."leagueId" = l.id'),
-        'membersCount',
-      );
+    qb.select(selectColumns).addSelect(
+      (subQuery) =>
+        subQuery
+          .select('COUNT(1)')
+          .from(LeagueMember, 'lm')
+          .where('lm."leagueId" = l.id'),
+      'membersCount',
+    );
 
     if (params.includeActivity) {
       qb.addSelect(
@@ -655,12 +652,10 @@ export class LeaguesService {
       qb.addSelect('NULL', 'lastActivityAt');
     }
 
-    qb
-      .addSelect(sortExpression, 'sortAt')
-      .where(
-        'NOT EXISTS (SELECT 1 FROM "league_members" lm2 WHERE lm2."leagueId" = l.id AND lm2."userId" = :userId)',
-        { userId: params.userId },
-      );
+    qb.addSelect(sortExpression, 'sortAt').where(
+      'NOT EXISTS (SELECT 1 FROM "league_members" lm2 WHERE lm2."leagueId" = l.id AND lm2."userId" = :userId)',
+      { userId: params.userId },
+    );
 
     if (params.includeIsPublicFilter) {
       qb.andWhere('l."isPublic" = true');
@@ -743,15 +738,14 @@ export class LeaguesService {
       selectColumns.push('NULL AS "cityName"', 'NULL AS "provinceCode"');
     }
 
-    qb.select(selectColumns)
-      .addSelect(
-        (subQuery) =>
-          subQuery
-            .select('COUNT(1)')
-            .from(LeagueMember, 'lm')
-            .where('lm."leagueId" = l.id'),
-        'membersCount',
-      );
+    qb.select(selectColumns).addSelect(
+      (subQuery) =>
+        subQuery
+          .select('COUNT(1)')
+          .from(LeagueMember, 'lm')
+          .where('lm."leagueId" = l.id'),
+      'membersCount',
+    );
 
     if (includeActivity) {
       qb.addSelect(
@@ -778,9 +772,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const message = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const message = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     return (
       (code === '42P01' || code === '42703' || code === '42501') &&
@@ -794,9 +790,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const rawMessage = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 
@@ -827,9 +825,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const rawMessage = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 
@@ -846,9 +846,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const rawMessage = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 
@@ -865,9 +867,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const rawMessage = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 
@@ -897,9 +901,11 @@ export class LeaguesService {
       message?: unknown;
       driverError?: { code?: unknown; message?: unknown };
     };
-    const code = String(anyErr?.driverError?.code ?? anyErr?.code ?? '');
-    const rawMessage = String(
-      anyErr?.driverError?.message ?? anyErr?.message ?? '',
+    const code = this.errorDetailToString(
+      anyErr?.driverError?.code ?? anyErr?.code,
+    );
+    const rawMessage = this.errorDetailToString(
+      anyErr?.driverError?.message ?? anyErr?.message,
     ).toLowerCase();
     const normalizedMessage = rawMessage.replace(/["'`]/g, '');
 
@@ -1848,7 +1854,11 @@ export class LeaguesService {
     };
   }
 
-  async approveJoinRequest(userId: string, leagueId: string, requestId: string) {
+  async approveJoinRequest(
+    userId: string,
+    leagueId: string,
+    requestId: string,
+  ) {
     const result = await this.dataSource.transaction(async (manager) => {
       await this.assertLeagueExistsInManager(manager, leagueId);
       await this.assertRoleInManager(
@@ -1929,7 +1939,11 @@ export class LeaguesService {
         LeagueRole.ADMIN,
       );
 
-      const row = await this.getJoinRequestForUpdate(manager, leagueId, requestId);
+      const row = await this.getJoinRequestForUpdate(
+        manager,
+        leagueId,
+        requestId,
+      );
       if (row.status === LeagueJoinRequestStatus.REJECTED) {
         return row;
       }
@@ -1952,7 +1966,11 @@ export class LeaguesService {
     const request = await this.dataSource.transaction(async (manager) => {
       await this.assertLeagueExistsInManager(manager, leagueId);
 
-      const row = await this.getJoinRequestForUpdate(manager, leagueId, requestId);
+      const row = await this.getJoinRequestForUpdate(
+        manager,
+        leagueId,
+        requestId,
+      );
       const canModerate = await this.hasRoleInManager(
         manager,
         leagueId,
@@ -2083,7 +2101,9 @@ export class LeaguesService {
           ...dto,
         });
 
-    if (!(next.winPoints >= next.drawPoints && next.drawPoints >= next.lossPoints)) {
+    if (
+      !(next.winPoints >= next.drawPoints && next.drawPoints >= next.lossPoints)
+    ) {
       throw new BadRequestException({
         statusCode: 400,
         code: 'SETTINGS_INVALID_POINTS_ORDER',
@@ -2094,8 +2114,10 @@ export class LeaguesService {
 
     const updatedFields: Array<keyof LeagueSettings> = [];
     if (current.winPoints !== next.winPoints) updatedFields.push('winPoints');
-    if (current.drawPoints !== next.drawPoints) updatedFields.push('drawPoints');
-    if (current.lossPoints !== next.lossPoints) updatedFields.push('lossPoints');
+    if (current.drawPoints !== next.drawPoints)
+      updatedFields.push('drawPoints');
+    if (current.lossPoints !== next.lossPoints)
+      updatedFields.push('lossPoints');
     if (
       JSON.stringify(current.tieBreakers) !== JSON.stringify(next.tieBreakers)
     ) {
@@ -2129,8 +2151,9 @@ export class LeaguesService {
           code?: unknown;
           driverError?: { code?: unknown };
         };
-        const errorCode = String(
-          anyErr?.driverError?.code ?? anyErr?.code ?? 'unknown',
+        const errorCode = this.errorDetailToString(
+          anyErr?.driverError?.code ?? anyErr?.code,
+          'unknown',
         );
         this.logger.warn(
           JSON.stringify({
@@ -2411,13 +2434,13 @@ export class LeaguesService {
           payload.endDate = league.endDate;
         }
 
-    await this.userNotifications.create({
-      userId: invite.invitedUserId,
-      type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
-      title: `You have been invited to ${league.name}`,
-      body: `${inviterName} invited you to join their league.`,
-      data: payload,
-    });
+        await this.userNotifications.create({
+          userId: invite.invitedUserId,
+          type: UserNotificationType.LEAGUE_INVITE_RECEIVED,
+          title: `You have been invited to ${league.name}`,
+          body: `${inviterName} invited you to join their league.`,
+          data: payload,
+        });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'unknown';
         this.logger.error(
@@ -2522,8 +2545,8 @@ export class LeaguesService {
     if (!row || typeof row !== 'object') {
       return null;
     }
-    const id = this.toNonEmptyTrimmedString((row as LeagueListRawRow).id) ?? '';
-    const rawName = this.toNonEmptyTrimmedString((row as LeagueListRawRow).name);
+    const id = this.toNonEmptyTrimmedString(row.id) ?? '';
+    const rawName = this.toNonEmptyTrimmedString(row.name);
     const parsedMembersCount = this.toSafeInteger(row.membersCount);
     const role = this.toLeagueListRole(row.role);
     const lastActivityAt = this.toNullableIsoString(row.lastActivityAt);
@@ -2738,9 +2761,7 @@ export class LeaguesService {
     ).toString('base64url');
   }
 
-  private toNullableIsoString(
-    value: unknown,
-  ): string | null {
+  private toNullableIsoString(value: unknown): string | null {
     if (!value) return null;
     if (value instanceof Date) {
       return Number.isNaN(value.getTime()) ? null : value.toISOString();
@@ -2768,6 +2789,14 @@ export class LeaguesService {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private errorDetailToString(value: unknown, fallback = ''): string {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    return fallback;
   }
 
   private toNullableTrimmedString(value: unknown): string | null {
@@ -2850,7 +2879,9 @@ export class LeaguesService {
     const requesterEmail = request.user?.email ?? null;
     const requesterCity = request.user?.city?.name ?? null;
     const requesterProvince =
-      request.user?.city?.province?.code ?? request.user?.city?.province?.name ?? null;
+      request.user?.city?.province?.code ??
+      request.user?.city?.province?.name ??
+      null;
 
     return {
       id: request.id,

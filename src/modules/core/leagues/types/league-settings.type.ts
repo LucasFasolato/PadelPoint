@@ -135,9 +135,7 @@ function normalizeIncludeSources(input: unknown): LeagueIncludeSource[] {
     : [...DEFAULT_LEAGUE_SETTINGS.includeSources];
 }
 
-export function normalizeLeagueSettings(
-  input?: Partial<LeagueSettings> | unknown,
-): LeagueSettings {
+export function normalizeLeagueSettings(input?: unknown): LeagueSettings {
   const source = asRecord(input) ?? {};
 
   const settings: LeagueSettings = {

@@ -9,5 +9,5 @@ export class LeaguesModeMini1770800000000 implements MigrationInterface {
     );
   }
 
-  public async down(_: QueryRunner): Promise<void> {}
+  public async down(): Promise<void> {}
 }

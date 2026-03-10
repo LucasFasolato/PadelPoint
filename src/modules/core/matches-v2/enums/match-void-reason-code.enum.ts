@@ -1,0 +1,6 @@
+export enum MatchVoidReasonCode {
+  DUPLICATE_MATCH = 'DUPLICATE_MATCH',
+  MATCH_NOT_PLAYED = 'MATCH_NOT_PLAYED',
+  ADMIN_ERROR = 'ADMIN_ERROR',
+  OTHER = 'OTHER',
+}
