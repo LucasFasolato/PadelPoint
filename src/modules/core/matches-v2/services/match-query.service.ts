@@ -49,11 +49,7 @@ export class MatchQueryService {
   ) {}
 
   async getById(matchId: string): Promise<MatchResponseDto> {
-    const match = await this.matchRepository
-      .createQueryBuilder('m')
-      .leftJoinAndSelect('m.proposals', 'proposal')
-      .leftJoinAndSelect('m.messages', 'message')
-      .leftJoinAndSelect('m.dispute', 'dispute')
+    const match = await this.buildMatchDetailQuery()
       .where('"m"."id" = :matchId', { matchId })
       .getOne();
 
@@ -61,11 +57,19 @@ export class MatchQueryService {
       throw new NotFoundException('Match result not found');
     }
 
-    return mapEntityToMatchResponse(match, {
-      proposals: [...(match.proposals ?? [])].sort(this.compareByCreatedAtAsc),
-      messages: [...(match.messages ?? [])].sort(this.compareByCreatedAtAsc),
-      dispute: match.dispute ?? null,
-    });
+    return this.mapMatchDetail(match);
+  }
+
+  async findByLegacyChallengeId(
+    legacyChallengeId: string,
+  ): Promise<MatchResponseDto | null> {
+    const match = await this.buildMatchDetailQuery()
+      .where('"m"."legacy_challenge_id" = :legacyChallengeId', {
+        legacyChallengeId,
+      })
+      .getOne();
+
+    return match ? this.mapMatchDetail(match) : null;
   }
 
   async listMyMatches(
@@ -141,6 +145,22 @@ export class MatchQueryService {
       )`,
       { userId },
     );
+  }
+
+  private buildMatchDetailQuery(): SelectQueryBuilder<Match> {
+    return this.matchRepository
+      .createQueryBuilder('m')
+      .leftJoinAndSelect('m.proposals', 'proposal')
+      .leftJoinAndSelect('m.messages', 'message')
+      .leftJoinAndSelect('m.dispute', 'dispute');
+  }
+
+  private mapMatchDetail(match: Match): MatchResponseDto {
+    return mapEntityToMatchResponse(match, {
+      proposals: [...(match.proposals ?? [])].sort(this.compareByCreatedAtAsc),
+      messages: [...(match.messages ?? [])].sort(this.compareByCreatedAtAsc),
+      dispute: match.dispute ?? null,
+    });
   }
 
   private normalizeLimit(limit?: number): number {

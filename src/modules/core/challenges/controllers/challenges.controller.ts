@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengesService } from '../services/challenges.service';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { ChallengeCoordinationService } from '../services/challenge-coordination.service';
+import { ChallengesV2CoordinationBridgeService } from '../services/challenges-v2-coordination-bridge.service';
 
 import { CreateDirectChallengeDto } from '../dto/create-direct-challenge.dto';
 import { CreateOpenChallengeDto } from '../dto/create-open-challenge.dto';
@@ -35,6 +36,7 @@ export class ChallengesController {
   constructor(
     private readonly service: ChallengesService,
     private readonly coordinationService: ChallengeCoordinationService,
+    private readonly coordinationReadBridge: ChallengesV2CoordinationBridgeService,
   ) {}
 
   @Post('direct')
@@ -94,13 +96,13 @@ export class ChallengesController {
   @Get(':id/coordination')
   getCoordination(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
-    return this.coordinationService.getCoordinationState(id, me.userId);
+    return this.coordinationReadBridge.getCoordinationState(id, me.userId);
   }
 
   @Get(':id/messages')
   getMessages(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
-    return this.coordinationService.listMessages(id, me.userId);
+    return this.coordinationReadBridge.listMessages(id, me.userId);
   }
 
   @Post(':id/proposals')

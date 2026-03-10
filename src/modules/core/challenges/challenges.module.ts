@@ -8,6 +8,7 @@ import { ChallengeMessage } from './entities/challenge-message.entity';
 import { ChallengeScheduleProposal } from './entities/challenge-schedule-proposal.entity';
 import { ChallengesController } from './controllers/challenges.controller';
 import { ChallengeCoordinationService } from './services/challenge-coordination.service';
+import { ChallengesV2CoordinationBridgeService } from './services/challenges-v2-coordination-bridge.service';
 import { ChallengesService } from './services/challenges.service';
 import { ChallengeInvitesController } from './controllers/challenge-invites.controller';
 import { ChallengeInvitesService } from './services/challenge-invites.service';
@@ -17,6 +18,7 @@ import { NotificationsModule } from '@/modules/core/notifications/notifications.
 import { User } from '../users/entities/user.entity';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { MatchResult } from '../matches/entities/match-result.entity';
+import { MatchesV2Module } from '../matches-v2/matches-v2.module';
 
 @Module({
   imports: [
@@ -33,11 +35,13 @@ import { MatchResult } from '../matches/entities/match-result.entity';
     UsersModule,
     CompetitiveModule,
     NotificationsModule,
+    MatchesV2Module,
   ],
   controllers: [ChallengesController, ChallengeInvitesController],
   providers: [
     ChallengesService,
     ChallengeCoordinationService,
+    ChallengesV2CoordinationBridgeService,
     ChallengeInvitesService,
     CityRequiredGuard,
   ],

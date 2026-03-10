@@ -21,6 +21,7 @@ import { mapEntityToMatchResponse } from '../../mappers/match-response.mapper';
 
 type QueryBuilderState = {
   matchId?: string;
+  legacyChallengeId?: string;
   userId?: string;
   status?: MatchStatus;
   leagueId?: string;
@@ -148,6 +149,9 @@ function createMatchQueryBuilder(
     if (sql.includes('"m"."id" = :matchId')) {
       state.matchId = params?.matchId as string;
     }
+    if (sql.includes('"m"."legacy_challenge_id" = :legacyChallengeId')) {
+      state.legacyChallengeId = params?.legacyChallengeId as string;
+    }
     if (sql.includes('"m"."team_a_player_1_id"')) {
       state.userId = params?.userId as string;
     }
@@ -187,7 +191,16 @@ function createMatchQueryBuilder(
     }),
     getOne: jest.fn().mockImplementation(async () => {
       if (single) {
-        return !state.matchId || single.id === state.matchId ? single : null;
+        if (state.matchId && single.id !== state.matchId) {
+          return null;
+        }
+        if (
+          state.legacyChallengeId &&
+          single.legacyChallengeId !== state.legacyChallengeId
+        ) {
+          return null;
+        }
+        return single;
       }
       return null;
     }),
@@ -328,6 +341,55 @@ describe('MatchQueryService', () => {
       await expect(service.getById('missing-match')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('findByLegacyChallengeId', () => {
+    it('returns the mapped match response when a correlated canonical match exists', async () => {
+      const match = makeMatch({
+        id: 'match-legacy',
+        legacyChallengeId: 'challenge-legacy-1',
+        proposals: [
+          {
+            id: 'proposal-1',
+            matchId: 'match-legacy',
+            proposedByUserId: 'user-1',
+            scheduledAt: new Date('2026-03-02T18:00:00.000Z'),
+            locationLabel: 'Court 1',
+            clubId: null,
+            courtId: null,
+            note: null,
+            status: ChallengeScheduleProposalStatus.PENDING,
+            createdAt: new Date('2026-03-01T08:00:00.000Z'),
+            updatedAt: new Date('2026-03-01T08:15:00.000Z'),
+          },
+        ] as MatchProposal[],
+      });
+      const { qb } = createMatchQueryBuilder([], match);
+      repository.createQueryBuilder.mockReturnValue(qb);
+
+      await expect(
+        service.findByLegacyChallengeId('challenge-legacy-1'),
+      ).resolves.toEqual(
+        mapEntityToMatchResponse(match, {
+          proposals: [...match.proposals],
+          messages: [],
+          dispute: null,
+        }),
+      );
+      expect(qb.where).toHaveBeenCalledWith(
+        '"m"."legacy_challenge_id" = :legacyChallengeId',
+        { legacyChallengeId: 'challenge-legacy-1' },
+      );
+    });
+
+    it('returns null when there is no correlated canonical match', async () => {
+      const { qb } = createMatchQueryBuilder([], null);
+      repository.createQueryBuilder.mockReturnValue(qb);
+
+      await expect(
+        service.findByLegacyChallengeId('challenge-missing'),
+      ).resolves.toBeNull();
     });
   });
 
