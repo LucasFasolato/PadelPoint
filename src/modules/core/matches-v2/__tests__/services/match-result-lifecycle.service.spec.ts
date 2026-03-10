@@ -25,6 +25,7 @@ import { MatchDispute } from '../../entities/match-dispute.entity';
 import { Match } from '../../entities/match.entity';
 import { mapEntityToMatchResponse } from '../../mappers/match-response.mapper';
 import { MatchDisputeResolutionV2 } from '../../dto/resolve-match-dispute-v2.dto';
+import { MatchEffectsService } from '../../services/match-effects.service';
 import { MatchResultLifecycleService } from '../../services/match-result-lifecycle.service';
 
 const NOW = new Date('2026-03-10T16:00:00.000Z');
@@ -124,6 +125,13 @@ describe('MatchResultLifecycleService', () => {
   let matchRepository: MockRepo<Match>;
   let txMatchRepository: MockRepo<Match>;
   let txDisputeRepository: MockRepo<MatchDispute>;
+  let matchEffectsService: {
+    afterResultReported: jest.Mock;
+    afterResultConfirmed: jest.Mock;
+    afterResultRejected: jest.Mock;
+    afterDisputeOpened: jest.Mock;
+    afterDisputeResolved: jest.Mock;
+  };
 
   beforeEach(async () => {
     jest.useFakeTimers().setSystemTime(NOW);
@@ -132,6 +140,13 @@ describe('MatchResultLifecycleService', () => {
     matchRepository = createMockRepo<Match>();
     txMatchRepository = createMockRepo<Match>();
     txDisputeRepository = createMockRepo<MatchDispute>();
+    matchEffectsService = {
+      afterResultReported: jest.fn().mockResolvedValue(undefined),
+      afterResultConfirmed: jest.fn().mockResolvedValue(undefined),
+      afterResultRejected: jest.fn().mockResolvedValue(undefined),
+      afterDisputeOpened: jest.fn().mockResolvedValue(undefined),
+      afterDisputeResolved: jest.fn().mockResolvedValue(undefined),
+    };
 
     dataSource.transaction.mockImplementation(async (callback: any) => {
       const manager = {
@@ -149,6 +164,7 @@ describe('MatchResultLifecycleService', () => {
       providers: [
         MatchResultLifecycleService,
         { provide: DataSource, useValue: dataSource },
+        { provide: MatchEffectsService, useValue: matchEffectsService },
         { provide: getRepositoryToken(Match), useValue: matchRepository },
       ],
     }).compile();
@@ -206,6 +222,14 @@ describe('MatchResultLifecycleService', () => {
           resultReportedByUserId: USER_A,
           status: MatchStatus.RESULT_REPORTED,
         }),
+      );
+      expect(matchEffectsService.afterResultReported).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.RESULT_REPORTED,
+        }),
+        USER_A,
       );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, { dispute: null }),
@@ -279,6 +303,14 @@ describe('MatchResultLifecycleService', () => {
           status: MatchStatus.CONFIRMED,
         }),
       );
+      expect(matchEffectsService.afterResultConfirmed).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.CONFIRMED,
+        }),
+        USER_B,
+      );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, { dispute: null }),
       );
@@ -345,6 +377,14 @@ describe('MatchResultLifecycleService', () => {
           rejectionMessage: 'Score is wrong',
           status: MatchStatus.REJECTED,
         }),
+      );
+      expect(matchEffectsService.afterResultRejected).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.REJECTED,
+        }),
+        USER_B,
       );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, { dispute: null }),
@@ -428,6 +468,14 @@ describe('MatchResultLifecycleService', () => {
           hasOpenDispute: true,
           status: MatchStatus.DISPUTED,
         }),
+      );
+      expect(matchEffectsService.afterDisputeOpened).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.DISPUTED,
+        }),
+        USER_C,
       );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, { dispute }),
@@ -523,6 +571,15 @@ describe('MatchResultLifecycleService', () => {
           rejectedAt: null,
         }),
       );
+      expect(matchEffectsService.afterDisputeResolved).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.CONFIRMED,
+        }),
+        USER_A,
+        MatchDisputeResolutionV2.CONFIRM_AS_IS,
+      );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, {
           dispute: hydratedMatch.dispute,
@@ -575,6 +632,15 @@ describe('MatchResultLifecycleService', () => {
           voidedByUserId: USER_B,
           status: MatchStatus.VOIDED,
         }),
+      );
+      expect(matchEffectsService.afterDisputeResolved).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          id: 'match-1',
+          status: MatchStatus.VOIDED,
+        }),
+        USER_B,
+        MatchDisputeResolutionV2.VOID,
       );
       expect(result).toEqual(
         mapEntityToMatchResponse(hydratedMatch, {

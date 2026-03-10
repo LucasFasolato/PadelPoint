@@ -21,6 +21,7 @@ import { Match } from '../entities/match.entity';
 import { MatchStatus } from '../enums/match-status.enum';
 import { MatchTeam } from '../enums/match-team.enum';
 import { mapEntityToMatchResponse } from '../mappers/match-response.mapper';
+import { MatchEffectsService } from './match-effects.service';
 
 type CanonicalSet = {
   a: number;
@@ -33,6 +34,7 @@ type StoredDisputeResolution = MatchDispute['resolution'];
 export class MatchResultLifecycleService {
   constructor(
     private readonly dataSource: DataSource,
+    private readonly matchEffectsService: MatchEffectsService,
     @InjectRepository(Match)
     private readonly matchRepository: Repository<Match>,
   ) {}
@@ -58,6 +60,11 @@ export class MatchResultLifecycleService {
       match.resultReportedByUserId = actorUserId;
       match.status = MatchStatus.RESULT_REPORTED;
       await matchRepository.save(match);
+      await this.matchEffectsService.afterResultReported(
+        manager,
+        match,
+        actorUserId,
+      );
     });
 
     return this.loadMatchResponse(matchId);
@@ -82,6 +89,11 @@ export class MatchResultLifecycleService {
       match.confirmedByUserId = actorUserId;
       match.status = MatchStatus.CONFIRMED;
       await matchRepository.save(match);
+      await this.matchEffectsService.afterResultConfirmed(
+        manager,
+        match,
+        actorUserId,
+      );
     });
 
     return this.loadMatchResponse(matchId);
@@ -108,6 +120,11 @@ export class MatchResultLifecycleService {
       match.rejectionMessage = this.normalizeOptionalString(dto.message);
       match.status = MatchStatus.REJECTED;
       await matchRepository.save(match);
+      await this.matchEffectsService.afterResultRejected(
+        manager,
+        match,
+        actorUserId,
+      );
     });
 
     return this.loadMatchResponse(matchId);
@@ -158,6 +175,11 @@ export class MatchResultLifecycleService {
       match.hasOpenDispute = true;
       match.status = MatchStatus.DISPUTED;
       await matchRepository.save(match);
+      await this.matchEffectsService.afterDisputeOpened(
+        manager,
+        match,
+        actorUserId,
+      );
     });
 
     return this.loadMatchResponse(matchId);
@@ -204,6 +226,12 @@ export class MatchResultLifecycleService {
       }
 
       await matchRepository.save(match);
+      await this.matchEffectsService.afterDisputeResolved(
+        manager,
+        match,
+        actorUserId,
+        dto.resolution,
+      );
     });
 
     return this.loadMatchResponse(matchId);
