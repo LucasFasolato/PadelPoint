@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
-import { MatchResult, MatchResultStatus } from '@core/matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '@core/matches/entities/match-result.entity';
 import { User } from '@core/users/entities/user.entity';
 import { MatchEndorsement } from '../entities/match-endorsement.entity';
 import { CreateMatchEndorsementDto } from '../dto/create-match-endorsement.dto';
@@ -167,7 +170,9 @@ export class MatchEndorsementsService {
       });
 
       try {
-        const saved = await manager.getRepository(MatchEndorsement).save(endorsement);
+        const saved = await manager
+          .getRepository(MatchEndorsement)
+          .save(endorsement);
         return {
           id: saved.id,
           matchId: saved.matchId,
@@ -188,7 +193,8 @@ export class MatchEndorsementsService {
             throw new ConflictException({
               statusCode: 409,
               code: 'ENDORSE_DUPLICATE',
-              message: 'Endorsement already exists for this rival in this match',
+              message:
+                'Endorsement already exists for this rival in this match',
             });
           }
         }
@@ -245,7 +251,10 @@ export class MatchEndorsementsService {
 
     const top = topReceivedStrengths[0] ?? null;
     const unlocked = givenCountLifetime >= INSIGHT_UNLOCK_GIVEN_LIFETIME;
-    const remaining = Math.max(0, INSIGHT_UNLOCK_GIVEN_LIFETIME - givenCountLifetime);
+    const remaining = Math.max(
+      0,
+      INSIGHT_UNLOCK_GIVEN_LIFETIME - givenCountLifetime,
+    );
 
     let message = `Da ${remaining} endorsements mas para desbloquear este insight.`;
     if (unlocked && top) {
@@ -379,7 +388,11 @@ export class MatchEndorsementsService {
   }
 
   private normalizeStrengths(strengths: PlayerStrength[]): PlayerStrength[] {
-    if (!Array.isArray(strengths) || strengths.length < 1 || strengths.length > 2) {
+    if (
+      !Array.isArray(strengths) ||
+      strengths.length < 1 ||
+      strengths.length > 2
+    ) {
       throw new BadRequestException({
         statusCode: 400,
         code: 'ENDORSE_INVALID_STRENGTHS',
@@ -492,7 +505,10 @@ export class MatchEndorsementsService {
     const validStrengths = new Set<string>(Object.values(PlayerStrength));
 
     const parsed: Array<{ strength: PlayerStrength; count: number }> = [];
-    for (const row of rows as Array<{ strength?: string; count?: string | number }>) {
+    for (const row of rows as Array<{
+      strength?: string;
+      count?: string | number;
+    }>) {
       const strength = row.strength ?? '';
       if (!validStrengths.has(strength)) continue;
 
@@ -506,11 +522,13 @@ export class MatchEndorsementsService {
     }
 
     const total = parsed.reduce((acc, item) => acc + item.count, 0);
-    return parsed.map((item): StrengthStat => ({
-      strength: item.strength,
-      count: item.count,
-      percent: total > 0 ? Math.round((item.count * 100) / total) : 0,
-    }));
+    return parsed.map(
+      (item): StrengthStat => ({
+        strength: item.strength,
+        count: item.count,
+        percent: total > 0 ? Math.round((item.count * 100) / total) : 0,
+      }),
+    );
   }
 
   private resolveRivalIds(

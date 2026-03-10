@@ -34,7 +34,11 @@ type InsightsResponse = {
   bestStreak: number;
   lastPlayedAt?: string | null;
   mostPlayedOpponent?: { name: string; matches: number } | null;
-  neededForRanking?: { required: number; current: number; remaining: number } | null;
+  neededForRanking?: {
+    required: number;
+    current: number;
+    remaining: number;
+  } | null;
 };
 
 type OpponentCounter = {
@@ -85,7 +89,10 @@ export class InsightsService {
         window.end,
         mode,
       );
-      const processableMatches = this.toProcessableMatches(matches, params.userId);
+      const processableMatches = this.toProcessableMatches(
+        matches,
+        params.userId,
+      );
       const neededForRanking = this.resolveNeededForRanking(
         processableMatches.length,
       );
@@ -152,8 +159,10 @@ export class InsightsService {
 
       const matchesPlayed = sorted.length;
       const winRate = matchesPlayed > 0 ? wins / matchesPlayed : 0;
-      const lastPlayedAt = sorted[sorted.length - 1]?.playedAt?.toISOString() ?? null;
-      const mostPlayedOpponent = this.resolveMostPlayedOpponent(opponentCounters);
+      const lastPlayedAt =
+        sorted[sorted.length - 1]?.playedAt?.toISOString() ?? null;
+      const mostPlayedOpponent =
+        this.resolveMostPlayedOpponent(opponentCounters);
       const eloDelta = await this.loadEloDelta(
         params.userId,
         sorted.map((match) => match.id),
@@ -226,7 +235,10 @@ export class InsightsService {
     return qb.getMany();
   }
 
-  private async loadEloDelta(userId: string, matchIds: string[]): Promise<number> {
+  private async loadEloDelta(
+    userId: string,
+    matchIds: string[],
+  ): Promise<number> {
     if (matchIds.length === 0) return 0;
 
     try {
@@ -235,7 +247,9 @@ export class InsightsService {
         .innerJoin('h.profile', 'profile')
         .select('COALESCE(SUM(h.delta), 0)', 'delta')
         .where('profile."userId" = :userId', { userId })
-        .andWhere('h.reason = :reason', { reason: EloHistoryReason.MATCH_RESULT })
+        .andWhere('h.reason = :reason', {
+          reason: EloHistoryReason.MATCH_RESULT,
+        })
         .andWhere('h."refId" IN (:...matchIds)', { matchIds })
         .getRawOne<{ delta?: number | string | null }>();
 
@@ -275,7 +289,11 @@ export class InsightsService {
   private resolveOpponents(
     match: MatchResult,
     userId: string,
-  ): Array<{ id: string | null; displayName: string | null; email: string | null }> {
+  ): Array<{
+    id: string | null;
+    displayName: string | null;
+    email: string | null;
+  }> {
     const challenge = match.challenge;
     if (!challenge) return [];
     const inTeamA =
@@ -362,7 +380,10 @@ export class InsightsService {
     for (const match of matches) {
       const id = this.resolveNonEmptyString(match?.id);
       const playedAt = this.resolveDate(match?.playedAt);
-      const hasUserInChallenge = this.isUserInChallenge(match?.challenge, userId);
+      const hasUserInChallenge = this.isUserInChallenge(
+        match?.challenge,
+        userId,
+      );
 
       if (!id || !playedAt || !hasUserInChallenge) {
         skippedMalformed += 1;
@@ -414,7 +435,11 @@ export class InsightsService {
   private emptyResponse(
     timeframe: InsightsTimeframe,
     mode: InsightsMode,
-    neededForRanking: { required: number; current: number; remaining: number } | null,
+    neededForRanking: {
+      required: number;
+      current: number;
+      remaining: number;
+    } | null,
   ): InsightsResponse {
     return {
       timeframe,

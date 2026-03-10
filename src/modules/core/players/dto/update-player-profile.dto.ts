@@ -65,7 +65,10 @@ export class UpdatePlayerLocationDto {
   @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
   cityName?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength })
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength,
+  })
   @IsOptional()
   @Transform(({ value }) => trimOrNull(value))
   @IsString()
@@ -82,14 +85,20 @@ export class UpdatePlayerLocationDto {
   @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
   provinceCode?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength })
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength,
+  })
   @IsOptional()
   @Transform(({ value }) => trimOrNull(value))
   @IsString()
   @MaxLength(PLAYER_PROFILE_LIMITS.maxLocationFieldLength)
   province?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength })
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.maxLocationFieldLength,
+  })
   @IsOptional()
   @Transform(({ value }) => trimOrNull(value))
   @IsString()
@@ -98,7 +107,10 @@ export class UpdatePlayerLocationDto {
 }
 
 export class UpdatePlayerProfileDto {
-  @ApiPropertyOptional({ nullable: true, maxLength: PLAYER_PROFILE_LIMITS.bioMaxLength })
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: PLAYER_PROFILE_LIMITS.bioMaxLength,
+  })
   @IsOptional()
   @Transform(({ value }) => trimOrNull(value))
   @IsString()
@@ -132,7 +144,10 @@ export class UpdatePlayerProfileDto {
   @MaxLength(PLAYER_PROFILE_LIMITS.maxStrengthLength, { each: true })
   strengths?: string[] | null;
 
-  @ApiPropertyOptional({ type: () => UpdatePlayerLookingForDto, nullable: true })
+  @ApiPropertyOptional({
+    type: () => UpdatePlayerLookingForDto,
+    nullable: true,
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => UpdatePlayerLookingForDto)
@@ -144,4 +159,3 @@ export class UpdatePlayerProfileDto {
   @Type(() => UpdatePlayerLocationDto)
   location?: UpdatePlayerLocationDto | null;
 }
-

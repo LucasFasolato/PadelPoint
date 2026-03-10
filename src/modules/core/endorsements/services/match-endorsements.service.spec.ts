@@ -9,7 +9,10 @@ import { DataSource, QueryFailedError } from 'typeorm';
 import { createMockRepo } from '@/test-utils/mock-repo';
 import { MatchEndorsementsService } from './match-endorsements.service';
 import { MatchEndorsement } from '../entities/match-endorsement.entity';
-import { MatchResult, MatchResultStatus } from '@core/matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '@core/matches/entities/match-result.entity';
 import { MatchType } from '@core/matches/enums/match-type.enum';
 import { User } from '@core/users/entities/user.entity';
 import { PlayerStrength } from '../enums/player-strength.enum';
@@ -214,9 +217,9 @@ describe('MatchEndorsementsService', () => {
       addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
-      getRawMany: jest.fn().mockResolvedValue([
-        { matchId: 'match-1', toUserId: USER_B1 },
-      ]),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue([{ matchId: 'match-1', toUserId: USER_B1 }]),
     };
     endorsementsRepo.createQueryBuilder.mockReturnValue(endorsementsQb as any);
     userRepo.find.mockResolvedValue([

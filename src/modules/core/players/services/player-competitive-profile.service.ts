@@ -114,12 +114,12 @@ export class PlayerCompetitiveProfileService {
         losses,
         draws,
         winRate:
-          matchesPlayed > 0
-            ? Number((wins / matchesPlayed).toFixed(4))
-            : 0,
+          matchesPlayed > 0 ? Number((wins / matchesPlayed).toFixed(4)) : 0,
       },
       ranking: {
-        currentPosition: this.toIntegerOrNull(rankingRow?.currentPosition ?? null),
+        currentPosition: this.toIntegerOrNull(
+          rankingRow?.currentPosition ?? null,
+        ),
         peakPosition: this.toIntegerOrNull(rankingRow?.peakPosition ?? null),
         elo: this.toIntegerOrNull(profileRow?.elo ?? null),
       },
@@ -165,7 +165,9 @@ export class PlayerCompetitiveProfileService {
     return rows[0] ?? null;
   }
 
-  private async fetchRankingData(userId: string): Promise<PlayerRankingRow | null> {
+  private async fetchRankingData(
+    userId: string,
+  ): Promise<PlayerRankingRow | null> {
     const rows = await this.dataSource.query<PlayerRankingRow[]>(
       `
       WITH snapshots AS (

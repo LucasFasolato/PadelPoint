@@ -22,4 +22,3 @@ export const PLAYER_PROFILE_LIMITS = {
   maxStrengthLength: 32,
   maxLocationFieldLength: 80,
 } as const;
-

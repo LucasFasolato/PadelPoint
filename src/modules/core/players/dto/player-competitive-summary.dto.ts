@@ -137,7 +137,10 @@ export class PlayerCompetitiveSummaryDto {
   @ApiPropertyOptional({ example: null, nullable: true })
   avatarUrl!: string | null;
 
-  @ApiPropertyOptional({ type: () => CompetitiveSummaryCityDto, nullable: true })
+  @ApiPropertyOptional({
+    type: () => CompetitiveSummaryCityDto,
+    nullable: true,
+  })
   city!: CompetitiveSummaryCityDto | null;
 
   @ApiPropertyOptional({

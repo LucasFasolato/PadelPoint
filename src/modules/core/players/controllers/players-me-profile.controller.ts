@@ -1,18 +1,12 @@
 import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/modules/core/auth/guards/roles.guard';
 import { Roles } from '@/modules/core/auth/decorators/roles.decorator';
 import { UserRole } from '../../users/enums/user-role.enum';
 import { PlayersService } from '../services/players.service';
-import {
-  PlayerProfileResponseDto,
-} from '../dto/player-profile-response.dto';
+import { PlayerProfileResponseDto } from '../dto/player-profile-response.dto';
 import { UpdatePlayerProfileDto } from '../dto/update-player-profile.dto';
 
 type AuthUser = { userId: string; email: string; role: UserRole };
@@ -41,4 +35,3 @@ export class PlayersMeProfileController {
     return this.playersService.updateMyProfile(user.userId, dto);
   }
 }
-

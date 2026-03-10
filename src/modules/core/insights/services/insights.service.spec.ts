@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { MatchResult, WinnerTeam } from '@core/matches/entities/match-result.entity';
+import {
+  MatchResult,
+  WinnerTeam,
+} from '@core/matches/entities/match-result.entity';
 import { EloHistory } from '@core/competitive/entities/elo-history.entity';
 import { MatchType } from '@core/matches/enums/match-type.enum';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
@@ -56,9 +59,21 @@ describe('InsightsService', () => {
             teamB1Id: 'opp-1',
             teamB2Id: 'opp-2',
             teamA1: { id: USER_ID, displayName: 'Me', email: 'me@test.com' },
-            teamA2: { id: 'ally-1', displayName: 'Ally', email: 'ally@test.com' },
-            teamB1: { id: 'opp-1', displayName: 'Opponent 1', email: 'o1@test.com' },
-            teamB2: { id: 'opp-2', displayName: 'Opponent 2', email: 'o2@test.com' },
+            teamA2: {
+              id: 'ally-1',
+              displayName: 'Ally',
+              email: 'ally@test.com',
+            },
+            teamB1: {
+              id: 'opp-1',
+              displayName: 'Opponent 1',
+              email: 'o1@test.com',
+            },
+            teamB2: {
+              id: 'opp-2',
+              displayName: 'Opponent 2',
+              email: 'o2@test.com',
+            },
           },
         },
         {
@@ -72,9 +87,21 @@ describe('InsightsService', () => {
             teamB1Id: 'opp-1',
             teamB2Id: 'opp-3',
             teamA1: { id: USER_ID, displayName: 'Me', email: 'me@test.com' },
-            teamA2: { id: 'ally-2', displayName: 'Ally 2', email: 'ally2@test.com' },
-            teamB1: { id: 'opp-1', displayName: 'Opponent 1', email: 'o1@test.com' },
-            teamB2: { id: 'opp-3', displayName: 'Opponent 3', email: 'o3@test.com' },
+            teamA2: {
+              id: 'ally-2',
+              displayName: 'Ally 2',
+              email: 'ally2@test.com',
+            },
+            teamB1: {
+              id: 'opp-1',
+              displayName: 'Opponent 1',
+              email: 'o1@test.com',
+            },
+            teamB2: {
+              id: 'opp-3',
+              displayName: 'Opponent 3',
+              email: 'o3@test.com',
+            },
           },
         },
       ]),
@@ -179,9 +206,21 @@ describe('InsightsService', () => {
             teamB1Id: 'opp-1',
             teamB2Id: 'opp-2',
             teamA1: { id: USER_ID, displayName: 'Me', email: 'me@test.com' },
-            teamA2: { id: 'ally-1', displayName: 'Ally', email: 'ally@test.com' },
-            teamB1: { id: 'opp-1', displayName: 'Opponent 1', email: 'o1@test.com' },
-            teamB2: { id: 'opp-2', displayName: 'Opponent 2', email: 'o2@test.com' },
+            teamA2: {
+              id: 'ally-1',
+              displayName: 'Ally',
+              email: 'ally@test.com',
+            },
+            teamB1: {
+              id: 'opp-1',
+              displayName: 'Opponent 1',
+              email: 'o1@test.com',
+            },
+            teamB2: {
+              id: 'opp-2',
+              displayName: 'Opponent 2',
+              email: 'o2@test.com',
+            },
           },
         },
       ]),

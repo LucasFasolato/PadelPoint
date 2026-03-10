@@ -136,7 +136,10 @@ export class PlayerCompetitiveSummaryService {
       targetUserId,
     );
     const strengths = this.buildStrengths(strengthRows);
-    const recentMatches = this.buildRecentMatches(recentMatchRows, targetUserId);
+    const recentMatches = this.buildRecentMatches(
+      recentMatchRows,
+      targetUserId,
+    );
     const activity = this.buildActivity(recentMatchRows);
 
     return {
@@ -274,7 +277,9 @@ export class PlayerCompetitiveSummaryService {
 
   // ─── Builders ────────────────────────────────────────────────────────────
 
-  private buildCity(row: PlayerDataRow | null): CompetitiveSummaryCityDto | null {
+  private buildCity(
+    row: PlayerDataRow | null,
+  ): CompetitiveSummaryCityDto | null {
     if (!row?.cityId || !row?.cityName) return null;
     return {
       id: row.cityId,
@@ -293,8 +298,13 @@ export class PlayerCompetitiveSummaryService {
     // Competitive profile may not exist
     if (row.elo === null && row.matchesPlayed === null) return null;
 
-    const elo = Number.isFinite(Number(row.elo)) ? Number(row.elo) : DEFAULT_ELO;
-    const matchesPlayed = Math.max(0, Math.trunc(Number(row.matchesPlayed ?? 0)));
+    const elo = Number.isFinite(Number(row.elo))
+      ? Number(row.elo)
+      : DEFAULT_ELO;
+    const matchesPlayed = Math.max(
+      0,
+      Math.trunc(Number(row.matchesPlayed ?? 0)),
+    );
     const wins = Math.max(0, Math.trunc(Number(row.wins ?? 0)));
     const losses = Math.max(0, Math.trunc(Number(row.losses ?? 0)));
     const draws = Math.max(0, Math.trunc(Number(row.draws ?? 0)));
@@ -338,7 +348,9 @@ export class PlayerCompetitiveSummaryService {
     const result: RecentMatchDto[] = [];
 
     for (const row of rows) {
-      const playedAt = row.playedAt ? new Date(row.playedAt).toISOString() : null;
+      const playedAt = row.playedAt
+        ? new Date(row.playedAt).toISOString()
+        : null;
       if (!playedAt) continue;
 
       const result_outcome = this.resolveMatchResult(row, userId);
@@ -371,8 +383,7 @@ export class PlayerCompetitiveSummaryService {
 
     const sevenDaysAgo = Date.now() - ACTIVE_DAYS_WINDOW * 24 * 60 * 60 * 1000;
     const isActiveLast7Days =
-      lastPlayedAt !== null &&
-      new Date(lastPlayedAt).getTime() >= sevenDaysAgo;
+      lastPlayedAt !== null && new Date(lastPlayedAt).getTime() >= sevenDaysAgo;
 
     return { lastPlayedAt, isActiveLast7Days };
   }
@@ -459,7 +470,7 @@ export class PlayerCompetitiveSummaryService {
 
     const push = (a: number | null, b: number | null) => {
       if (Number.isFinite(a) && Number.isFinite(b)) {
-        sets.push({ a: a as number, b: b as number });
+        sets.push({ a: a, b: b });
       }
     };
 
@@ -477,12 +488,18 @@ export class PlayerCompetitiveSummaryService {
     const teamA = [
       { id: row.teamA1Id, name: row.a1Name },
       { id: row.teamA2Id, name: row.a2Name },
-    ].filter((p): p is { id: string; name: string | null } => typeof p.id === 'string' && p.id.length > 0);
+    ].filter(
+      (p): p is { id: string; name: string | null } =>
+        typeof p.id === 'string' && p.id.length > 0,
+    );
 
     const teamB = [
       { id: row.teamB1Id, name: row.b1Name },
       { id: row.teamB2Id, name: row.b2Name },
-    ].filter((p): p is { id: string; name: string | null } => typeof p.id === 'string' && p.id.length > 0);
+    ].filter(
+      (p): p is { id: string; name: string | null } =>
+        typeof p.id === 'string' && p.id.length > 0,
+    );
 
     const isTeamA = teamA.some((p) => p.id === userId);
     const opponents = isTeamA ? teamB : teamA;

@@ -50,9 +50,12 @@ function makeMatchRow(partial: Record<string, unknown> = {}) {
     winnerTeam: 'A',
     matchType: 'COMPETITIVE',
     impactRanking: true,
-    teamASet1: 7, teamBSet1: 6,
-    teamASet2: 6, teamBSet2: 4,
-    teamASet3: null, teamBSet3: null,
+    teamASet1: 7,
+    teamBSet1: 6,
+    teamASet2: 6,
+    teamBSet2: 4,
+    teamASet3: null,
+    teamBSet3: null,
     teamA1Id: USER_ID,
     teamA2Id: '00000000-0000-4000-8000-000000000002',
     teamB1Id: '00000000-0000-4000-8000-000000000003',
@@ -99,7 +102,9 @@ describe('PlayerCompetitiveSummaryService', () => {
   it('throws NotFoundException for unknown player', async () => {
     userRepo.findOne.mockResolvedValue(null);
 
-    await expect(service.getSummary(USER_ID)).rejects.toThrow(NotFoundException);
+    await expect(service.getSummary(USER_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   // ─── Full profile ────────────────────────────────────────────────────────
@@ -131,25 +136,28 @@ describe('PlayerCompetitiveSummaryService', () => {
 
     // city
     expect(result.city).toBeDefined();
-    expect(result.city!.name).toBe('Rosario');
-    expect(result.city!.provinceCode).toBe('AR-S');
+    expect(result.city.name).toBe('Rosario');
+    expect(result.city.provinceCode).toBe('AR-S');
 
     // competitive
     expect(result.competitive).toBeDefined();
-    expect(result.competitive!.elo).toBe(1470);
-    expect(result.competitive!.category).toBe(4); // 1450 threshold → category 4
-    expect(result.competitive!.categoryKey).toBe('4ta');
-    expect(result.competitive!.matchesPlayed).toBe(24);
-    expect(result.competitive!.wins).toBe(15);
-    expect(result.competitive!.losses).toBe(8);
-    expect(result.competitive!.draws).toBe(1);
-    expect(result.competitive!.winRate).toBeCloseTo(15 / 24, 3);
+    expect(result.competitive.elo).toBe(1470);
+    expect(result.competitive.category).toBe(4); // 1450 threshold → category 4
+    expect(result.competitive.categoryKey).toBe('4ta');
+    expect(result.competitive.matchesPlayed).toBe(24);
+    expect(result.competitive.wins).toBe(15);
+    expect(result.competitive.losses).toBe(8);
+    expect(result.competitive.draws).toBe(1);
+    expect(result.competitive.winRate).toBeCloseTo(15 / 24, 3);
 
     // recentForm: W L W W W
-    expect(result.competitive!.recentForm).toEqual(['W', 'L', 'W', 'W', 'W']);
+    expect(result.competitive.recentForm).toEqual(['W', 'L', 'W', 'W', 'W']);
 
     // currentStreak: W count=1 (stopped at index 1 which is L)
-    expect(result.competitive!.currentStreak).toEqual({ type: 'WIN', count: 1 });
+    expect(result.competitive.currentStreak).toEqual({
+      type: 'WIN',
+      count: 1,
+    });
 
     // strengths
     expect(result.strengths.topStrength).toBe('TACTICA');
@@ -161,7 +169,9 @@ describe('PlayerCompetitiveSummaryService', () => {
     expect(result.recentMatches).toHaveLength(5);
     expect(result.recentMatches[0].result).toBe('WIN');
     expect(result.recentMatches[1].result).toBe('LOSS');
-    expect(result.recentMatches[0].opponentSummary).toBe('vs Juan Perez + Pedro Garcia');
+    expect(result.recentMatches[0].opponentSummary).toBe(
+      'vs Juan Perez + Pedro Garcia',
+    );
     expect(result.recentMatches[0].score.summary).toBe('7-6 6-4');
     expect(result.recentMatches[0].score.sets).toEqual([
       { a: 7, b: 6 },
@@ -178,7 +188,9 @@ describe('PlayerCompetitiveSummaryService', () => {
     userRepo.findOne.mockResolvedValue(makeUser({ cityId: null }));
 
     mockDataSource.query
-      .mockResolvedValueOnce([makePlayerDataRow({ cityId: null, cityName: null, provinceCode: null })])
+      .mockResolvedValueOnce([
+        makePlayerDataRow({ cityId: null, cityName: null, provinceCode: null }),
+      ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
@@ -217,8 +229,8 @@ describe('PlayerCompetitiveSummaryService', () => {
     const result = await service.getSummary(USER_ID);
 
     expect(result.recentMatches).toHaveLength(0);
-    expect(result.competitive!.recentForm).toHaveLength(0);
-    expect(result.competitive!.currentStreak).toBeNull();
+    expect(result.competitive.recentForm).toHaveLength(0);
+    expect(result.competitive.currentStreak).toBeNull();
     expect(result.activity.lastPlayedAt).toBeNull();
     expect(result.activity.isActiveLast7Days).toBe(false);
   });
@@ -229,7 +241,15 @@ describe('PlayerCompetitiveSummaryService', () => {
     userRepo.findOne.mockResolvedValue(makeUser());
 
     mockDataSource.query
-      .mockResolvedValueOnce([makePlayerDataRow({ elo: null, matchesPlayed: null, wins: null, losses: null, draws: null })])
+      .mockResolvedValueOnce([
+        makePlayerDataRow({
+          elo: null,
+          matchesPlayed: null,
+          wins: null,
+          losses: null,
+          draws: null,
+        }),
+      ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
@@ -262,8 +282,11 @@ describe('PlayerCompetitiveSummaryService', () => {
 
     const result = await service.getSummary(USER_ID);
 
-    expect(result.competitive!.recentForm).toEqual(['W', 'L', 'D']);
-    expect(result.competitive!.currentStreak).toEqual({ type: 'WIN', count: 1 });
+    expect(result.competitive.recentForm).toEqual(['W', 'L', 'D']);
+    expect(result.competitive.currentStreak).toEqual({
+      type: 'WIN',
+      count: 1,
+    });
   });
 
   // ─── recentMatches result from perspective ───────────────────────────────
@@ -321,13 +344,21 @@ describe('PlayerCompetitiveSummaryService', () => {
 
     mockDataSource.query
       .mockResolvedValueOnce([makePlayerDataRow()])
-      .mockResolvedValueOnce([winRow, winRow, winRow, { ...winRow, winnerTeam: 'B' }])
+      .mockResolvedValueOnce([
+        winRow,
+        winRow,
+        winRow,
+        { ...winRow, winnerTeam: 'B' },
+      ])
       .mockResolvedValueOnce([]);
 
     const result = await service.getSummary(USER_ID);
 
-    expect(result.competitive!.currentStreak).toEqual({ type: 'WIN', count: 3 });
-    expect(result.competitive!.recentForm).toEqual(['W', 'W', 'W', 'L']);
+    expect(result.competitive.currentStreak).toEqual({
+      type: 'WIN',
+      count: 3,
+    });
+    expect(result.competitive.recentForm).toEqual(['W', 'W', 'W', 'L']);
   });
 
   it('does not cap currentStreak to the recentForm window', async () => {
@@ -350,8 +381,11 @@ describe('PlayerCompetitiveSummaryService', () => {
 
     const result = await service.getSummary(USER_ID);
 
-    expect(result.competitive!.recentForm).toEqual(['W', 'W', 'W', 'W', 'W']);
-    expect(result.competitive!.currentStreak).toEqual({ type: 'WIN', count: 6 });
+    expect(result.competitive.recentForm).toEqual(['W', 'W', 'W', 'W', 'W']);
+    expect(result.competitive.currentStreak).toEqual({
+      type: 'WIN',
+      count: 6,
+    });
   });
 
   // ─── Response shape ──────────────────────────────────────────────────────
@@ -402,6 +436,8 @@ describe('PlayerCompetitiveSummaryService', () => {
 
     const result = await service.getSummary(USER_ID);
 
-    expect(result.recentMatches[0].opponentSummary).toBe('vs Juan Perez + Pedro Garcia');
+    expect(result.recentMatches[0].opponentSummary).toBe(
+      'vs Juan Perez + Pedro Garcia',
+    );
   });
 });

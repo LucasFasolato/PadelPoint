@@ -12,9 +12,13 @@ import {
 import { Province } from './province.entity';
 import { User } from '../../users/entities/user.entity';
 
-@Index('UQ_cities_provinceId_normalizedName', ['provinceId', 'normalizedName'], {
-  unique: true,
-})
+@Index(
+  'UQ_cities_provinceId_normalizedName',
+  ['provinceId', 'normalizedName'],
+  {
+    unique: true,
+  },
+)
 @Entity('cities')
 export class City {
   @PrimaryGeneratedColumn('uuid')

@@ -164,7 +164,10 @@ export class UsersService {
   }
 
   /** Sets displayName only when the user currently has none. No-op if already set. */
-  async updateDisplayNameIfEmpty(userId: string, displayName: string): Promise<void> {
+  async updateDisplayNameIfEmpty(
+    userId: string,
+    displayName: string,
+  ): Promise<void> {
     const user = await this.repo.findOne({ where: { id: userId } });
     if (user && !user.displayName) {
       user.displayName = displayName;

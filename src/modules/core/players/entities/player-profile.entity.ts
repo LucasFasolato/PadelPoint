@@ -51,4 +51,3 @@ export class PlayerProfile {
   @UpdateDateColumn()
   updatedAt!: Date;
 }
-

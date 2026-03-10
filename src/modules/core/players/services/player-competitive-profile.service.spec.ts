@@ -59,7 +59,9 @@ describe('PlayerCompetitiveProfileService', () => {
   it('throws NotFoundException for unknown player', async () => {
     userRepo.findOne.mockResolvedValue(null);
 
-    await expect(service.getProfile(USER_ID)).rejects.toThrow(NotFoundException);
+    await expect(service.getProfile(USER_ID)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('returns deep competitive profile with career ranking streaks and activity', async () => {
