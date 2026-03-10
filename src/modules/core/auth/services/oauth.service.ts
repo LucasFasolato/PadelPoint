@@ -25,7 +25,10 @@ export class OAuthService {
   async linkOrCreateFromOAuth(profile: OAuthProfile): Promise<User> {
     // 1. Identity already linked → return the user
     const existing = await this.identityRepo.findOne({
-      where: { provider: profile.provider, providerUserId: profile.providerUserId },
+      where: {
+        provider: profile.provider,
+        providerUserId: profile.providerUserId,
+      },
     });
     if (existing) {
       const user = await this.users.findById(existing.userId);
@@ -52,7 +55,10 @@ export class OAuthService {
   // Helpers
   // ──────────────────────────────────────────────────────────────────
 
-  private async createUserSafe(profile: OAuthProfile, emailPrefix: string): Promise<User> {
+  private async createUserSafe(
+    profile: OAuthProfile,
+    emailPrefix: string,
+  ): Promise<User> {
     try {
       return await this.users.create({
         email: profile.email ?? `${profile.providerUserId}@oauth.local`,
@@ -67,7 +73,10 @@ export class OAuthService {
       if (this.isUniqueViolation(err)) {
         // Re-fetch via identity (another process may have completed the full flow)
         const identity = await this.identityRepo.findOne({
-          where: { provider: profile.provider, providerUserId: profile.providerUserId },
+          where: {
+            provider: profile.provider,
+            providerUserId: profile.providerUserId,
+          },
         });
         if (identity) {
           const user = await this.users.findById(identity.userId);
@@ -83,7 +92,10 @@ export class OAuthService {
     }
   }
 
-  private async saveIdentitySafe(userId: string, profile: OAuthProfile): Promise<void> {
+  private async saveIdentitySafe(
+    userId: string,
+    profile: OAuthProfile,
+  ): Promise<void> {
     try {
       const identity = this.identityRepo.create({
         userId,

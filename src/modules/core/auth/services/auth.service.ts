@@ -65,7 +65,10 @@ export class AuthService {
     return this.issueTokens(user.id, user.email, user.role);
   }
 
-  async loginPlayer(input: { email: string; password: string }): Promise<AuthTokens> {
+  async loginPlayer(input: {
+    email: string;
+    password: string;
+  }): Promise<AuthTokens> {
     const user = await this.validateCredentials(input);
     if (user.role !== UserRole.PLAYER) {
       throw new ForbiddenException('Only player accounts allowed');
@@ -81,7 +84,10 @@ export class AuthService {
     userId: string,
     email: string,
     role: string,
-  ): { accessToken: string; user: { userId: string; email: string; role: string } } {
+  ): {
+    accessToken: string;
+    user: { userId: string; email: string; role: string };
+  } {
     if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET not loaded');
     const accessToken = this.jwt.sign({ sub: userId, email, role });
     return { accessToken, user: { userId, email, role } };
@@ -91,24 +97,34 @@ export class AuthService {
    * Signs a new access token AND creates a refresh token row.
    * Used on login/register.
    */
-  async issueTokens(userId: string, email: string, role: string): Promise<AuthTokens> {
+  async issueTokens(
+    userId: string,
+    email: string,
+    role: string,
+  ): Promise<AuthTokens> {
     const { accessToken, user } = this.issueAccessToken(userId, email, role);
     const refreshToken = await this.refreshTokens.createRefreshToken(userId);
     return { accessToken, refreshToken, user };
   }
 
-  private async validateCredentials(input: { email: string; password: string }) {
+  private async validateCredentials(input: {
+    email: string;
+    password: string;
+  }) {
     const email = input.email.toLowerCase().trim();
 
     const user = await this.users.findByEmail(email);
-    if (!user || !user.active) throw new UnauthorizedException('Invalid credentials');
+    if (!user || !user.active)
+      throw new UnauthorizedException('Invalid credentials');
 
     const identity = await this.identityRepo.findOne({
       where: { userId: user.id, provider: AuthProvider.PASSWORD },
     });
 
     if (!identity || !identity.passwordHash) {
-      const allIdentities = await this.identityRepo.find({ where: { userId: user.id } });
+      const allIdentities = await this.identityRepo.find({
+        where: { userId: user.id },
+      });
       const providers = allIdentities
         .filter((i) => i.provider !== AuthProvider.PASSWORD)
         .map((i) => i.provider);

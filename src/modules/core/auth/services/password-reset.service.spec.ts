@@ -65,13 +65,18 @@ describe('PasswordResetService', () => {
     };
 
     usersService = { findByEmail: jest.fn() };
-    refreshTokenService = { revokeAllForUser: jest.fn().mockResolvedValue(undefined) };
+    refreshTokenService = {
+      revokeAllForUser: jest.fn().mockResolvedValue(undefined),
+    };
     emailSender = { sendPasswordReset: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PasswordResetService,
-        { provide: getRepositoryToken(PasswordResetToken), useValue: resetTokenRepo },
+        {
+          provide: getRepositoryToken(PasswordResetToken),
+          useValue: resetTokenRepo,
+        },
         { provide: getRepositoryToken(AuthIdentity), useValue: identityRepo },
         { provide: UsersService, useValue: usersService },
         { provide: RefreshTokenService, useValue: refreshTokenService },
@@ -105,7 +110,10 @@ describe('PasswordResetService', () => {
 
       expect(result).toEqual({ ok: true });
       expect(emailSender.sendPasswordReset).toHaveBeenCalledTimes(1);
-      const [toArg, linkArg] = emailSender.sendPasswordReset.mock.calls[0] as [string, string];
+      const [toArg, linkArg] = emailSender.sendPasswordReset.mock.calls[0] as [
+        string,
+        string,
+      ];
       expect(toArg).toBe('test@example.com');
       expect(linkArg).toContain('/reset-password?token=');
     });
@@ -137,9 +145,9 @@ describe('PasswordResetService', () => {
     it('throws BadRequestException for an unknown token', async () => {
       resetTokenRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.confirmReset('bad-token', 'newpassword123')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.confirmReset('bad-token', 'newpassword123'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException for a used token', async () => {
@@ -147,9 +155,9 @@ describe('PasswordResetService', () => {
         makeTokenRow({ usedAt: new Date(Date.now() - 1000) }),
       );
 
-      await expect(service.confirmReset('used-token', 'newpassword123')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.confirmReset('used-token', 'newpassword123'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException for an expired token', async () => {
@@ -157,9 +165,9 @@ describe('PasswordResetService', () => {
         makeTokenRow({ expiresAt: new Date(Date.now() - 1000) }),
       );
 
-      await expect(service.confirmReset('expired-token', 'newpassword123')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.confirmReset('expired-token', 'newpassword123'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('creates a new PASSWORD identity when none exists', async () => {
@@ -224,14 +232,19 @@ describe('PasswordResetService', () => {
 
       await service.confirmReset('valid-token', 'newpassword123');
 
-      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith('user-1');
+      expect(refreshTokenService.revokeAllForUser).toHaveBeenCalledWith(
+        'user-1',
+      );
     });
 
     it('returns { ok: true } on success', async () => {
       resetTokenRepo.findOne.mockResolvedValue(makeTokenRow());
       identityRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.confirmReset('valid-token', 'newpassword123');
+      const result = await service.confirmReset(
+        'valid-token',
+        'newpassword123',
+      );
 
       expect(result).toEqual({ ok: true });
     });

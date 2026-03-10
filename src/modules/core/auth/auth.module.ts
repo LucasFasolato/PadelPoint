@@ -49,7 +49,11 @@ export class AuthModule {
     return {
       module: AuthModule,
       imports: [
-        TypeOrmModule.forFeature([AuthIdentity, RefreshToken, PasswordResetToken]),
+        TypeOrmModule.forFeature([
+          AuthIdentity,
+          RefreshToken,
+          PasswordResetToken,
+        ]),
         UsersModule,
         PassportModule,
         ConfigModule,

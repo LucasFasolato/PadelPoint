@@ -42,15 +42,24 @@ describe('AuthController', () => {
       register: jest.fn().mockResolvedValue(tokens),
       login: jest.fn().mockResolvedValue(tokens),
       loginPlayer: jest.fn().mockResolvedValue(tokens),
-      issueAccessToken: jest.fn().mockReturnValue({ accessToken: 'at-token', user: tokens.user }),
+      issueAccessToken: jest
+        .fn()
+        .mockReturnValue({ accessToken: 'at-token', user: tokens.user }),
     };
     refreshTokenService = {
-      rotate: jest.fn().mockResolvedValue({ newPlaintext: 'new-rt', userId: 'uid' }),
+      rotate: jest
+        .fn()
+        .mockResolvedValue({ newPlaintext: 'new-rt', userId: 'uid' }),
       revoke: jest.fn().mockResolvedValue(undefined),
       revokeAllForUser: jest.fn(),
     };
     usersService = {
-      findById: jest.fn().mockResolvedValue({ id: 'uid', email: 'u@test.com', role: UserRole.PLAYER, active: true }),
+      findById: jest.fn().mockResolvedValue({
+        id: 'uid',
+        email: 'u@test.com',
+        role: UserRole.PLAYER,
+        active: true,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -59,7 +68,10 @@ describe('AuthController', () => {
         { provide: AuthService, useValue: authService },
         { provide: RefreshTokenService, useValue: refreshTokenService },
         { provide: UsersService, useValue: usersService },
-        { provide: JwtAuthGuard, useValue: { canActivate: jest.fn(() => true) } },
+        {
+          provide: JwtAuthGuard,
+          useValue: { canActivate: jest.fn(() => true) },
+        },
       ],
     }).compile();
 
@@ -78,8 +90,16 @@ describe('AuthController', () => {
         res as never,
       );
 
-      expect(res.cookie).toHaveBeenCalledWith('pp_at', 'at-token', expect.objectContaining({ httpOnly: true }));
-      expect(res.cookie).toHaveBeenCalledWith('pp_rt', 'rt-token', expect.objectContaining({ httpOnly: true }));
+      expect(res.cookie).toHaveBeenCalledWith(
+        'pp_at',
+        'at-token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(res.cookie).toHaveBeenCalledWith(
+        'pp_rt',
+        'rt-token',
+        expect.objectContaining({ httpOnly: true }),
+      );
       expect(result).toEqual({ accessToken: 'at-token', user: tokens.user });
     });
   });
@@ -87,18 +107,26 @@ describe('AuthController', () => {
   describe('login', () => {
     it('sets cookies and returns response body', async () => {
       const res = makeRes();
-      const result = await controller.login({ email: 'u@test.com', password: 'secret' }, res as never);
+      const result = await controller.login(
+        { email: 'u@test.com', password: 'secret' },
+        res as never,
+      );
 
       expect(res.cookie).toHaveBeenCalledTimes(2);
       expect(result.accessToken).toBe('at-token');
     });
 
     it('bubbles up 401 from service', async () => {
-      authService.login.mockRejectedValue(new UnauthorizedException('Invalid credentials'));
+      authService.login.mockRejectedValue(
+        new UnauthorizedException('Invalid credentials'),
+      );
       const res = makeRes();
 
       await expect(
-        controller.login({ email: 'x@test.com', password: 'bad' }, res as never),
+        controller.login(
+          { email: 'x@test.com', password: 'bad' },
+          res as never,
+        ),
       ).rejects.toMatchObject({ status: 401 });
     });
   });
@@ -106,17 +134,25 @@ describe('AuthController', () => {
   describe('loginPlayer', () => {
     it('sets cookies on success', async () => {
       const res = makeRes();
-      await controller.loginPlayer({ email: 'u@test.com', password: 'secret' }, res as never);
+      await controller.loginPlayer(
+        { email: 'u@test.com', password: 'secret' },
+        res as never,
+      );
 
       expect(res.cookie).toHaveBeenCalledTimes(2);
     });
 
     it('bubbles 403 for non-PLAYER', async () => {
-      authService.loginPlayer.mockRejectedValue(new ForbiddenException('Only player accounts allowed'));
+      authService.loginPlayer.mockRejectedValue(
+        new ForbiddenException('Only player accounts allowed'),
+      );
       const res = makeRes();
 
       await expect(
-        controller.loginPlayer({ email: 'admin@test.com', password: 'secret' }, res as never),
+        controller.loginPlayer(
+          { email: 'admin@test.com', password: 'secret' },
+          res as never,
+        ),
       ).rejects.toMatchObject({ status: 403 });
     });
   });
@@ -124,21 +160,32 @@ describe('AuthController', () => {
   describe('refresh', () => {
     it('rotates RT, issues new AT, sets both cookies', async () => {
       const res = makeRes();
-      const result = await controller.refresh(makeReq({ pp_rt: 'old-rt' }), res as never);
+      const result = await controller.refresh(
+        makeReq({ pp_rt: 'old-rt' }),
+        res as never,
+      );
 
       expect(refreshTokenService.rotate).toHaveBeenCalledWith('old-rt');
       expect(authService.issueAccessToken).toHaveBeenCalled();
-      expect(res.cookie).toHaveBeenCalledWith('pp_at', 'at-token', expect.any(Object));
-      expect(res.cookie).toHaveBeenCalledWith('pp_rt', 'new-rt', expect.any(Object));
+      expect(res.cookie).toHaveBeenCalledWith(
+        'pp_at',
+        'at-token',
+        expect.any(Object),
+      );
+      expect(res.cookie).toHaveBeenCalledWith(
+        'pp_rt',
+        'new-rt',
+        expect.any(Object),
+      );
       expect(result.accessToken).toBe('at-token');
     });
 
     it('throws 401 when pp_rt cookie is absent', async () => {
       const res = makeRes();
 
-      await expect(controller.refresh(makeReq(), res as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      await expect(
+        controller.refresh(makeReq(), res as never),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('throws 401 when rotate rejects (invalid token)', async () => {
@@ -151,7 +198,10 @@ describe('AuthController', () => {
     });
 
     it('throws 401 when user is inactive after rotation', async () => {
-      usersService.findById.mockResolvedValue({ ...tokens.user, active: false });
+      usersService.findById.mockResolvedValue({
+        ...tokens.user,
+        active: false,
+      });
       const res = makeRes();
 
       await expect(
@@ -163,7 +213,10 @@ describe('AuthController', () => {
   describe('logout', () => {
     it('revokes RT and clears cookies', async () => {
       const res = makeRes();
-      const result = await controller.logout(makeReq({ pp_rt: 'old-rt' }), res as never);
+      const result = await controller.logout(
+        makeReq({ pp_rt: 'old-rt' }),
+        res as never,
+      );
 
       expect(refreshTokenService.revoke).toHaveBeenCalledWith('old-rt');
       expect(res.clearCookie).toHaveBeenCalledWith('pp_at', expect.any(Object));

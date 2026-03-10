@@ -20,7 +20,11 @@ import { AT_MAX_AGE, cookieBaseOptions, RT_MAX_AGE } from '../utils/cookies';
 
 type AuthUser = { userId: string; email: string; role: string };
 
-function setCookies(res: Response, accessToken: string, refreshToken: string): void {
+function setCookies(
+  res: Response,
+  accessToken: string,
+  refreshToken: string,
+): void {
   const base = cookieBaseOptions();
   res.cookie('pp_at', accessToken, { ...base, maxAge: AT_MAX_AGE });
   res.cookie('pp_rt', refreshToken, { ...base, maxAge: RT_MAX_AGE });
@@ -98,10 +102,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(200)
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rt = (req.cookies as Record<string, string>)?.['pp_rt'];
     if (rt) {
       await this.refreshTokens.revoke(rt).catch(() => {});

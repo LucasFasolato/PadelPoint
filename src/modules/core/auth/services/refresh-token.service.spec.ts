@@ -96,7 +96,9 @@ describe('RefreshTokenService', () => {
       const result = await service.rotate('valid-rt');
 
       // Old token revoked
-      expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ revokedAt: expect.any(Date) }));
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ revokedAt: expect.any(Date) }),
+      );
       // New token created
       expect(repo.save).toHaveBeenCalledTimes(2);
       expect(result.userId).toBe('user-id');
@@ -107,7 +109,9 @@ describe('RefreshTokenService', () => {
     it('throws 401 when token is invalid', async () => {
       repo.findOne.mockResolvedValue(null);
 
-      await expect(service.rotate('bad-rt')).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.rotate('bad-rt')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
   });
 

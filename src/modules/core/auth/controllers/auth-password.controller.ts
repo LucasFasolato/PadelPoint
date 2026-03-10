@@ -29,7 +29,9 @@ export class AuthPasswordController {
 
   @Post('reset/confirm')
   @HttpCode(200)
-  async confirmReset(@Body() dto: PasswordResetConfirmDto): Promise<{ ok: true }> {
+  async confirmReset(
+    @Body() dto: PasswordResetConfirmDto,
+  ): Promise<{ ok: true }> {
     return this.passwordReset.confirmReset(dto.token, dto.newPassword);
   }
 }

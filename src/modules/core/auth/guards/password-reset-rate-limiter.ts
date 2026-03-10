@@ -18,7 +18,9 @@ export class PasswordResetRateLimiter {
     const now = Date.now();
     const windowStart = now - WINDOW_MS;
 
-    const timestamps = (this.store.get(key) ?? []).filter((t) => t > windowStart);
+    const timestamps = (this.store.get(key) ?? []).filter(
+      (t) => t > windowStart,
+    );
 
     if (timestamps.length >= MAX_REQUESTS) {
       this.store.set(key, timestamps);

@@ -22,7 +22,12 @@ export class RefreshTokenService {
     const tokenHash = this.hash(plaintext);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
-    const entity = this.repo.create({ userId, tokenHash, expiresAt, revokedAt: null });
+    const entity = this.repo.create({
+      userId,
+      tokenHash,
+      expiresAt,
+      revokedAt: null,
+    });
     await this.repo.save(entity);
 
     return plaintext;
@@ -30,15 +35,20 @@ export class RefreshTokenService {
 
   async validate(plaintext: string): Promise<RefreshToken | null> {
     const tokenHash = this.hash(plaintext);
-    const token = await this.repo.findOne({ where: { tokenHash, revokedAt: IsNull() } });
+    const token = await this.repo.findOne({
+      where: { tokenHash, revokedAt: IsNull() },
+    });
     if (!token) return null;
     if (token.expiresAt < new Date()) return null;
     return token;
   }
 
-  async rotate(plaintext: string): Promise<{ newPlaintext: string; userId: string }> {
+  async rotate(
+    plaintext: string,
+  ): Promise<{ newPlaintext: string; userId: string }> {
     const token = await this.validate(plaintext);
-    if (!token) throw new UnauthorizedException('Invalid or expired refresh token');
+    if (!token)
+      throw new UnauthorizedException('Invalid or expired refresh token');
 
     token.revokedAt = new Date();
     await this.repo.save(token);
@@ -49,10 +59,16 @@ export class RefreshTokenService {
 
   async revoke(plaintext: string): Promise<void> {
     const tokenHash = this.hash(plaintext);
-    await this.repo.update({ tokenHash, revokedAt: IsNull() }, { revokedAt: new Date() });
+    await this.repo.update(
+      { tokenHash, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
   }
 
   async revokeAllForUser(userId: string): Promise<void> {
-    await this.repo.update({ userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+    await this.repo.update(
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
   }
 }

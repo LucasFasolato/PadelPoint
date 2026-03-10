@@ -40,9 +40,18 @@ const passwordIdentity = {
 
 describe('AuthService', () => {
   let service: AuthService;
-  let usersService: { findByEmail: jest.Mock; create: jest.Mock; findById: jest.Mock };
+  let usersService: {
+    findByEmail: jest.Mock;
+    create: jest.Mock;
+    findById: jest.Mock;
+  };
   let jwtService: { sign: jest.Mock };
-  let identityRepo: { findOne: jest.Mock; find: jest.Mock; create: jest.Mock; save: jest.Mock };
+  let identityRepo: {
+    findOne: jest.Mock;
+    find: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
   let refreshTokenService: { createRefreshToken: jest.Mock };
 
   beforeEach(async () => {
@@ -92,10 +101,16 @@ describe('AuthService', () => {
       });
 
       expect(usersService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ passwordHash: null, email: 'player@test.com' }),
+        expect.objectContaining({
+          passwordHash: null,
+          email: 'player@test.com',
+        }),
       );
       expect(identityRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ provider: AuthProvider.PASSWORD, passwordHash: 'bcrypt-hash' }),
+        expect.objectContaining({
+          provider: AuthProvider.PASSWORD,
+          passwordHash: 'bcrypt-hash',
+        }),
       );
       expect(identityRepo.save).toHaveBeenCalled();
       expect(result.accessToken).toBe('access-token');
@@ -118,7 +133,10 @@ describe('AuthService', () => {
       identityRepo.findOne.mockResolvedValue(passwordIdentity);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await service.login({ email: 'player@test.com', password: 'secret' });
+      const result = await service.login({
+        email: 'player@test.com',
+        password: 'secret',
+      });
 
       expect(result.accessToken).toBe('access-token');
       expect(result.refreshToken).toBe('refresh-token');
@@ -168,14 +186,21 @@ describe('AuthService', () => {
       identityRepo.findOne.mockResolvedValue(passwordIdentity);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await service.loginPlayer({ email: 'player@test.com', password: 'secret' });
+      const result = await service.loginPlayer({
+        email: 'player@test.com',
+        password: 'secret',
+      });
 
       expect(result.user.role).toBe(UserRole.PLAYER);
     });
 
     it('rejects ADMIN role with 403', async () => {
       usersService.findByEmail.mockResolvedValue(adminUser);
-      identityRepo.findOne.mockResolvedValue({ ...passwordIdentity, userId: 'admin-id', email: 'admin@test.com' });
+      identityRepo.findOne.mockResolvedValue({
+        ...passwordIdentity,
+        userId: 'admin-id',
+        email: 'admin@test.com',
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       await expect(
@@ -186,7 +211,11 @@ describe('AuthService', () => {
 
   describe('issueAccessToken', () => {
     it('returns accessToken and user without creating a refresh token', () => {
-      const result = service.issueAccessToken('uid', 'u@test.com', UserRole.PLAYER);
+      const result = service.issueAccessToken(
+        'uid',
+        'u@test.com',
+        UserRole.PLAYER,
+      );
 
       expect(jwtService.sign).toHaveBeenCalledWith(
         expect.objectContaining({ sub: 'uid', email: 'u@test.com' }),

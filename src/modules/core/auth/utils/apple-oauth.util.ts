@@ -12,7 +12,9 @@ const APPLE_REQUIRED_KEYS = [
  * Returns true only when every required Apple OAuth env var is present and non-empty.
  * Used to gate provider/controller registration so the app starts without Apple creds.
  */
-export function isAppleOAuthEnabled(config: Pick<ConfigService, 'get'>): boolean {
+export function isAppleOAuthEnabled(
+  config: Pick<ConfigService, 'get'>,
+): boolean {
   return APPLE_REQUIRED_KEYS.every((key) => !!config.get<string>(key)?.trim());
 }
 

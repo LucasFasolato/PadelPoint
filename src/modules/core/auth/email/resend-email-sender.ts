@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EmailSender } from './email-sender';
 
-type ResendPayload = { from: string; to: string; subject: string; html: string };
+type ResendPayload = {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+};
 type ResendResponse = { id?: string; error?: { message?: string } };
 
 @Injectable()
@@ -18,7 +23,8 @@ export class ResendEmailSender implements EmailSender {
       config.get<string>('RESEND_FROM_EMAIL') ??
       config.get<string>('EMAIL_FROM') ??
       'PadelPoint <noreply@padelpoint.app>';
-    this.isProduction = (config.get<string>('NODE_ENV') ?? 'development') === 'production';
+    this.isProduction =
+      (config.get<string>('NODE_ENV') ?? 'development') === 'production';
 
     if (!this.apiKey) {
       if (this.isProduction) {
@@ -26,7 +32,9 @@ export class ResendEmailSender implements EmailSender {
           'RESEND_API_KEY is not set — password reset emails will fail in production',
         );
       } else {
-        this.logger.warn('RESEND_API_KEY not set — reset links will be logged only (dev mode)');
+        this.logger.warn(
+          'RESEND_API_KEY not set — reset links will be logged only (dev mode)',
+        );
       }
     }
   }
@@ -34,7 +42,9 @@ export class ResendEmailSender implements EmailSender {
   async sendPasswordReset(to: string, resetLink: string): Promise<void> {
     if (!this.apiKey) {
       if (this.isProduction) {
-        throw new Error('RESEND_API_KEY is not configured — cannot send password reset email');
+        throw new Error(
+          'RESEND_API_KEY is not configured — cannot send password reset email',
+        );
       }
       // Dev / staging: log the link so developers can use it without a real email service
       this.logger.log(`[DEV] Password reset link for ${to} → ${resetLink}`);
@@ -50,7 +60,12 @@ export class ResendEmailSender implements EmailSender {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: this.from, to, subject, html } satisfies ResendPayload),
+      body: JSON.stringify({
+        from: this.from,
+        to,
+        subject,
+        html,
+      } satisfies ResendPayload),
     });
 
     if (!resp.ok) {

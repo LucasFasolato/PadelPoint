@@ -102,7 +102,10 @@ describe('OAuthService', () => {
     it('creates a new user and identity when no match exists', async () => {
       identityRepo.findOne.mockResolvedValue(null);
       usersService.findByEmail.mockResolvedValue(null);
-      usersService.create.mockResolvedValue({ ...existingUser, id: 'new-user-id' });
+      usersService.create.mockResolvedValue({
+        ...existingUser,
+        id: 'new-user-id',
+      });
 
       const result = await service.linkOrCreateFromOAuth(googleProfile);
 
@@ -129,7 +132,10 @@ describe('OAuthService', () => {
       usersService.findByEmail.mockResolvedValue(null);
       usersService.create.mockResolvedValue({ ...existingUser, id: 'new-id' });
 
-      await service.linkOrCreateFromOAuth({ ...googleProfile, displayName: null });
+      await service.linkOrCreateFromOAuth({
+        ...googleProfile,
+        displayName: null,
+      });
 
       expect(usersService.create).toHaveBeenCalledWith(
         expect.objectContaining({ displayName: 'user' }), // email prefix
@@ -140,7 +146,9 @@ describe('OAuthService', () => {
       identityRepo.findOne.mockResolvedValue(null);
       usersService.findByEmail.mockResolvedValue(existingUser);
 
-      const uniqueError = Object.assign(new Error('duplicate key'), { code: '23505' });
+      const uniqueError = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+      });
       identityRepo.save.mockRejectedValue(uniqueError);
 
       // Should NOT throw — unique violation on identity means it already exists
@@ -155,14 +163,18 @@ describe('OAuthService', () => {
       const dbError = new Error('connection lost');
       identityRepo.save.mockRejectedValue(dbError);
 
-      await expect(service.linkOrCreateFromOAuth(googleProfile)).rejects.toThrow('connection lost');
+      await expect(
+        service.linkOrCreateFromOAuth(googleProfile),
+      ).rejects.toThrow('connection lost');
     });
 
     it('handles unique constraint race on user creation by re-fetching via email', async () => {
       identityRepo.findOne.mockResolvedValueOnce(null); // first identity lookup: none
       usersService.findByEmail.mockResolvedValueOnce(null); // first email lookup: none
 
-      const uniqueError = Object.assign(new Error('duplicate key'), { code: '23505' });
+      const uniqueError = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+      });
       usersService.create.mockRejectedValue(uniqueError);
 
       // After failed creation, fallback identity lookup (for rotate race):
@@ -177,13 +189,18 @@ describe('OAuthService', () => {
     it('skips email lookup in step 2 when email is null', async () => {
       const noEmailProfile: OAuthProfile = { ...googleProfile, email: null };
       identityRepo.findOne.mockResolvedValue(null);
-      usersService.create.mockResolvedValue({ ...existingUser, email: `${googleProfile.providerUserId}@oauth.local` });
+      usersService.create.mockResolvedValue({
+        ...existingUser,
+        email: `${googleProfile.providerUserId}@oauth.local`,
+      });
 
       await service.linkOrCreateFromOAuth(noEmailProfile);
 
       expect(usersService.findByEmail).not.toHaveBeenCalled();
       expect(usersService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ email: `${googleProfile.providerUserId}@oauth.local` }),
+        expect.objectContaining({
+          email: `${googleProfile.providerUserId}@oauth.local`,
+        }),
       );
     });
   });
