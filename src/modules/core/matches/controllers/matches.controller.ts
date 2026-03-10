@@ -121,13 +121,13 @@ export class MatchesController {
   @Post()
   report(@Req() req: Request, @Body() dto: ReportMatchDto) {
     const user = req.user as AuthUser;
-    return this.service.reportMatch(user.userId, dto);
+    return this.matchesV2BridgeService.reportResult(user.userId, dto);
   }
 
   @Patch(':id/confirm')
   confirm(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
-    return this.service.confirmMatch(user.userId, id);
+    return this.matchesV2BridgeService.confirmResult(user.userId, id);
   }
 
   @Patch(':id/admin-confirm')
@@ -143,7 +143,11 @@ export class MatchesController {
     @Body() dto: RejectMatchDto,
   ) {
     const user = req.user as AuthUser;
-    return this.service.rejectMatch(user.userId, id, dto.reason);
+    return this.matchesV2BridgeService.rejectResult(
+      user.userId,
+      id,
+      dto.reason,
+    );
   }
 
   @Post(':id/dispute')
@@ -153,7 +157,7 @@ export class MatchesController {
     @Body() dto: DisputeMatchDto,
   ) {
     const user = req.user as AuthUser;
-    return this.service.disputeMatch(user.userId, id, dto);
+    return this.matchesV2BridgeService.openDispute(user.userId, id, dto);
   }
 
   @Post(':id/resolve')
@@ -170,7 +174,7 @@ export class MatchesController {
         message: 'Only admins can resolve disputes',
       });
     }
-    return this.service.resolveDispute(user.userId, id, dto);
+    return this.matchesV2BridgeService.resolveDispute(user.userId, id, dto);
   }
 
   @Post(':id/resolve-confirm-as-is')

@@ -72,6 +72,18 @@ export class MatchQueryService {
     return match ? this.mapMatchDetail(match) : null;
   }
 
+  async findByLegacyMatchResultId(
+    legacyMatchResultId: string,
+  ): Promise<MatchResponseDto | null> {
+    const match = await this.buildMatchDetailQuery()
+      .where('"m"."legacy_match_result_id" = :legacyMatchResultId', {
+        legacyMatchResultId,
+      })
+      .getOne();
+
+    return match ? this.mapMatchDetail(match) : null;
+  }
+
   async listMyMatches(
     userId: string,
     query: ListMyMatchesV2QueryDto,

@@ -12,13 +12,22 @@ describe('MatchesController', () => {
     getRankingImpact: jest.Mock;
     reportMatch: jest.Mock;
     confirmMatch: jest.Mock;
+    adminConfirmMatch: jest.Mock;
     rejectMatch: jest.Mock;
+    disputeMatch: jest.Mock;
+    resolveDispute: jest.Mock;
+    resolveConfirmAsIs: jest.Mock;
     getById: jest.Mock;
     getByChallenge: jest.Mock;
   };
   let matchesV2BridgeService: {
     listMyMatches: jest.Mock;
     listPendingConfirmations: jest.Mock;
+    reportResult: jest.Mock;
+    confirmResult: jest.Mock;
+    rejectResult: jest.Mock;
+    openDispute: jest.Mock;
+    resolveDispute: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -28,13 +37,22 @@ describe('MatchesController', () => {
       getRankingImpact: jest.fn(),
       reportMatch: jest.fn(),
       confirmMatch: jest.fn(),
+      adminConfirmMatch: jest.fn(),
       rejectMatch: jest.fn(),
+      disputeMatch: jest.fn(),
+      resolveDispute: jest.fn(),
+      resolveConfirmAsIs: jest.fn(),
       getById: jest.fn(),
       getByChallenge: jest.fn(),
     };
     matchesV2BridgeService = {
       listMyMatches: jest.fn(),
       listPendingConfirmations: jest.fn(),
+      reportResult: jest.fn(),
+      confirmResult: jest.fn(),
+      rejectResult: jest.fn(),
+      openDispute: jest.fn(),
+      resolveDispute: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -183,5 +201,114 @@ describe('MatchesController', () => {
       'match-legacy-1',
       'user-1',
     );
+  });
+
+  it('delegates POST /matches to the matches-v2 bridge', async () => {
+    matchesV2BridgeService.reportResult.mockResolvedValue({ id: 'match-1' });
+
+    const dto = {
+      challengeId: 'challenge-1',
+      sets: [
+        { a: 6, b: 4 },
+        { a: 6, b: 3 },
+      ],
+    };
+    const result = await controller.report(
+      { user: { userId: 'user-1' } } as any,
+      dto as any,
+    );
+
+    expect(result).toEqual({ id: 'match-1' });
+    expect(matchesV2BridgeService.reportResult).toHaveBeenCalledWith(
+      'user-1',
+      dto,
+    );
+    expect(matchesService.reportMatch).not.toHaveBeenCalled();
+  });
+
+  it('delegates PATCH /matches/:id/confirm to the matches-v2 bridge', async () => {
+    matchesV2BridgeService.confirmResult.mockResolvedValue({
+      id: 'match-1',
+      status: 'confirmed',
+    });
+
+    const result = await controller.confirm(
+      { user: { userId: 'user-1' } } as any,
+      'match-1',
+    );
+
+    expect(result).toEqual({ id: 'match-1', status: 'confirmed' });
+    expect(matchesV2BridgeService.confirmResult).toHaveBeenCalledWith(
+      'user-1',
+      'match-1',
+    );
+    expect(matchesService.confirmMatch).not.toHaveBeenCalled();
+  });
+
+  it('delegates PATCH /matches/:id/reject to the matches-v2 bridge', async () => {
+    matchesV2BridgeService.rejectResult.mockResolvedValue({
+      id: 'match-1',
+      status: 'rejected',
+    });
+
+    const result = await controller.reject(
+      { user: { userId: 'user-1' } } as any,
+      'match-1',
+      { reason: 'wrong score' } as any,
+    );
+
+    expect(result).toEqual({ id: 'match-1', status: 'rejected' });
+    expect(matchesV2BridgeService.rejectResult).toHaveBeenCalledWith(
+      'user-1',
+      'match-1',
+      'wrong score',
+    );
+    expect(matchesService.rejectMatch).not.toHaveBeenCalled();
+  });
+
+  it('delegates POST /matches/:id/dispute to the matches-v2 bridge', async () => {
+    matchesV2BridgeService.openDispute.mockResolvedValue({
+      dispute: { id: 'dispute-1' },
+      matchStatus: 'disputed',
+    });
+    const dto = { reasonCode: 'wrong_score' };
+
+    const result = await controller.dispute(
+      { user: { userId: 'user-1' } } as any,
+      'match-1',
+      dto as any,
+    );
+
+    expect(result).toEqual({
+      dispute: { id: 'dispute-1' },
+      matchStatus: 'disputed',
+    });
+    expect(matchesV2BridgeService.openDispute).toHaveBeenCalledWith(
+      'user-1',
+      'match-1',
+      dto,
+    );
+    expect(matchesService.disputeMatch).not.toHaveBeenCalled();
+  });
+
+  it('delegates POST /matches/:id/resolve to the matches-v2 bridge for admins', async () => {
+    matchesV2BridgeService.resolveDispute.mockResolvedValue({
+      resolution: 'confirm_as_is',
+    });
+    const dto = { resolution: 'confirm_as_is' };
+
+    const result = await controller.resolve(
+      { user: { userId: 'admin-1', role: 'admin' } } as any,
+      'match-1',
+      dto as any,
+    );
+
+    expect(result).toEqual({ resolution: 'confirm_as_is' });
+    expect(matchesV2BridgeService.resolveDispute).toHaveBeenCalledWith(
+      'admin-1',
+      'match-1',
+      dto,
+    );
+    expect(matchesService.resolveDispute).not.toHaveBeenCalled();
   });
 });

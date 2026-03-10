@@ -3,10 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { League } from '../../leagues/entities/league.entity';
 import { User } from '../../users/entities/user.entity';
+import { DisputeMatchDto } from '../dto/dispute-match.dto';
 import { MyPendingConfirmationsResponseDto } from '../dto/my-pending-confirmation.dto';
+import { ReportMatchDto } from '../dto/report-match.dto';
+import { ResolveDisputeDto } from '../dto/resolve-dispute.dto';
+import { MatchResultStatus, WinnerTeam } from '../entities/match-result.entity';
 import { MatchListResponseDto } from '../../matches-v2/dto/match-list-response.dto';
 import { MatchResponseDto } from '../../matches-v2/dto/match-response.dto';
+import { MatchDisputeResolutionV2 } from '../../matches-v2/dto/resolve-match-dispute-v2.dto';
+import { MatchDisputeReasonCode } from '../../matches-v2/enums/match-dispute-reason-code.enum';
+import { MatchRejectionReasonCode } from '../../matches-v2/enums/match-rejection-reason-code.enum';
+import { MatchStatus } from '../../matches-v2/enums/match-status.enum';
 import { MatchQueryService } from '../../matches-v2/services/match-query.service';
+import { MatchResultLifecycleService } from '../../matches-v2/services/match-result-lifecycle.service';
+import { MatchesService } from './matches.service';
 
 const LEGACY_MATCHES_V2_BRIDGE_PAGE_SIZE = 50;
 const DEFAULT_LIMIT = 20;
@@ -21,6 +31,8 @@ type LegacyPendingConfirmationsCursorPayload = {
 export class MatchesV2BridgeService {
   constructor(
     private readonly matchQueryService: MatchQueryService,
+    private readonly matchResultLifecycleService: MatchResultLifecycleService,
+    private readonly matchesService: MatchesService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(League)
@@ -98,6 +110,130 @@ export class MatchesV2BridgeService {
           ? this.buildLegacyPendingConfirmationsCursor(items[items.length - 1])
           : null,
     };
+  }
+
+  async reportResult(userId: string, dto: ReportMatchDto) {
+    const canonicalMatch = await this.matchQueryService.findByLegacyChallengeId(
+      dto.challengeId,
+    );
+
+    // Legacy callers still chain match detail and other legacy routes by the
+    // observable match_result id. Until those paths move to matches-v2 as
+    // well, only delegate reportResult when the canonical aggregate already
+    // carries a stable legacy correlation.
+    if (!canonicalMatch?.legacyMatchResultId) {
+      return this.matchesService.reportMatch(userId, dto);
+    }
+
+    const result = await this.matchResultLifecycleService.reportResult(
+      canonicalMatch.id,
+      userId,
+      {
+        playedAt: dto.playedAt,
+        sets: dto.sets,
+      },
+    );
+
+    return this.toLegacyMatchResultResponse(result);
+  }
+
+  async confirmResult(userId: string, legacyMatchResultId: string) {
+    const canonicalMatch =
+      await this.matchQueryService.findByLegacyMatchResultId(
+        legacyMatchResultId,
+      );
+
+    if (!canonicalMatch) {
+      return this.matchesService.confirmMatch(userId, legacyMatchResultId);
+    }
+
+    const result = await this.matchResultLifecycleService.confirmResult(
+      canonicalMatch.id,
+      userId,
+      {},
+    );
+
+    return this.toLegacyMatchResultResponse(result);
+  }
+
+  async rejectResult(
+    userId: string,
+    legacyMatchResultId: string,
+    reason?: string,
+  ) {
+    const canonicalMatch =
+      await this.matchQueryService.findByLegacyMatchResultId(
+        legacyMatchResultId,
+      );
+
+    if (!canonicalMatch) {
+      return this.matchesService.rejectMatch(
+        userId,
+        legacyMatchResultId,
+        reason,
+      );
+    }
+
+    const result = await this.matchResultLifecycleService.rejectResult(
+      canonicalMatch.id,
+      userId,
+      {
+        reasonCode: MatchRejectionReasonCode.OTHER,
+        message: reason?.trim() || undefined,
+      },
+    );
+
+    return this.toLegacyMatchResultResponse(result);
+  }
+
+  async openDispute(
+    userId: string,
+    legacyMatchResultId: string,
+    dto: DisputeMatchDto,
+  ) {
+    const canonicalMatch =
+      await this.matchQueryService.findByLegacyMatchResultId(
+        legacyMatchResultId,
+      );
+    const canonicalReasonCode = this.toCanonicalDisputeReasonCode(
+      dto.reasonCode,
+    );
+
+    if (!canonicalMatch || !canonicalReasonCode) {
+      return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
+    }
+
+    // The canonical lifecycle currently disputes reported/rejected results and
+    // does not model the confirmed-with-window semantics from the legacy path.
+    // Keep those cases on fallback until the public contract converges.
+    return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
+  }
+
+  async resolveDispute(
+    userId: string,
+    legacyMatchResultId: string,
+    dto: ResolveDisputeDto,
+  ) {
+    const canonicalMatch =
+      await this.matchQueryService.findByLegacyMatchResultId(
+        legacyMatchResultId,
+      );
+    const canonicalResolution = this.toCanonicalDisputeResolution(
+      dto.resolution,
+    );
+
+    if (!canonicalMatch || !canonicalResolution) {
+      return this.matchesService.resolveDispute(
+        userId,
+        legacyMatchResultId,
+        dto,
+      );
+    }
+
+    // Legacy resolution stays on fallback for now because the public route is
+    // admin-owned while the canonical service is intentionally participant-only
+    // until admin override semantics are designed in matches-v2.
+    return this.matchesService.resolveDispute(userId, legacyMatchResultId, dto);
   }
 
   private normalizeLimit(limit?: number): number {
@@ -274,5 +410,97 @@ export class MatchesV2BridgeService {
 
     const emailPrefix = email?.split('@')[0]?.trim();
     return emailPrefix && emailPrefix.length > 0 ? emailPrefix : 'Rival';
+  }
+
+  private toLegacyMatchResultResponse(match: MatchResponseDto) {
+    const sets = Array.isArray(match.sets) ? match.sets : [];
+    const [set1, set2, set3] = sets;
+
+    return {
+      id: match.legacyMatchResultId ?? match.id,
+      challengeId: match.legacyChallengeId,
+      leagueId: match.leagueId,
+      scheduledAt: this.toLegacyDate(match.scheduledAt),
+      playedAt: this.toLegacyDate(match.playedAt),
+      teamASet1: set1?.a ?? null,
+      teamBSet1: set1?.b ?? null,
+      teamASet2: set2?.a ?? null,
+      teamBSet2: set2?.b ?? null,
+      teamASet3: set3?.a ?? null,
+      teamBSet3: set3?.b ?? null,
+      winnerTeam:
+        match.winnerTeam === 'A'
+          ? WinnerTeam.A
+          : match.winnerTeam === 'B'
+            ? WinnerTeam.B
+            : null,
+      status: this.toLegacyMatchStatus(match.status),
+      matchType: match.matchType,
+      impactRanking: match.impactRanking,
+      reportedByUserId: match.resultReportedByUserId,
+      confirmedByUserId: match.confirmedByUserId,
+      rejectionReason:
+        match.rejectionMessage ?? match.rejectionReasonCode ?? null,
+      eloApplied: match.eloApplied,
+      rankingImpact: match.rankingImpact,
+      source: match.source,
+      createdAt: this.toLegacyDate(match.createdAt),
+      updatedAt: this.toLegacyDate(match.updatedAt),
+    };
+  }
+
+  private toLegacyDate(value: string | null): Date | null {
+    if (!value) {
+      return null;
+    }
+
+    return new Date(value);
+  }
+
+  private toLegacyMatchStatus(status: MatchStatus): MatchResultStatus {
+    switch (status) {
+      case MatchStatus.SCHEDULED:
+        return MatchResultStatus.SCHEDULED;
+      case MatchStatus.RESULT_REPORTED:
+        return MatchResultStatus.PENDING_CONFIRM;
+      case MatchStatus.CONFIRMED:
+        return MatchResultStatus.CONFIRMED;
+      case MatchStatus.REJECTED:
+        return MatchResultStatus.REJECTED;
+      case MatchStatus.DISPUTED:
+        return MatchResultStatus.DISPUTED;
+      case MatchStatus.VOIDED:
+      case MatchStatus.CANCELLED:
+      case MatchStatus.DRAFT:
+      case MatchStatus.COORDINATING:
+      default:
+        return MatchResultStatus.RESOLVED;
+    }
+  }
+
+  private toCanonicalDisputeReasonCode(
+    reasonCode: DisputeMatchDto['reasonCode'],
+  ): MatchDisputeReasonCode | null {
+    switch (reasonCode) {
+      case 'wrong_score':
+        return MatchDisputeReasonCode.WRONG_SCORE;
+      case 'other':
+        return MatchDisputeReasonCode.OTHER;
+      default:
+        return null;
+    }
+  }
+
+  private toCanonicalDisputeResolution(
+    resolution: ResolveDisputeDto['resolution'],
+  ): MatchDisputeResolutionV2 | null {
+    switch (resolution) {
+      case 'confirm_as_is':
+        return MatchDisputeResolutionV2.CONFIRM_AS_IS;
+      case 'void_match':
+        return MatchDisputeResolutionV2.VOID;
+      default:
+        return null;
+    }
   }
 }

@@ -22,6 +22,7 @@ import { mapEntityToMatchResponse } from '../../mappers/match-response.mapper';
 type QueryBuilderState = {
   matchId?: string;
   legacyChallengeId?: string;
+  legacyMatchResultId?: string;
   userId?: string;
   status?: MatchStatus;
   leagueId?: string;
@@ -152,6 +153,9 @@ function createMatchQueryBuilder(
     if (sql.includes('"m"."legacy_challenge_id" = :legacyChallengeId')) {
       state.legacyChallengeId = params?.legacyChallengeId as string;
     }
+    if (sql.includes('"m"."legacy_match_result_id" = :legacyMatchResultId')) {
+      state.legacyMatchResultId = params?.legacyMatchResultId as string;
+    }
     if (sql.includes('"m"."team_a_player_1_id"')) {
       state.userId = params?.userId as string;
     }
@@ -197,6 +201,12 @@ function createMatchQueryBuilder(
         if (
           state.legacyChallengeId &&
           single.legacyChallengeId !== state.legacyChallengeId
+        ) {
+          return null;
+        }
+        if (
+          state.legacyMatchResultId &&
+          single.legacyMatchResultId !== state.legacyMatchResultId
         ) {
           return null;
         }
@@ -389,6 +399,50 @@ describe('MatchQueryService', () => {
 
       await expect(
         service.findByLegacyChallengeId('challenge-missing'),
+      ).resolves.toBeNull();
+    });
+  });
+
+  describe('findByLegacyMatchResultId', () => {
+    it('returns the mapped match response when a correlated canonical match exists', async () => {
+      const match = makeMatch({
+        id: 'match-legacy-result',
+        legacyMatchResultId: 'match-result-legacy-1',
+        messages: [
+          {
+            id: 'message-1',
+            matchId: 'match-legacy-result',
+            senderUserId: 'user-1',
+            message: 'See you at 7pm',
+            createdAt: new Date('2026-03-01T08:00:00.000Z'),
+            updatedAt: new Date('2026-03-01T08:15:00.000Z'),
+          },
+        ] as any,
+      });
+      const { qb } = createMatchQueryBuilder([], match);
+      repository.createQueryBuilder.mockReturnValue(qb);
+
+      await expect(
+        service.findByLegacyMatchResultId('match-result-legacy-1'),
+      ).resolves.toEqual(
+        mapEntityToMatchResponse(match, {
+          proposals: [],
+          messages: [...(match.messages ?? [])],
+          dispute: null,
+        }),
+      );
+      expect(qb.where).toHaveBeenCalledWith(
+        '"m"."legacy_match_result_id" = :legacyMatchResultId',
+        { legacyMatchResultId: 'match-result-legacy-1' },
+      );
+    });
+
+    it('returns null when there is no correlated canonical legacy result', async () => {
+      const { qb } = createMatchQueryBuilder([], null);
+      repository.createQueryBuilder.mockReturnValue(qb);
+
+      await expect(
+        service.findByLegacyMatchResultId('missing-legacy-result'),
       ).resolves.toBeNull();
     });
   });
