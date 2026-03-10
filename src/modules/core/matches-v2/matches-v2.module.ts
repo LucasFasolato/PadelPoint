@@ -5,6 +5,7 @@ import { MatchDispute } from './entities/match-dispute.entity';
 import { MatchMessage } from './entities/match-message.entity';
 import { MatchProposal } from './entities/match-proposal.entity';
 import { Match } from './entities/match.entity';
+import { MatchQueryService } from './services/match-query.service';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Match } from './entities/match.entity';
       MatchAuditEvent,
     ]),
   ],
-  exports: [TypeOrmModule],
+  providers: [MatchQueryService],
+  exports: [TypeOrmModule, MatchQueryService],
 })
 export class MatchesV2Module {}
