@@ -12,7 +12,10 @@ import { MatchMessageResponseDto } from '@/modules/core/matches-v2/dto/match-mes
 import { MatchProposalResponseDto } from '@/modules/core/matches-v2/dto/match-proposal-response.dto';
 import { MatchResponseDto } from '@/modules/core/matches-v2/dto/match-response.dto';
 import { MatchQueryService } from '@/modules/core/matches-v2/services/match-query.service';
+import { MatchSchedulingService } from '@/modules/core/matches-v2/services/match-scheduling.service';
 import { User } from '../../users/entities/user.entity';
+import { CreateChallengeMessageDto } from '../dto/create-challenge-message.dto';
+import { CreateChallengeProposalDto } from '../dto/create-challenge-proposal.dto';
 import {
   ChallengeCoordinationResponseDto,
   ChallengeCoordinationUserDto,
@@ -32,6 +35,7 @@ type KnownUser = Pick<User, 'id' | 'displayName' | 'email'>;
 export class ChallengesV2CoordinationBridgeService {
   constructor(
     private readonly matchQueryService: MatchQueryService,
+    private readonly matchSchedulingService: MatchSchedulingService,
     private readonly legacyCoordinationService: ChallengeCoordinationService,
     @InjectRepository(Challenge)
     private readonly challengeRepository: Repository<Challenge>,
@@ -50,8 +54,7 @@ export class ChallengesV2CoordinationBridgeService {
     const challenge = await this.getChallengeOrThrow(challengeId);
     this.assertParticipantOrThrow(challenge, actorUserId);
 
-    const match =
-      await this.matchQueryService.findByLegacyChallengeId(challengeId);
+    const match = await this.findCanonicalMatch(challengeId);
     if (!match) {
       // Keep pre-v2 challenges readable until the legacy scheduling writes
       // switch over to the canonical match aggregate in the next bridge lot.
@@ -107,8 +110,7 @@ export class ChallengesV2CoordinationBridgeService {
     const challenge = await this.getChallengeOrThrow(challengeId);
     this.assertParticipantOrThrow(challenge, actorUserId);
 
-    const match =
-      await this.matchQueryService.findByLegacyChallengeId(challengeId);
+    const match = await this.findCanonicalMatch(challengeId);
     if (!match) {
       return this.legacyCoordinationService.listMessages(
         challengeId,
@@ -120,6 +122,151 @@ export class ChallengesV2CoordinationBridgeService {
     return this.sortByCreatedAsc(match.messages ?? []).map((message) =>
       this.toMessageDto(message, usersById),
     );
+  }
+
+  async createProposal(
+    challengeId: string,
+    actorUserId: string,
+    dto: CreateChallengeProposalDto,
+  ): Promise<ChallengeCoordinationResponseDto> {
+    const challenge = await this.getChallengeOrThrow(challengeId);
+    this.assertParticipantOrThrow(challenge, actorUserId);
+
+    const match = await this.findCanonicalMatch(challengeId);
+    if (!match) {
+      return this.legacyCoordinationService.createProposal(
+        challengeId,
+        actorUserId,
+        dto,
+      );
+    }
+
+    await this.matchSchedulingService.createProposal(match.id, actorUserId, {
+      scheduledAt: dto.scheduledAt,
+      locationLabel: dto.locationLabel,
+      clubId: dto.clubId,
+      courtId: dto.courtId,
+      note: dto.note,
+    });
+
+    return this.getCoordinationState(challengeId, actorUserId);
+  }
+
+  async acceptProposal(
+    challengeId: string,
+    proposalId: string,
+    actorUserId: string,
+  ): Promise<ChallengeCoordinationResponseDto> {
+    const challenge = await this.getChallengeOrThrow(challengeId);
+    this.assertParticipantOrThrow(challenge, actorUserId);
+
+    const match = await this.findCanonicalMatch(challengeId);
+    if (!match) {
+      return this.legacyCoordinationService.acceptProposal(
+        challengeId,
+        proposalId,
+        actorUserId,
+      );
+    }
+
+    const canonicalProposalId = this.resolveCanonicalProposalId(
+      match,
+      proposalId,
+    );
+    if (!canonicalProposalId) {
+      // Keep legacy proposal ids working while pre-v2 clients and cached reads
+      // are still in circulation. Canonical ids are already exposed by the
+      // delegated coordination reads when a correlated match exists.
+      return this.legacyCoordinationService.acceptProposal(
+        challengeId,
+        proposalId,
+        actorUserId,
+      );
+    }
+
+    await this.matchSchedulingService.acceptProposal(
+      match.id,
+      canonicalProposalId,
+      actorUserId,
+    );
+
+    return this.getCoordinationState(challengeId, actorUserId);
+  }
+
+  async rejectProposal(
+    challengeId: string,
+    proposalId: string,
+    actorUserId: string,
+  ): Promise<ChallengeCoordinationResponseDto> {
+    const challenge = await this.getChallengeOrThrow(challengeId);
+    this.assertParticipantOrThrow(challenge, actorUserId);
+
+    const match = await this.findCanonicalMatch(challengeId);
+    if (!match) {
+      return this.legacyCoordinationService.rejectProposal(
+        challengeId,
+        proposalId,
+        actorUserId,
+      );
+    }
+
+    const canonicalProposalId = this.resolveCanonicalProposalId(
+      match,
+      proposalId,
+    );
+    if (!canonicalProposalId) {
+      return this.legacyCoordinationService.rejectProposal(
+        challengeId,
+        proposalId,
+        actorUserId,
+      );
+    }
+
+    await this.matchSchedulingService.rejectProposal(
+      match.id,
+      canonicalProposalId,
+      actorUserId,
+      {},
+    );
+
+    return this.getCoordinationState(challengeId, actorUserId);
+  }
+
+  async createMessage(
+    challengeId: string,
+    actorUserId: string,
+    dto: CreateChallengeMessageDto,
+  ): Promise<ChallengeMessageResponseDto> {
+    const challenge = await this.getChallengeOrThrow(challengeId);
+    this.assertParticipantOrThrow(challenge, actorUserId);
+
+    const match = await this.findCanonicalMatch(challengeId);
+    if (!match) {
+      return this.legacyCoordinationService.createMessage(
+        challengeId,
+        actorUserId,
+        dto,
+      );
+    }
+
+    const createdMessage = await this.matchSchedulingService.postMessage(
+      match.id,
+      actorUserId,
+      { message: dto.message },
+    );
+    const messages = await this.listMessages(challengeId, actorUserId);
+    const hydratedMessage = messages.find(
+      (message) => message.id === createdMessage.id,
+    );
+
+    if (hydratedMessage) {
+      return hydratedMessage;
+    }
+
+    const usersById = await this.loadUsersByIds(challenge, [
+      createdMessage.senderUserId,
+    ]);
+    return this.toMessageDto(createdMessage, usersById);
   }
 
   private async getChallengeOrThrow(challengeId: string): Promise<Challenge> {
@@ -165,47 +312,14 @@ export class ChallengesV2CoordinationBridgeService {
     challenge: Challenge,
     match: MatchResponseDto,
   ): Promise<Map<string, KnownUser>> {
-    const usersById = new Map<string, KnownUser>(
-      this.getParticipants(challenge).map((participant) => [
-        participant.id,
-        participant,
-      ]),
-    );
-
-    const missingIds = [
-      ...new Set(
-        [
-          match.teamAPlayer1Id,
-          match.teamAPlayer2Id,
-          match.teamBPlayer1Id,
-          match.teamBPlayer2Id,
-          ...(match.proposals ?? []).map(
-            (proposal) => proposal.proposedByUserId,
-          ),
-          ...(match.messages ?? []).map((message) => message.senderUserId),
-        ].filter(
-          (userId): userId is string =>
-            typeof userId === 'string' &&
-            userId.length > 0 &&
-            !usersById.has(userId),
-        ),
-      ),
-    ];
-
-    if (missingIds.length === 0) {
-      return usersById;
-    }
-
-    const users = await this.userRepository.find({
-      where: { id: In(missingIds) },
-      select: ['id', 'displayName', 'email'],
-    });
-
-    users.forEach((user) => {
-      usersById.set(user.id, user);
-    });
-
-    return usersById;
+    return this.loadUsersByIds(challenge, [
+      match.teamAPlayer1Id,
+      match.teamAPlayer2Id,
+      match.teamBPlayer1Id,
+      match.teamBPlayer2Id,
+      ...(match.proposals ?? []).map((proposal) => proposal.proposedByUserId),
+      ...(match.messages ?? []).map((message) => message.senderUserId),
+    ]);
   }
 
   private async loadClubNamesById(
@@ -289,6 +403,22 @@ export class ChallengesV2CoordinationBridgeService {
     }
 
     return null;
+  }
+
+  private async findCanonicalMatch(
+    challengeId: string,
+  ): Promise<MatchResponseDto | null> {
+    return this.matchQueryService.findByLegacyChallengeId(challengeId);
+  }
+
+  private resolveCanonicalProposalId(
+    match: MatchResponseDto,
+    proposalId: string,
+  ): string | null {
+    const proposal = (match.proposals ?? []).find(
+      (candidate) => candidate.id === proposalId,
+    );
+    return proposal?.id ?? null;
   }
 
   private resolveAcceptedSchedule(
@@ -445,6 +575,44 @@ export class ChallengesV2CoordinationBridgeService {
       userId: user?.id ?? '',
       displayName: user ? this.resolveDisplayName(user) : null,
     };
+  }
+
+  private async loadUsersByIds(
+    challenge: Challenge,
+    userIds: Array<string | null | undefined>,
+  ): Promise<Map<string, KnownUser>> {
+    const usersById = new Map<string, KnownUser>(
+      this.getParticipants(challenge).map((participant) => [
+        participant.id,
+        participant,
+      ]),
+    );
+
+    const missingIds = [
+      ...new Set(
+        userIds.filter(
+          (userId): userId is string =>
+            typeof userId === 'string' &&
+            userId.length > 0 &&
+            !usersById.has(userId),
+        ),
+      ),
+    ];
+
+    if (missingIds.length === 0) {
+      return usersById;
+    }
+
+    const users = await this.userRepository.find({
+      where: { id: In(missingIds) },
+      select: ['id', 'displayName', 'email'],
+    });
+
+    users.forEach((user) => {
+      usersById.set(user.id, user);
+    });
+
+    return usersById;
   }
 
   private resolveDisplayName(

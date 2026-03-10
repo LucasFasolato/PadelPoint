@@ -14,7 +14,6 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengesService } from '../services/challenges.service';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
-import { ChallengeCoordinationService } from '../services/challenge-coordination.service';
 import { ChallengesV2CoordinationBridgeService } from '../services/challenges-v2-coordination-bridge.service';
 
 import { CreateDirectChallengeDto } from '../dto/create-direct-challenge.dto';
@@ -35,8 +34,7 @@ type AuthUser = {
 export class ChallengesController {
   constructor(
     private readonly service: ChallengesService,
-    private readonly coordinationService: ChallengeCoordinationService,
-    private readonly coordinationReadBridge: ChallengesV2CoordinationBridgeService,
+    private readonly coordinationBridge: ChallengesV2CoordinationBridgeService,
   ) {}
 
   @Post('direct')
@@ -96,13 +94,13 @@ export class ChallengesController {
   @Get(':id/coordination')
   getCoordination(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
-    return this.coordinationReadBridge.getCoordinationState(id, me.userId);
+    return this.coordinationBridge.getCoordinationState(id, me.userId);
   }
 
   @Get(':id/messages')
   getMessages(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
-    return this.coordinationReadBridge.listMessages(id, me.userId);
+    return this.coordinationBridge.listMessages(id, me.userId);
   }
 
   @Post(':id/proposals')
@@ -112,7 +110,7 @@ export class ChallengesController {
     @Body() dto: CreateChallengeProposalDto,
   ) {
     const me = req.user as AuthUser;
-    return this.coordinationService.createProposal(id, me.userId, dto);
+    return this.coordinationBridge.createProposal(id, me.userId, dto);
   }
 
   @Post(':id/proposals/:proposalId/accept')
@@ -122,7 +120,7 @@ export class ChallengesController {
     @Param('proposalId') proposalId: string,
   ) {
     const me = req.user as AuthUser;
-    return this.coordinationService.acceptProposal(id, proposalId, me.userId);
+    return this.coordinationBridge.acceptProposal(id, proposalId, me.userId);
   }
 
   @Post(':id/proposals/:proposalId/reject')
@@ -132,7 +130,7 @@ export class ChallengesController {
     @Param('proposalId') proposalId: string,
   ) {
     const me = req.user as AuthUser;
-    return this.coordinationService.rejectProposal(id, proposalId, me.userId);
+    return this.coordinationBridge.rejectProposal(id, proposalId, me.userId);
   }
 
   @Post(':id/messages')
@@ -142,7 +140,7 @@ export class ChallengesController {
     @Body() dto: CreateChallengeMessageDto,
   ) {
     const me = req.user as AuthUser;
-    return this.coordinationService.createMessage(id, me.userId, dto);
+    return this.coordinationBridge.createMessage(id, me.userId, dto);
   }
 
   // DIRECT: accept/reject by invited opponent

@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import type { Request } from 'express';
 import { ChallengesController } from '../controllers/challenges.controller';
 import { ChallengesService } from '../services/challenges.service';
-import { ChallengeCoordinationService } from '../services/challenge-coordination.service';
 import { ChallengesV2CoordinationBridgeService } from '../services/challenges-v2-coordination-bridge.service';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { CreateChallengeMessageDto } from '../dto/create-challenge-message.dto';
@@ -10,7 +9,7 @@ import { CreateChallengeProposalDto } from '../dto/create-challenge-proposal.dto
 
 describe('ChallengesController', () => {
   let controller: ChallengesController;
-  let challengeCoordinationService: {
+  let coordinationBridge: {
     getCoordinationState: jest.Mock;
     listMessages: jest.Mock;
     createProposal: jest.Mock;
@@ -18,11 +17,6 @@ describe('ChallengesController', () => {
     rejectProposal: jest.Mock;
     createMessage: jest.Mock;
   };
-  let coordinationReadBridge: {
-    getCoordinationState: jest.Mock;
-    listMessages: jest.Mock;
-  };
-
   beforeEach(async () => {
     const challengesService = {
       createDirect: jest.fn(),
@@ -37,7 +31,7 @@ describe('ChallengesController', () => {
       acceptOpen: jest.fn(),
       cancelOpen: jest.fn(),
     };
-    challengeCoordinationService = {
+    coordinationBridge = {
       getCoordinationState: jest.fn(),
       listMessages: jest.fn(),
       createProposal: jest.fn(),
@@ -45,22 +39,14 @@ describe('ChallengesController', () => {
       rejectProposal: jest.fn(),
       createMessage: jest.fn(),
     };
-    coordinationReadBridge = {
-      getCoordinationState: jest.fn(),
-      listMessages: jest.fn(),
-    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ChallengesController],
       providers: [
         { provide: ChallengesService, useValue: challengesService },
         {
-          provide: ChallengeCoordinationService,
-          useValue: challengeCoordinationService,
-        },
-        {
           provide: ChallengesV2CoordinationBridgeService,
-          useValue: coordinationReadBridge,
+          useValue: coordinationBridge,
         },
         {
           provide: JwtAuthGuard,
@@ -83,12 +69,10 @@ describe('ChallengesController', () => {
 
   it('delegates coordination reads to the matches-v2 bridge', async () => {
     const req = makeRequest();
-    coordinationReadBridge.getCoordinationState.mockResolvedValue({
+    coordinationBridge.getCoordinationState.mockResolvedValue({
       challengeId: 'challenge-1',
     });
-    coordinationReadBridge.listMessages.mockResolvedValue([
-      { id: 'message-1' },
-    ]);
+    coordinationBridge.listMessages.mockResolvedValue([{ id: 'message-1' }]);
 
     await expect(
       controller.getCoordination(req, 'challenge-1'),
@@ -99,21 +83,17 @@ describe('ChallengesController', () => {
       { id: 'message-1' },
     ]);
 
-    expect(coordinationReadBridge.getCoordinationState).toHaveBeenCalledWith(
+    expect(coordinationBridge.getCoordinationState).toHaveBeenCalledWith(
       'challenge-1',
       'user-1',
     );
-    expect(coordinationReadBridge.listMessages).toHaveBeenCalledWith(
+    expect(coordinationBridge.listMessages).toHaveBeenCalledWith(
       'challenge-1',
       'user-1',
     );
-    expect(
-      challengeCoordinationService.getCoordinationState,
-    ).not.toHaveBeenCalled();
-    expect(challengeCoordinationService.listMessages).not.toHaveBeenCalled();
   });
 
-  it('keeps scheduling writes on the legacy coordination service', async () => {
+  it('delegates scheduling writes to the coordination bridge', async () => {
     const req = makeRequest();
     const proposalDto: CreateChallengeProposalDto = {
       scheduledAt: '2026-03-12T19:00:00.000Z',
@@ -127,22 +107,22 @@ describe('ChallengesController', () => {
     await controller.rejectProposal(req, 'challenge-1', 'proposal-1');
     await controller.createMessage(req, 'challenge-1', messageDto);
 
-    expect(challengeCoordinationService.createProposal).toHaveBeenCalledWith(
+    expect(coordinationBridge.createProposal).toHaveBeenCalledWith(
       'challenge-1',
       'user-1',
       proposalDto,
     );
-    expect(challengeCoordinationService.acceptProposal).toHaveBeenCalledWith(
+    expect(coordinationBridge.acceptProposal).toHaveBeenCalledWith(
       'challenge-1',
       'proposal-1',
       'user-1',
     );
-    expect(challengeCoordinationService.rejectProposal).toHaveBeenCalledWith(
+    expect(coordinationBridge.rejectProposal).toHaveBeenCalledWith(
       'challenge-1',
       'proposal-1',
       'user-1',
     );
-    expect(challengeCoordinationService.createMessage).toHaveBeenCalledWith(
+    expect(coordinationBridge.createMessage).toHaveBeenCalledWith(
       'challenge-1',
       'user-1',
       messageDto,
