@@ -25,4 +25,3 @@ export class PlayerProfilesV11772000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "player_profiles"`);
   }
 }
-

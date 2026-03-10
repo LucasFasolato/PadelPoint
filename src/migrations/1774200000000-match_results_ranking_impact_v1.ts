@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MatchResultsRankingImpactV11774200000000
-  implements MigrationInterface
-{
+export class MatchResultsRankingImpactV11774200000000 implements MigrationInterface {
   name = 'MatchResultsRankingImpactV11774200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

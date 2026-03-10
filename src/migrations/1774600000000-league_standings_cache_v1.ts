@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class LeagueStandingsCacheV11774600000000
-  implements MigrationInterface
-{
+export class LeagueStandingsCacheV11774600000000 implements MigrationInterface {
   name = 'LeagueStandingsCacheV11774600000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -154,9 +154,7 @@ export class ChallengeInvitesAndFkIds1768310821330 implements MigrationInterface
     await queryRunner.query(
       `DROP INDEX IF EXISTS "public"."IDX_4f13c986754853e87a8699120c"`,
     );
-    await queryRunner.query(
-      `DROP TABLE IF EXISTS "challenge_invites"`,
-    );
+    await queryRunner.query(`DROP TABLE IF EXISTS "challenge_invites"`);
     await queryRunner.query(
       `DROP TYPE IF EXISTS "public"."challenge_invites_status_enum"`,
     );

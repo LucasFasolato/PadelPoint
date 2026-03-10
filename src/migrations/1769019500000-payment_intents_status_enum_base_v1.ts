@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class PaymentIntentsStatusEnumBaseV11769019500000
-  implements MigrationInterface
-{
+export class PaymentIntentsStatusEnumBaseV11769019500000 implements MigrationInterface {
   name = 'PaymentIntentsStatusEnumBaseV11769019500000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

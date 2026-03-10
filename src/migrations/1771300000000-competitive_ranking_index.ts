@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CompetitiveRankingIndex1771300000000
-  implements MigrationInterface
-{
+export class CompetitiveRankingIndex1771300000000 implements MigrationInterface {
   name = 'CompetitiveRankingIndex1771300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

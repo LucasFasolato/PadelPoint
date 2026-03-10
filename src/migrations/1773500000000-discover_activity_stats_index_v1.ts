@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class DiscoverActivityStatsIndexV11773500000000
-  implements MigrationInterface
-{
+export class DiscoverActivityStatsIndexV11773500000000 implements MigrationInterface {
   name = 'DiscoverActivityStatsIndexV11773500000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -18,4 +16,3 @@ export class DiscoverActivityStatsIndexV11773500000000
     `);
   }
 }
-

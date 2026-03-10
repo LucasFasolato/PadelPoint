@@ -52,10 +52,14 @@ export class UserNotificationsV11769920000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS "IDX_user_notifications_userId_createdAt"`,
     );
 
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_user_notifications_userId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_user_notifications_userId"`,
+    );
 
     await queryRunner.query(`DROP TABLE IF EXISTS "user_notifications"`);
 
-    await queryRunner.query(`DROP TYPE IF EXISTS "user_notifications_type_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "user_notifications_type_enum"`,
+    );
   }
 }

@@ -46,7 +46,9 @@ export class PaymentsWebhookEventLog1769020000000 implements MigrationInterface 
     await queryRunner.query(
       `ALTER TABLE "payment_intents" ALTER COLUMN "status" TYPE "public"."payment_intents_status_enum_old" USING "status"::text::"public"."payment_intents_status_enum_old"`,
     );
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."payment_intents_status_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "public"."payment_intents_status_enum"`,
+    );
     await queryRunner.query(
       `ALTER TYPE "public"."payment_intents_status_enum_old" RENAME TO "payment_intents_status_enum"`,
     );
@@ -57,7 +59,9 @@ export class PaymentsWebhookEventLog1769020000000 implements MigrationInterface 
     await queryRunner.query(
       `ALTER TABLE "reservations" ALTER COLUMN "status" TYPE "public"."reservations_status_enum_old" USING "status"::text::"public"."reservations_status_enum_old"`,
     );
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."reservations_status_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "public"."reservations_status_enum"`,
+    );
     await queryRunner.query(
       `ALTER TYPE "public"."reservations_status_enum_old" RENAME TO "reservations_status_enum"`,
     );

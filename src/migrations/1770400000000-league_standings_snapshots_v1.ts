@@ -38,6 +38,8 @@ export class LeagueStandingsSnapshotsV11770400000000 implements MigrationInterfa
     await queryRunner.query(
       `DROP INDEX IF EXISTS "IDX_league_standings_snapshots_leagueId"`,
     );
-    await queryRunner.query(`DROP TABLE IF EXISTS "league_standings_snapshots"`);
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "league_standings_snapshots"`,
+    );
   }
 }

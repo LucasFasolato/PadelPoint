@@ -47,7 +47,9 @@ export class MatchResultsV11768312000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS "public"."IDX_d96b39b955cbb0730f1c4161de"`,
     );
     await queryRunner.query(`DROP TABLE IF EXISTS "match_results"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."match_results_status_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "public"."match_results_status_enum"`,
+    );
     await queryRunner.query(
       `DROP TYPE IF EXISTS "public"."match_results_winnerteam_enum"`,
     );

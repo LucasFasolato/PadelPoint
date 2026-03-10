@@ -80,15 +80,31 @@ export class LeagueChallengesV11770600000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "UQ_league_challenges_active_pair"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_matchId"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_expiresAt"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_status"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_opponentId"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_createdById"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_challenges_leagueId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "UQ_league_challenges_active_pair"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_matchId"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_expiresAt"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_status"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_opponentId"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_createdById"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_challenges_leagueId"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "league_challenges"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "league_challenges_status_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "league_challenges_status_enum"`,
+    );
     // Enum values added to league_activity_type_enum are intentionally not removed.
   }
 }

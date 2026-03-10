@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class GlobalRankingsSnapshotsV11773100000000
-  implements MigrationInterface
-{
+export class GlobalRankingsSnapshotsV11773100000000 implements MigrationInterface {
   name = 'GlobalRankingsSnapshotsV11773100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -95,4 +93,3 @@ export class GlobalRankingsSnapshotsV11773100000000
     );
   }
 }
-

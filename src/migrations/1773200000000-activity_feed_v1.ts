@@ -48,4 +48,3 @@ export class ActivityFeedV11773200000000 implements MigrationInterface {
     await queryRunner.query(`SELECT 1`);
   }
 }
-

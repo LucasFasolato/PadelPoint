@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MakePasswordHashNullable1772300000000
-  implements MigrationInterface
-{
+export class MakePasswordHashNullable1772300000000 implements MigrationInterface {
   name = 'MakePasswordHashNullable1772300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

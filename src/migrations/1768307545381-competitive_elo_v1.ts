@@ -134,7 +134,9 @@ export class CompetitiveEloV11768307545381 implements MigrationInterface {
       await queryRunner.query(
         `ALTER TABLE "elo_history" DROP COLUMN IF EXISTS "reason"`,
       );
-      await queryRunner.query(`DROP TYPE IF EXISTS "public"."elo_history_reason_enum"`);
+      await queryRunner.query(
+        `DROP TYPE IF EXISTS "public"."elo_history_reason_enum"`,
+      );
       await queryRunner.query(
         `ALTER TABLE "elo_history" ADD COLUMN IF NOT EXISTS "reason" character varying(40)`,
       );

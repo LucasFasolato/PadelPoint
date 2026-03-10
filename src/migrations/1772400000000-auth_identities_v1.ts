@@ -60,6 +60,8 @@ export class AuthIdentitiesV11772400000000 implements MigrationInterface {
       `ALTER TABLE "auth_identities" DROP CONSTRAINT IF EXISTS "fk_auth_identities_user"`,
     );
     await queryRunner.query(`DROP TABLE IF EXISTS "auth_identities"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "auth_identities_provider_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "auth_identities_provider_enum"`,
+    );
   }
 }

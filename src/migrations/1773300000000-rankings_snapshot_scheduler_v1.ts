@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RankingsSnapshotSchedulerV11773300000000
-  implements MigrationInterface
-{
+export class RankingsSnapshotSchedulerV11773300000000 implements MigrationInterface {
   name = 'RankingsSnapshotSchedulerV11773300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

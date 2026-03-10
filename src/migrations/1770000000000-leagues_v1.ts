@@ -89,9 +89,13 @@ export class LeaguesV11770000000000 implements MigrationInterface {
 
     await queryRunner.query(`DROP TABLE IF EXISTS "league_invites"`);
 
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_members_leagueId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_members_leagueId"`,
+    );
 
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_league_members_leagueId_userId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_league_members_leagueId_userId"`,
+    );
 
     await queryRunner.query(`DROP TABLE IF EXISTS "league_members"`);
 

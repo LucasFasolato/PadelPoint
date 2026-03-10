@@ -76,13 +76,21 @@ export class MatchDisputesV11770200000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_audit_logs_matchId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_match_audit_logs_matchId"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "match_audit_logs"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "match_audit_logs_action_enum"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_disputes_matchId_open"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "match_audit_logs_action_enum"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_match_disputes_matchId_open"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "match_disputes"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "match_disputes_status_enum"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "match_disputes_reasoncode_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "match_disputes_reasoncode_enum"`,
+    );
     // Cannot remove enum values from match_results_status_enum / user_notifications_type_enum
   }
 }

@@ -96,7 +96,9 @@ export class MediaAssetsV11774400000000 implements MigrationInterface {
     await queryRunner.query(`
       DROP TYPE IF EXISTS "public"."media_assets_provider_enum"
     `);
-    await queryRunner.query(`DROP TYPE IF EXISTS "public"."media_assets_kind_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "public"."media_assets_kind_enum"`,
+    );
     await queryRunner.query(`
       DROP TYPE IF EXISTS "public"."media_assets_ownertype_enum"
     `);

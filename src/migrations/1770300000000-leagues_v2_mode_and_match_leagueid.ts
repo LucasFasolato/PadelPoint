@@ -23,7 +23,9 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
     );
 
     // 4. Add leagueId column to match_results
-    await queryRunner.query(`ALTER TABLE "match_results" ADD COLUMN IF NOT EXISTS "leagueId" uuid`);
+    await queryRunner.query(
+      `ALTER TABLE "match_results" ADD COLUMN IF NOT EXISTS "leagueId" uuid`,
+    );
 
     // 5. Add FK constraint for leagueId
     await queryRunner.query(
@@ -37,7 +39,9 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_match_results_leagueId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_match_results_leagueId"`,
+    );
     await queryRunner.query(
       `ALTER TABLE "match_results" DROP CONSTRAINT IF EXISTS "FK_match_results_leagueId"`,
     );
@@ -50,7 +54,9 @@ export class LeaguesV2ModeAndMatchLeagueid1770300000000 implements MigrationInte
     await queryRunner.query(
       `ALTER TABLE "leagues" ALTER COLUMN "startDate" SET NOT NULL`,
     );
-    await queryRunner.query(`ALTER TABLE "leagues" DROP COLUMN IF EXISTS "mode"`);
+    await queryRunner.query(
+      `ALTER TABLE "leagues" DROP COLUMN IF EXISTS "mode"`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS "leagues_mode_enum"`);
   }
 }

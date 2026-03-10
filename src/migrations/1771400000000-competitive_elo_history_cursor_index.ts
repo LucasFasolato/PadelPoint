@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CompetitiveEloHistoryCursorIndex1771400000000
-  implements MigrationInterface
-{
+export class CompetitiveEloHistoryCursorIndex1771400000000 implements MigrationInterface {
   name = 'CompetitiveEloHistoryCursorIndex1771400000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

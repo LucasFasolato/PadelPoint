@@ -140,7 +140,9 @@ export class LegacyBookingBaseV11769018800000 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "courts" DROP CONSTRAINT IF EXISTS "FK_courts_clubId"`,
     );
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_courts_clubId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_courts_clubId"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "courts"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_clubs_email"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "clubs"`);

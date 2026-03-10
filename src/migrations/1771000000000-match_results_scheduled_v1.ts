@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MatchResultsScheduledV11771000000000
-  implements MigrationInterface
-{
+export class MatchResultsScheduledV11771000000000 implements MigrationInterface {
   name = 'MatchResultsScheduledV11771000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -71,6 +69,8 @@ export class MatchResultsScheduledV11771000000000
     await queryRunner.query(
       `ALTER TABLE "match_results" ALTER COLUMN "winnerTeam" SET NOT NULL`,
     );
-    await queryRunner.query(`ALTER TABLE "match_results" DROP COLUMN IF EXISTS "scheduledAt"`);
+    await queryRunner.query(
+      `ALTER TABLE "match_results" DROP COLUMN IF EXISTS "scheduledAt"`,
+    );
   }
 }

@@ -19,7 +19,9 @@ export class GeoCityScopeV11772800000000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_cities_provinceId" ON "cities" ("provinceId") `,
     );
-    await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "cityId" uuid`);
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "cityId" uuid`,
+    );
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_users_cityId" ON "users" ("cityId") `,
     );
@@ -45,10 +47,16 @@ export class GeoCityScopeV11772800000000 implements MigrationInterface {
       `ALTER TABLE "provinces" DROP CONSTRAINT IF EXISTS "FK_provinces_countryId"`,
     );
     await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_users_cityId"`);
-    await queryRunner.query(`ALTER TABLE "users" DROP COLUMN IF EXISTS "cityId"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_cities_provinceId"`);
+    await queryRunner.query(
+      `ALTER TABLE "users" DROP COLUMN IF EXISTS "cityId"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_cities_provinceId"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "cities"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_provinces_countryId"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_provinces_countryId"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "provinces"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "countries"`);
   }
