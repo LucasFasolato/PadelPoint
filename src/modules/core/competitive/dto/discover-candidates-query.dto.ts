@@ -52,9 +52,7 @@ export class DiscoverCandidatesQueryDto {
     description: 'Optional category filter (examples: 7, 7ma, 6ta)',
   })
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   category?: string;
 
   @ApiPropertyOptional({

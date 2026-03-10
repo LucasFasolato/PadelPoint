@@ -103,7 +103,9 @@ describe('MatchIntentsService', () => {
   });
 
   it('passes encoded league context when creating direct intent', async () => {
-    leagueMemberRepo.findOne.mockResolvedValue({ id: 'member-1' } as LeagueMember);
+    leagueMemberRepo.findOne.mockResolvedValue({
+      id: 'member-1',
+    } as LeagueMember);
 
     await service.createDirectIntent(USER_ID, {
       opponentUserId: OPPONENT_ID,

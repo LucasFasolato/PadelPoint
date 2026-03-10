@@ -66,7 +66,12 @@ export function computeMatchmakingScore(
     computeTagJaccard(input.candidateTags, input.myTags) * 5;
 
   return {
-    total: eloScore + activityScore + momentumScore + locationScore + tagOverlapScore,
+    total:
+      eloScore +
+      activityScore +
+      momentumScore +
+      locationScore +
+      tagOverlapScore,
     eloScore,
     activityScore,
     momentumScore,

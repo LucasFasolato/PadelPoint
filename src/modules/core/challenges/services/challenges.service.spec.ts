@@ -14,7 +14,10 @@ import { CompetitiveService } from '../../competitive/services/competitive.servi
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { NotificationsGateway } from '@/modules/core/notifications/gateways/notifications.gateway';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
-import { createMockDataSource, MockDataSource } from '@/test-utils/mock-datasource';
+import {
+  createMockDataSource,
+  MockDataSource,
+} from '@/test-utils/mock-datasource';
 
 const CREATOR_ID = 'a1111111-1111-4111-a111-111111111111';
 const OPPONENT_ID = 'b2222222-2222-4222-b222-222222222222';
@@ -163,12 +166,18 @@ describe('ChallengesService', () => {
       expect(gateway.emitToUser).toHaveBeenCalledWith(
         CREATOR_ID,
         'challenge:updated',
-        expect.objectContaining({ id: challenge.id, status: ChallengeStatus.ACCEPTED }),
+        expect.objectContaining({
+          id: challenge.id,
+          status: ChallengeStatus.ACCEPTED,
+        }),
       );
       expect(gateway.emitToUser).toHaveBeenCalledWith(
         OPPONENT_ID,
         'challenge:updated',
-        expect.objectContaining({ id: challenge.id, status: ChallengeStatus.ACCEPTED }),
+        expect.objectContaining({
+          id: challenge.id,
+          status: ChallengeStatus.ACCEPTED,
+        }),
       );
     });
 
@@ -203,7 +212,9 @@ describe('ChallengesService', () => {
       });
       repo.findOne.mockResolvedValue(challenge);
       repo.save.mockImplementation(async (c: Challenge) => c);
-      matchRepo.findOne.mockResolvedValue({ id: 'match-existing' } as MatchResult);
+      matchRepo.findOne.mockResolvedValue({
+        id: 'match-existing',
+      } as MatchResult);
 
       await service.acceptDirect(challenge.id, OPPONENT_ID);
 
@@ -255,7 +266,10 @@ describe('ChallengesService', () => {
       expect(gateway.emitToUser).toHaveBeenCalledWith(
         CREATOR_ID,
         'challenge:updated',
-        expect.objectContaining({ id: challenge.id, status: ChallengeStatus.REJECTED }),
+        expect.objectContaining({
+          id: challenge.id,
+          status: ChallengeStatus.REJECTED,
+        }),
       );
     });
 

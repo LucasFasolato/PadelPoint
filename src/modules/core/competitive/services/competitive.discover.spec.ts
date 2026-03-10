@@ -44,11 +44,17 @@ describe('CompetitiveService discoverCandidates', () => {
       providers: [
         CompetitiveService,
         { provide: UsersService, useValue: { findById: jest.fn() } },
-        { provide: getRepositoryToken(CompetitiveProfile), useValue: profileRepo },
+        {
+          provide: getRepositoryToken(CompetitiveProfile),
+          useValue: profileRepo,
+        },
         { provide: getRepositoryToken(EloHistory), useValue: historyRepo },
         { provide: getRepositoryToken(MatchResult), useValue: matchRepo },
         { provide: getRepositoryToken(Challenge), useValue: challengeRepo },
-        { provide: getRepositoryToken(PlayerProfile), useValue: playerProfileRepo },
+        {
+          provide: getRepositoryToken(PlayerProfile),
+          useValue: playerProfileRepo,
+        },
         { provide: getRepositoryToken(PlayerFavorite), useValue: favoriteRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(City), useValue: cityRepo },

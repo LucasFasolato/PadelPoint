@@ -74,4 +74,3 @@ export class MatchmakingRivalsQueryDto {
   @MaxLength(80)
   country?: string;
 }
-

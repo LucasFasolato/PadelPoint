@@ -1,9 +1,6 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import {
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { SkipCityRequired } from '@common/decorators/skip-city-required.decorator';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
@@ -28,7 +25,8 @@ export class CompetitiveOnboardingCompatController {
   @Post('onboarding')
   @SkipCityRequired()
   @ApiOperation({
-    summary: '[COMPAT] Upsert onboarding — delegates to PUT /competitive/onboarding',
+    summary:
+      '[COMPAT] Upsert onboarding — delegates to PUT /competitive/onboarding',
     deprecated: true,
     description:
       'Backward-compatible alias. Canon endpoint: PUT /competitive/onboarding. ' +

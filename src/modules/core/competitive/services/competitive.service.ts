@@ -701,7 +701,8 @@ export class CompetitiveService {
         throw new ForbiddenException({
           statusCode: 403,
           code: 'COMPETITIVE_PROFILE_REQUIRED',
-          message: 'Competitive profile is required for competitive matchmaking',
+          message:
+            'Competitive profile is required for competitive matchmaking',
         });
       }
       if (
@@ -776,9 +777,8 @@ export class CompetitiveService {
     }
 
     if (sameCategory && categoryNumber != null) {
-      const { minInclusive, maxExclusive } = getEloRangeForCategory(
-        categoryNumber,
-      );
+      const { minInclusive, maxExclusive } =
+        getEloRangeForCategory(categoryNumber);
       candidateQb.andWhere('profile.elo >= :categoryMinElo', {
         categoryMinElo: minInclusive,
       });
@@ -799,7 +799,10 @@ export class CompetitiveService {
     }
 
     const candidateIds = rawCandidates.map((candidate) => candidate.id);
-    const blockedIds = await this.getDiscoverBlockedUserIds(userId, candidateIds);
+    const blockedIds = await this.getDiscoverBlockedUserIds(
+      userId,
+      candidateIds,
+    );
     const candidates = rawCandidates.filter(
       (candidate) => !blockedIds.has(candidate.id),
     );
@@ -874,11 +877,12 @@ export class CompetitiveService {
     ranked.sort((a, b) => this.compareMatchmakingCandidates(a, b));
 
     const paged = cursor
-      ? ranked.filter((item) =>
-          this.compareMatchmakingCandidatesCursorPayload(
-            this.toMatchmakingCandidatesCursorPayload(item),
-            cursor,
-          ) > 0,
+      ? ranked.filter(
+          (item) =>
+            this.compareMatchmakingCandidatesCursorPayload(
+              this.toMatchmakingCandidatesCursorPayload(item),
+              cursor,
+            ) > 0,
         )
       : ranked;
 
@@ -886,9 +890,7 @@ export class CompetitiveService {
     const nextCursor =
       paged.length > limit && slice.length > 0
         ? encodeMatchmakingCandidatesCursor(
-            this.toMatchmakingCandidatesCursorPayload(
-              slice[slice.length - 1],
-            ),
+            this.toMatchmakingCandidatesCursorPayload(slice[slice.length - 1]),
           )
         : null;
 
@@ -966,7 +968,9 @@ export class CompetitiveService {
         }
       }
 
-      const rawCandidates = await candidateQb.take(candidateFetchLimit).getMany();
+      const rawCandidates = await candidateQb
+        .take(candidateFetchLimit)
+        .getMany();
       if (rawCandidates.length === 0) return { items: [] };
 
       const candidateIds = rawCandidates.map((candidate) => candidate.id);
@@ -1012,9 +1016,7 @@ export class CompetitiveService {
             lastActiveAt,
           } satisfies DiscoverCandidateItem;
         })
-        .sort((a, b) =>
-          this.compareDiscoverCandidates(a, b, { myElo, order }),
-        )
+        .sort((a, b) => this.compareDiscoverCandidates(a, b, { myElo, order }))
         .slice(0, limit);
 
       return { items: ranked };
@@ -1128,7 +1130,8 @@ export class CompetitiveService {
     position?: MatchmakingPosition,
   ): MatchmakingPosition {
     if (position === MatchmakingPosition.LEFT) return MatchmakingPosition.LEFT;
-    if (position === MatchmakingPosition.RIGHT) return MatchmakingPosition.RIGHT;
+    if (position === MatchmakingPosition.RIGHT)
+      return MatchmakingPosition.RIGHT;
     return MatchmakingPosition.ANY;
   }
 
@@ -1145,24 +1148,18 @@ export class CompetitiveService {
     const direct =
       pick(preferences.position) ??
       pick(preferences.side) ??
-      pick((preferences as Record<string, unknown>).preferredPosition);
+      pick(preferences.preferredPosition);
     if (!direct) return null;
 
     const normalized = this.normalizePositionToken(direct);
     return normalized;
   }
 
-  private normalizePositionToken(
-    value: string,
-  ): MatchmakingPosition | null {
-    if (
-      ['LEFT', 'IZQUIERDA', 'REVES', 'BACKHAND'].includes(value)
-    ) {
+  private normalizePositionToken(value: string): MatchmakingPosition | null {
+    if (['LEFT', 'IZQUIERDA', 'REVES', 'BACKHAND'].includes(value)) {
       return MatchmakingPosition.LEFT;
     }
-    if (
-      ['RIGHT', 'DERECHA', 'DRIVE', 'FOREHAND'].includes(value)
-    ) {
+    if (['RIGHT', 'DERECHA', 'DRIVE', 'FOREHAND'].includes(value)) {
       return MatchmakingPosition.RIGHT;
     }
     if (['ANY', 'BOTH', 'AMBOS', 'INDIFFERENT'].includes(value)) {
@@ -1272,7 +1269,9 @@ export class CompetitiveService {
   private async getDiscoverActivityByUserIds(
     userIds: string[],
     mode: DiscoverMode,
-  ): Promise<Map<string, { matchesPlayed30d: number; lastActiveAt: Date | null }>> {
+  ): Promise<
+    Map<string, { matchesPlayed30d: number; lastActiveAt: Date | null }>
+  > {
     const map = new Map<
       string,
       { matchesPlayed30d: number; lastActiveAt: Date | null }
@@ -2141,7 +2140,8 @@ export class CompetitiveService {
       status: challenge.status,
       matchType: challenge.matchType ?? MatchType.COMPETITIVE,
       impactRanking:
-        (challenge.matchType ?? MatchType.COMPETITIVE) === MatchType.COMPETITIVE,
+        (challenge.matchType ?? MatchType.COMPETITIVE) ===
+        MatchType.COMPETITIVE,
       reservationId: challenge.reservationId,
       targetCategory: challenge.targetCategory,
       createdAt: challenge.createdAt,

@@ -30,4 +30,3 @@ export class SkillRadarResponseDto {
   @ApiProperty({ type: () => SkillRadarMetaDto })
   meta!: SkillRadarMetaDto;
 }
-

@@ -120,12 +120,9 @@ export class EloService {
   }
 
   private extractParticipantsForAntiFarm(ch: Challenge): string[] {
-    return [...new Set([
-      ch.teamA1Id,
-      ch.teamA2Id,
-      ch.teamB1Id,
-      ch.teamB2Id,
-    ])].filter((id): id is string => typeof id === 'string' && id.length > 0);
+    return [
+      ...new Set([ch.teamA1Id, ch.teamA2Id, ch.teamB1Id, ch.teamB2Id]),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
   }
 
   private extractParticipantsFromHistoryRow(row: {
@@ -358,7 +355,7 @@ export class EloService {
   ): MatchRankingImpact {
     const reason: RankingImpactReason | undefined =
       impact.multiplier < 1
-        ? impact.reason ?? 'RIVAL_DIMINISHING'
+        ? (impact.reason ?? 'RIVAL_DIMINISHING')
         : impact.reason;
 
     return {

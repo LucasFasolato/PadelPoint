@@ -40,4 +40,3 @@ export function decodeMatchmakingRivalsCursor(
     throw new BadRequestException('Invalid matchmaking cursor');
   }
 }
-

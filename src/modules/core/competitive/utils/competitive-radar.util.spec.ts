@@ -39,4 +39,3 @@ describe('competitive-radar.util', () => {
     expect(consistencyFromDeltas([0, 25, 50])).toBeLessThan(50);
   });
 });
-

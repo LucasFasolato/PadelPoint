@@ -169,7 +169,11 @@ export class CompetitiveController {
   @Get('matchmaking/candidates')
   @SkipCityRequired()
   @ApiOperation({ summary: 'Canonical matchmaking candidates endpoint' })
-  @ApiQuery({ name: 'scope', required: false, enum: MatchmakingCandidatesScope })
+  @ApiQuery({
+    name: 'scope',
+    required: false,
+    enum: MatchmakingCandidatesScope,
+  })
   @ApiQuery({
     name: 'category',
     required: false,
@@ -210,7 +214,8 @@ export class CompetitiveController {
 
   @Get('discover/candidates')
   @ApiOperation({
-    summary: 'Discover candidate opponents for current player (legacy endpoint)',
+    summary:
+      'Discover candidate opponents for current player (legacy endpoint)',
     deprecated: true,
   })
   @ApiOkResponse({ type: DiscoverCandidatesResponseDto })
@@ -219,21 +224,24 @@ export class CompetitiveController {
     @Query() q: DiscoverCandidatesQueryDto,
   ) {
     const user = req.user as AuthUser;
-    const canonical = await this.competitive.matchmakingCandidates(user.userId, {
-      scope:
-        q.scope === DiscoverScope.PROVINCE
-          ? MatchmakingCandidatesScope.PROVINCE
-          : MatchmakingCandidatesScope.CITY,
-      limit: q.limit ?? 20,
-      category: q.category,
-      matchType:
-        q.mode === DiscoverMode.FRIENDLY
-          ? MatchType.FRIENDLY
-          : MatchType.COMPETITIVE,
-      position: MatchmakingPosition.ANY,
-      sameCategory:
-        typeof q.category === 'string' && q.category.trim().length > 0,
-    });
+    const canonical = await this.competitive.matchmakingCandidates(
+      user.userId,
+      {
+        scope:
+          q.scope === DiscoverScope.PROVINCE
+            ? MatchmakingCandidatesScope.PROVINCE
+            : MatchmakingCandidatesScope.CITY,
+        limit: q.limit ?? 20,
+        category: q.category,
+        matchType:
+          q.mode === DiscoverMode.FRIENDLY
+            ? MatchType.FRIENDLY
+            : MatchType.COMPETITIVE,
+        position: MatchmakingPosition.ANY,
+        sameCategory:
+          typeof q.category === 'string' && q.category.trim().length > 0,
+      },
+    );
     return { items: canonical.items };
   }
 

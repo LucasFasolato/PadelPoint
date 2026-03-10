@@ -42,4 +42,3 @@ export function consistencyFromDeltas(deltas: number[]): number {
   // Lower volatility => higher score. sigma 0 => 100, sigma >= 25 => 0.
   return clamp01Score(100 - (Math.min(25, sigma) / 25) * 100);
 }
-

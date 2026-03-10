@@ -72,22 +72,38 @@ describe('computeMatchmakingScore', () => {
   // ── activityScore ──────────────────────────────────────────────
   describe('activityScore (0–20)', () => {
     it('is 0 when matches30d = 0', () => {
-      const { activityScore } = computeMatchmakingScore({ ...base, absDiff: 0, matches30d: 0 });
+      const { activityScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        matches30d: 0,
+      });
       expect(activityScore).toBe(0);
     });
 
     it('is 10 when matches30d = 10', () => {
-      const { activityScore } = computeMatchmakingScore({ ...base, absDiff: 0, matches30d: 10 });
+      const { activityScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        matches30d: 10,
+      });
       expect(activityScore).toBe(10);
     });
 
     it('is 20 when matches30d = 20', () => {
-      const { activityScore } = computeMatchmakingScore({ ...base, absDiff: 0, matches30d: 20 });
+      const { activityScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        matches30d: 20,
+      });
       expect(activityScore).toBe(20);
     });
 
     it('caps at 20 when matches30d > 20', () => {
-      const { activityScore } = computeMatchmakingScore({ ...base, absDiff: 0, matches30d: 50 });
+      const { activityScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        matches30d: 50,
+      });
       expect(activityScore).toBe(20);
     });
   });
@@ -95,27 +111,47 @@ describe('computeMatchmakingScore', () => {
   // ── momentumScore ──────────────────────────────────────────────
   describe('momentumScore (0–15)', () => {
     it('is 0 when momentum30d = -50 (floor)', () => {
-      const { momentumScore } = computeMatchmakingScore({ ...base, absDiff: 0, momentum30d: -50 });
+      const { momentumScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        momentum30d: -50,
+      });
       expect(momentumScore).toBe(0);
     });
 
     it('is 7.5 when momentum30d = 0 (midpoint)', () => {
-      const { momentumScore } = computeMatchmakingScore({ ...base, absDiff: 0, momentum30d: 0 });
+      const { momentumScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        momentum30d: 0,
+      });
       expect(momentumScore).toBeCloseTo(7.5);
     });
 
     it('is 15 when momentum30d = 50 (ceiling)', () => {
-      const { momentumScore } = computeMatchmakingScore({ ...base, absDiff: 0, momentum30d: 50 });
+      const { momentumScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        momentum30d: 50,
+      });
       expect(momentumScore).toBe(15);
     });
 
     it('clamps to 0 when momentum30d < -50', () => {
-      const { momentumScore } = computeMatchmakingScore({ ...base, absDiff: 0, momentum30d: -200 });
+      const { momentumScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        momentum30d: -200,
+      });
       expect(momentumScore).toBe(0);
     });
 
     it('clamps to 15 when momentum30d > 50', () => {
-      const { momentumScore } = computeMatchmakingScore({ ...base, absDiff: 0, momentum30d: 200 });
+      const { momentumScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+        momentum30d: 200,
+      });
       expect(momentumScore).toBe(15);
     });
   });
@@ -127,7 +163,11 @@ describe('computeMatchmakingScore', () => {
         ...base,
         absDiff: 0,
         myLocation: NO_LOCATION,
-        candidateLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
+        candidateLocation: {
+          city: 'Madrid',
+          province: 'Madrid',
+          country: 'ES',
+        },
       });
       expect(locationScore).toBe(0);
     });
@@ -158,7 +198,11 @@ describe('computeMatchmakingScore', () => {
         ...base,
         absDiff: 0,
         myLocation: { city: 'Alcala', province: 'Madrid', country: 'ES' },
-        candidateLocation: { city: 'Mostoles', province: 'Madrid', country: 'ES' },
+        candidateLocation: {
+          city: 'Mostoles',
+          province: 'Madrid',
+          country: 'ES',
+        },
       });
       expect(locationScore).toBe(6);
     });
@@ -168,7 +212,11 @@ describe('computeMatchmakingScore', () => {
         ...base,
         absDiff: 0,
         myLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        candidateLocation: { city: 'Barcelona', province: 'Cataluña', country: 'ES' },
+        candidateLocation: {
+          city: 'Barcelona',
+          province: 'Cataluña',
+          country: 'ES',
+        },
       });
       expect(locationScore).toBe(3);
     });
@@ -178,7 +226,11 @@ describe('computeMatchmakingScore', () => {
         ...base,
         absDiff: 0,
         myLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        candidateLocation: { city: 'Paris', province: 'Ile-de-France', country: 'FR' },
+        candidateLocation: {
+          city: 'Paris',
+          province: 'Ile-de-France',
+          country: 'FR',
+        },
       });
       expect(locationScore).toBe(0);
     });
@@ -197,7 +249,10 @@ describe('computeMatchmakingScore', () => {
   // ── tagOverlapScore ────────────────────────────────────────────
   describe('tagOverlapScore (0–5)', () => {
     it('is 0 when both tag arrays are empty', () => {
-      const { tagOverlapScore } = computeMatchmakingScore({ ...base, absDiff: 0 });
+      const { tagOverlapScore } = computeMatchmakingScore({
+        ...base,
+        absDiff: 0,
+      });
       expect(tagOverlapScore).toBe(0);
     });
 
@@ -232,7 +287,11 @@ describe('computeMatchmakingScore', () => {
         matches30d: 10,
         momentum30d: 0,
         myLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        candidateLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
+        candidateLocation: {
+          city: 'Madrid',
+          province: 'Madrid',
+          country: 'ES',
+        },
         myTags: ['aggressive'],
         candidateTags: ['aggressive'],
       });
@@ -252,7 +311,11 @@ describe('computeMatchmakingScore', () => {
         matches30d: 20,
         momentum30d: 50,
         myLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
-        candidateLocation: { city: 'Madrid', province: 'Madrid', country: 'ES' },
+        candidateLocation: {
+          city: 'Madrid',
+          province: 'Madrid',
+          country: 'ES',
+        },
         myTags: ['aggressive'],
         candidateTags: ['aggressive'],
       });

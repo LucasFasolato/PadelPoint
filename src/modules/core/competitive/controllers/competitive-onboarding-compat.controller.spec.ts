@@ -15,8 +15,14 @@ describe('CompetitiveOnboardingCompatController', () => {
       controllers: [CompetitiveOnboardingCompatController],
       providers: [
         { provide: CompetitiveService, useValue: competitiveService },
-        { provide: JwtAuthGuard, useValue: { canActivate: jest.fn(() => true) } },
-        { provide: CityRequiredGuard, useValue: { canActivate: jest.fn(() => true) } },
+        {
+          provide: JwtAuthGuard,
+          useValue: { canActivate: jest.fn(() => true) },
+        },
+        {
+          provide: CityRequiredGuard,
+          useValue: { canActivate: jest.fn(() => true) },
+        },
       ],
     }).compile();
 
@@ -35,10 +41,15 @@ describe('CompetitiveOnboardingCompatController', () => {
     const expected = { id: userId, category: '7ma' };
     competitiveService.upsertOnboarding.mockResolvedValue(expected);
 
-    const req = { user: { userId, email: 'test@test.com', role: 'player' } } as any;
+    const req = {
+      user: { userId, email: 'test@test.com', role: 'player' },
+    } as any;
     const result = await controller.upsertOnboarding(req, dto);
 
-    expect(competitiveService.upsertOnboarding).toHaveBeenCalledWith(userId, dto);
+    expect(competitiveService.upsertOnboarding).toHaveBeenCalledWith(
+      userId,
+      dto,
+    );
     expect(result).toBe(expected);
   });
 });

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { MatchType } from '../../matches/enums/match-type.enum';
 
 export class CreateDirectChallengeDto {

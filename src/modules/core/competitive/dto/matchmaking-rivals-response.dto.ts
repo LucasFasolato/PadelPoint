@@ -50,4 +50,3 @@ export class MatchmakingRivalsResponseDto {
   @ApiProperty({ nullable: true })
   nextCursor!: string | null;
 }
-

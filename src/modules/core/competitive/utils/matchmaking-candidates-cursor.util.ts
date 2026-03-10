@@ -42,7 +42,7 @@ export function decodeMatchmakingCandidatesCursor(
     return {
       lastActiveAt: hasNullLastActiveAt
         ? null
-        : parsedDate?.toISOString() ?? null,
+        : (parsedDate?.toISOString() ?? null),
       matchesPlayed30d: parsed.matchesPlayed30d,
       userId: parsed.userId,
     };

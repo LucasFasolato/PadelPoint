@@ -3,11 +3,15 @@ export type EloHistoryCursorPayload = {
   id: string;
 };
 
-export function encodeEloHistoryCursor(cursor: EloHistoryCursorPayload): string {
+export function encodeEloHistoryCursor(
+  cursor: EloHistoryCursorPayload,
+): string {
   return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
 }
 
-export function decodeEloHistoryCursor(cursor: string): EloHistoryCursorPayload {
+export function decodeEloHistoryCursor(
+  cursor: string,
+): EloHistoryCursorPayload {
   try {
     const parsed = JSON.parse(
       Buffer.from(cursor, 'base64url').toString('utf8'),
