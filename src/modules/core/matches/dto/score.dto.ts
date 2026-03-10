@@ -30,4 +30,3 @@ export class ScoreDto {
   @ApiProperty({ type: [SetDto] })
   sets!: SetDto[];
 }
-

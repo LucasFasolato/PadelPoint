@@ -19,7 +19,12 @@ export enum LeagueMatchType {
 }
 
 export class LeagueMatchScoreDto {
-  @ApiProperty({ type: () => ReportSetDto, isArray: true, minItems: 1, maxItems: 3 })
+  @ApiProperty({
+    type: () => ReportSetDto,
+    isArray: true,
+    minItems: 1,
+    maxItems: 3,
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(3)

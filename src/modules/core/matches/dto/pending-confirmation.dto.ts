@@ -6,7 +6,10 @@ export class PlayerRefDto {
   @ApiPropertyOptional()
   userId: string | null;
 
-  @ApiPropertyOptional({ description: 'Resolved display name; email prefix as fallback; never full email' })
+  @ApiPropertyOptional({
+    description:
+      'Resolved display name; email prefix as fallback; never full email',
+  })
   displayName: string | null;
 }
 
@@ -31,7 +34,9 @@ export class PendingConfirmationDto {
   @ApiProperty({ enum: MatchResultStatus })
   status: MatchResultStatus;
 
-  @ApiPropertyOptional({ description: 'ISO 8601 timestamp when the match was played' })
+  @ApiPropertyOptional({
+    description: 'ISO 8601 timestamp when the match was played',
+  })
   playedAt: string | null;
 
   @ApiProperty({ type: ScoreDto })
@@ -46,10 +51,16 @@ export class PendingConfirmationDto {
   @ApiProperty({ type: TeamRefDto })
   teamB: TeamRefDto;
 
-  @ApiProperty({ type: PlayerRefDto, description: 'The player who originally reported this match' })
+  @ApiProperty({
+    type: PlayerRefDto,
+    description: 'The player who originally reported this match',
+  })
   reportedBy: PlayerRefDto;
 
-  @ApiProperty({ description: 'Always true for this endpoint — signals the front to show confirm/reject CTAs' })
+  @ApiProperty({
+    description:
+      'Always true for this endpoint — signals the front to show confirm/reject CTAs',
+  })
   canConfirm: true;
 }
 
@@ -57,6 +68,8 @@ export class PendingConfirmationsResponseDto {
   @ApiProperty({ type: [PendingConfirmationDto] })
   items: PendingConfirmationDto[];
 
-  @ApiPropertyOptional({ description: 'Opaque cursor for the next page; null when no more items' })
+  @ApiPropertyOptional({
+    description: 'Opaque cursor for the next page; null when no more items',
+  })
   nextCursor: string | null;
 }

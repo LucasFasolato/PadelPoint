@@ -205,11 +205,13 @@ describe('MatchesService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn().mockImplementation((key: string, fallback?: unknown) => {
-              if (key === 'DISPUTE_WINDOW_HOURS') return 48;
-              if (key === 'ranking.minMatches') return 4;
-              return fallback;
-            }),
+            get: jest
+              .fn()
+              .mockImplementation((key: string, fallback?: unknown) => {
+                if (key === 'DISPUTE_WINDOW_HOURS') return 48;
+                if (key === 'ranking.minMatches') return 4;
+                return fallback;
+              }),
           },
         },
       ],
@@ -265,7 +267,9 @@ describe('MatchesService', () => {
           updatedAt: new Date('2026-03-01T12:00:00.000Z'),
         }),
       );
-      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      competitiveProfileRepo.findOne.mockResolvedValue({
+        id: 'profile-a1',
+      } as any);
       mockEloHistoryRow({ eloBefore: 1450, eloAfter: 1470, delta: 20 });
       mockSnapshots([
         {
@@ -318,7 +322,9 @@ describe('MatchesService', () => {
           } as any,
         }),
       );
-      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      competitiveProfileRepo.findOne.mockResolvedValue({
+        id: 'profile-a1',
+      } as any);
       mockEloHistoryRow({ eloBefore: 1470, eloAfter: 1454, delta: -16 });
       mockSnapshots([]);
 
@@ -339,7 +345,9 @@ describe('MatchesService', () => {
           rankingImpact: null,
         }),
       );
-      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      competitiveProfileRepo.findOne.mockResolvedValue({
+        id: 'profile-a1',
+      } as any);
       mockEloHistoryRow(null);
 
       const result = await service.getRankingImpact('match-1', USER_A1);
@@ -391,7 +399,9 @@ describe('MatchesService', () => {
           } as any,
         }),
       );
-      competitiveProfileRepo.findOne.mockResolvedValue({ id: 'profile-a1' } as any);
+      competitiveProfileRepo.findOne.mockResolvedValue({
+        id: 'profile-a1',
+      } as any);
       mockEloHistoryRow({ eloBefore: 1430, eloAfter: 1442, delta: 12 });
       mockSnapshots([
         {
@@ -1142,11 +1152,13 @@ describe('MatchesService', () => {
           {
             provide: ConfigService,
             useValue: {
-              get: jest.fn().mockImplementation((key: string, fallback?: unknown) => {
-                if (key === 'DISPUTE_WINDOW_HOURS') return 48;
-                if (key === 'ranking.minMatches') return 4;
-                return fallback;
-              }),
+              get: jest
+                .fn()
+                .mockImplementation((key: string, fallback?: unknown) => {
+                  if (key === 'DISPUTE_WINDOW_HOURS') return 48;
+                  if (key === 'ranking.minMatches') return 4;
+                  return fallback;
+                }),
             },
           },
         ],
@@ -1437,9 +1449,9 @@ describe('MatchesService', () => {
 
       // 3 other participants (USER_A1, USER_A2, USER_B2) should be notified
       expect(userNotifications.create).toHaveBeenCalledTimes(3);
-      const notifiedUserIds = (
-        userNotifications.create as jest.Mock
-      ).mock.calls.map((c) => c[0].userId);
+      const notifiedUserIds = userNotifications.create.mock.calls.map(
+        (c) => c[0].userId,
+      );
       expect(notifiedUserIds).toContain(USER_A1);
       expect(notifiedUserIds).toContain(USER_A2);
       expect(notifiedUserIds).toContain(USER_B2);
@@ -1497,7 +1509,7 @@ describe('MatchesService', () => {
 
       expect(result.matchStatus).toBe(MatchResultStatus.DISPUTED);
       expect(txAuditRepo.save).toHaveBeenCalledTimes(1);
-      const auditArg = (txAuditRepo.create as jest.Mock).mock.calls[0][0];
+      const auditArg = txAuditRepo.create.mock.calls[0][0];
       expect(auditArg.action).toBe(MatchAuditAction.DISPUTE_RAISED);
     });
 

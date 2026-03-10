@@ -41,7 +41,12 @@ export class ReportMatchDto {
   @IsISO8601()
   playedAt?: string;
 
-  @ApiProperty({ type: () => ReportSetDto, isArray: true, minItems: 2, maxItems: 3 })
+  @ApiProperty({
+    type: () => ReportSetDto,
+    isArray: true,
+    minItems: 2,
+    maxItems: 3,
+  })
   @IsArray()
   @ArrayMinSize(2)
   @ArrayMaxSize(3)
