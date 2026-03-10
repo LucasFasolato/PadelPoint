@@ -21,9 +21,7 @@ export class RunRankingSnapshotsQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   cityId?: string;
 
   @IsOptional()
@@ -54,4 +52,3 @@ export class RunRankingSnapshotsQueryDto {
   @IsISO8601()
   asOfDate?: string;
 }
-

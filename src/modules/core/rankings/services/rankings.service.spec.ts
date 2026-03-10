@@ -175,31 +175,21 @@ describe('RankingsService', () => {
       config,
     );
 
-    jest
-      .spyOn(service as any, 'resolveScope')
-      .mockResolvedValue({
-        scope: RankingScope.COUNTRY,
-        provinceCode: null,
-        provinceCodeIso: null,
-        cityId: null,
-        cityNameNormalized: null,
-        dimensionKey: 'COUNTRY',
-      });
-    jest
-      .spyOn(service as any, 'resolveTimeframeWindow')
-      .mockReturnValue({
-        start: new Date('2026-01-01T00:00:00.000Z'),
-        end: new Date('2026-02-27T23:59:59.999Z'),
-      });
-    jest
-      .spyOn(service as any, 'computeRowsFromMatches')
-      .mockResolvedValue([]);
-    jest
-      .spyOn(service as any, 'getLatestSnapshot')
-      .mockResolvedValue(null);
-    jest
-      .spyOn(service as any, 'pruneSnapshots')
-      .mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'resolveScope').mockResolvedValue({
+      scope: RankingScope.COUNTRY,
+      provinceCode: null,
+      provinceCodeIso: null,
+      cityId: null,
+      cityNameNormalized: null,
+      dimensionKey: 'COUNTRY',
+    });
+    jest.spyOn(service as any, 'resolveTimeframeWindow').mockReturnValue({
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-02-27T23:59:59.999Z'),
+    });
+    jest.spyOn(service as any, 'computeRowsFromMatches').mockResolvedValue([]);
+    jest.spyOn(service as any, 'getLatestSnapshot').mockResolvedValue(null);
+    jest.spyOn(service as any, 'pruneSnapshots').mockResolvedValue(undefined);
     const emitSpy = jest
       .spyOn(service as any, 'emitRankingMovementEvents')
       .mockResolvedValue(0);
@@ -296,16 +286,14 @@ describe('RankingsService', () => {
       ],
     };
 
-    jest
-      .spyOn(service as any, 'resolveScope')
-      .mockResolvedValue({
-        scope: RankingScope.COUNTRY,
-        provinceCode: null,
-        provinceCodeIso: null,
-        cityId: null,
-        cityNameNormalized: null,
-        dimensionKey: 'COUNTRY',
-      });
+    jest.spyOn(service as any, 'resolveScope').mockResolvedValue({
+      scope: RankingScope.COUNTRY,
+      provinceCode: null,
+      provinceCodeIso: null,
+      cityId: null,
+      cityNameNormalized: null,
+      dimensionKey: 'COUNTRY',
+    });
     jest
       .spyOn(service as any, 'getLatestSnapshot')
       .mockResolvedValue(snapshot as any);
@@ -783,7 +771,9 @@ describe('RankingsService', () => {
     jest.spyOn(service as any, 'getLatestSnapshot').mockResolvedValue(null);
     jest.spyOn(service as any, 'computeRowsFromMatches').mockResolvedValue([]);
     jest.spyOn(service as any, 'pruneSnapshots').mockResolvedValue(undefined);
-    jest.spyOn(service as any, 'emitRankingMovementEvents').mockResolvedValue(0);
+    jest
+      .spyOn(service as any, 'emitRankingMovementEvents')
+      .mockResolvedValue(0);
 
     const result = await service.getLeaderboard({
       userId: 'u-1',
@@ -1284,14 +1274,54 @@ describe('RankingsService', () => {
   it('orders suggested rivals correctly, excludes self, and limits to five', async () => {
     const { service, telemetry } = createRankingsServiceForInsights();
     const visibleRows = [
-      makeRankingRow({ userId: 'u-1', displayName: 'P1', elo: 1520, position: 1 }),
-      makeRankingRow({ userId: 'u-2', displayName: 'P2', elo: 1505, position: 2 }),
-      makeRankingRow({ userId: 'u-3', displayName: 'P3', elo: 1492, position: 3 }),
-      makeRankingRow({ userId: 'u-me', displayName: 'Me', elo: 1480, position: 4 }),
-      makeRankingRow({ userId: 'u-5', displayName: 'P5', elo: 1474, position: 5 }),
-      makeRankingRow({ userId: 'u-6', displayName: 'P6', elo: 1471, position: 6 }),
-      makeRankingRow({ userId: 'u-7', displayName: 'P7', elo: 1468, position: 7 }),
-      makeRankingRow({ userId: 'u-8', displayName: 'P8', elo: 1460, position: 8 }),
+      makeRankingRow({
+        userId: 'u-1',
+        displayName: 'P1',
+        elo: 1520,
+        position: 1,
+      }),
+      makeRankingRow({
+        userId: 'u-2',
+        displayName: 'P2',
+        elo: 1505,
+        position: 2,
+      }),
+      makeRankingRow({
+        userId: 'u-3',
+        displayName: 'P3',
+        elo: 1492,
+        position: 3,
+      }),
+      makeRankingRow({
+        userId: 'u-me',
+        displayName: 'Me',
+        elo: 1480,
+        position: 4,
+      }),
+      makeRankingRow({
+        userId: 'u-5',
+        displayName: 'P5',
+        elo: 1474,
+        position: 5,
+      }),
+      makeRankingRow({
+        userId: 'u-6',
+        displayName: 'P6',
+        elo: 1471,
+        position: 6,
+      }),
+      makeRankingRow({
+        userId: 'u-7',
+        displayName: 'P7',
+        elo: 1468,
+        position: 7,
+      }),
+      makeRankingRow({
+        userId: 'u-8',
+        displayName: 'P8',
+        elo: 1460,
+        position: 8,
+      }),
     ];
 
     jest.spyOn(service as any, 'getRankingSnapshotContext').mockResolvedValue({
@@ -1340,9 +1370,9 @@ describe('RankingsService', () => {
       'NEARBY',
     ]);
     expect(result.items.some((item) => item.userId === 'u-me')).toBe(false);
-    expect(result.items.find((item) => item.userId === 'u-5')?.canChallenge).toBe(
-      false,
-    );
+    expect(
+      result.items.find((item) => item.userId === 'u-5')?.canChallenge,
+    ).toBe(false);
     expect(
       result.items.find((item) => item.userId === 'u-3')?.isActiveLast7Days,
     ).toBe(true);
@@ -1366,9 +1396,17 @@ describe('RankingsService', () => {
           position: index + 1,
         }),
       ),
-      makeRankingRow({ userId: 'u-1', displayName: 'Juan Perez', position: 13 }),
+      makeRankingRow({
+        userId: 'u-1',
+        displayName: 'Juan Perez',
+        position: 13,
+      }),
       makeRankingRow({ userId: 'u-me', displayName: 'Me', position: 14 }),
-      makeRankingRow({ userId: 'u-3', displayName: 'Pedro Diaz', position: 15 }),
+      makeRankingRow({
+        userId: 'u-3',
+        displayName: 'Pedro Diaz',
+        position: 15,
+      }),
     ];
     const previousRows = [
       ...Array.from({ length: 13 }, (_, index) =>
@@ -1378,7 +1416,11 @@ describe('RankingsService', () => {
           position: index + 1,
         }),
       ),
-      makeRankingRow({ userId: 'u-1', displayName: 'Juan Perez', position: 14 }),
+      makeRankingRow({
+        userId: 'u-1',
+        displayName: 'Juan Perez',
+        position: 14,
+      }),
       makeRankingRow({ userId: 'u-2', displayName: 'Otro', position: 15 }),
       makeRankingRow({ userId: 'u-me', displayName: 'Me', position: 16 }),
     ];

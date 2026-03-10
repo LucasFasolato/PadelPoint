@@ -3,4 +3,3 @@ export enum RankingMode {
   FRIENDLY = 'FRIENDLY',
   ALL = 'ALL',
 }
-

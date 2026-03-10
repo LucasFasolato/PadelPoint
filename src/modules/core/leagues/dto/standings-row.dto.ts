@@ -5,7 +5,9 @@ export class StandingsRowDto {
   @ApiProperty({ description: 'Player UUID' })
   userId: string;
 
-  @ApiProperty({ description: 'Resolved display name; falls back to "Jugador {position}"' })
+  @ApiProperty({
+    description: 'Resolved display name; falls back to "Jugador {position}"',
+  })
   displayName: string;
 
   @ApiProperty()
@@ -29,21 +31,33 @@ export class StandingsRowDto {
   @ApiProperty({ description: '1-based rank position' })
   position: number;
 
-  @ApiPropertyOptional({ description: "ISO 8601 timestamp of the player's most recent win" })
+  @ApiPropertyOptional({
+    description: "ISO 8601 timestamp of the player's most recent win",
+  })
   lastWinAt?: string;
 
-  @ApiPropertyOptional({ description: 'oldPosition - newPosition; positive means moved up; null = new player' })
+  @ApiPropertyOptional({
+    description:
+      'oldPosition - newPosition; positive means moved up; null = new player',
+  })
   delta?: number | null;
 
-  @ApiPropertyOptional({ description: 'Position in the immediately preceding snapshot' })
+  @ApiPropertyOptional({
+    description: 'Position in the immediately preceding snapshot',
+  })
   oldPosition?: number | null;
 
-  @ApiPropertyOptional({ enum: ['UP', 'DOWN', 'SAME', 'NEW'] as MovementType[] })
+  @ApiPropertyOptional({
+    enum: ['UP', 'DOWN', 'SAME', 'NEW'] as MovementType[],
+  })
   movementType?: MovementType;
 }
 
 export class StandingsWithMovementDto {
-  @ApiPropertyOptional({ description: 'ISO 8601 timestamp of the last computed snapshot; null if no snapshot yet' })
+  @ApiPropertyOptional({
+    description:
+      'ISO 8601 timestamp of the last computed snapshot; null if no snapshot yet',
+  })
   computedAt: string | null;
 
   @ApiPropertyOptional({

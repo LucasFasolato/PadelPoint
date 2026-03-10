@@ -125,11 +125,17 @@ export class NotificationsGateway
     const leagueId = data?.leagueId;
 
     if (!userId) {
-      client.emit('error', { code: 'UNAUTHORIZED', message: 'Not authenticated' });
+      client.emit('error', {
+        code: 'UNAUTHORIZED',
+        message: 'Not authenticated',
+      });
       return;
     }
     if (!leagueId || typeof leagueId !== 'string') {
-      client.emit('error', { code: 'BAD_REQUEST', message: 'leagueId is required' });
+      client.emit('error', {
+        code: 'BAD_REQUEST',
+        message: 'leagueId is required',
+      });
       return;
     }
 
@@ -148,11 +154,16 @@ export class NotificationsGateway
 
       await client.join(`league:${leagueId}`);
       client.emit('league:subscribed', { leagueId });
-      this.logger.log(`WS league subscribe: userId=${userId} leagueId=${leagueId}`);
+      this.logger.log(
+        `WS league subscribe: userId=${userId} leagueId=${leagueId}`,
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'unknown';
       this.logger.error(`WS league subscribe error: ${msg}`);
-      client.emit('error', { code: 'INTERNAL_ERROR', message: 'Subscription failed' });
+      client.emit('error', {
+        code: 'INTERNAL_ERROR',
+        message: 'Subscription failed',
+      });
     }
   }
 

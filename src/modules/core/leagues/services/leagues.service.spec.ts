@@ -2314,15 +2314,19 @@ describe('LeaguesService', () => {
       });
       leagueRepo.findOne.mockResolvedValue(fakeLeague());
       memberRepo.findOne.mockResolvedValue(null);
-      joinRequestRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(
-        created,
-      );
+      joinRequestRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(created);
       joinRequestRepo.create.mockReturnValue(created);
       joinRequestRepo.save.mockResolvedValue(created);
 
-      const result = await service.createJoinRequest(FAKE_USER_ID_2, 'league-1', {
-        message: 'Quiero entrar',
-      });
+      const result = await service.createJoinRequest(
+        FAKE_USER_ID_2,
+        'league-1',
+        {
+          message: 'Quiero entrar',
+        },
+      );
 
       expect(result.status).toBe(LeagueJoinRequestStatus.PENDING);
       expect(result.message).toBe('Quiero entrar');
@@ -2330,7 +2334,9 @@ describe('LeaguesService', () => {
 
     it('createJoinRequest throws 409 when user is already member', async () => {
       leagueRepo.findOne.mockResolvedValue(fakeLeague());
-      memberRepo.findOne.mockResolvedValue(fakeMember({ userId: FAKE_USER_ID_2 }));
+      memberRepo.findOne.mockResolvedValue(
+        fakeMember({ userId: FAKE_USER_ID_2 }),
+      );
 
       await expect(
         service.createJoinRequest(FAKE_USER_ID_2, 'league-1', {}),

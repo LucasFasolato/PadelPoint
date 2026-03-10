@@ -201,28 +201,32 @@ function createMockManager(data: {
       entityName === 'LeagueStandingsReadModel'
     ) {
       return {
-        delete: jest.fn().mockImplementation(async ({ leagueId }: { leagueId: string }) => {
-          for (let index = readModelRows.length - 1; index >= 0; index--) {
-            if (readModelRows[index].leagueId === leagueId) {
-              readModelRows.splice(index, 1);
+        delete: jest
+          .fn()
+          .mockImplementation(async ({ leagueId }: { leagueId: string }) => {
+            for (let index = readModelRows.length - 1; index >= 0; index--) {
+              if (readModelRows[index].leagueId === leagueId) {
+                readModelRows.splice(index, 1);
+              }
             }
-          }
-          return { affected: 0 };
-        }),
+            return { affected: 0 };
+          }),
         create: jest
           .fn()
           .mockImplementation((input: Record<string, unknown>) => input),
-        save: jest.fn().mockImplementation(async (items: Record<string, unknown>[]) => {
-          const arr = Array.isArray(items) ? items : [items];
-          for (const item of arr) {
-            readModelRows.push({
-              id: `read-model-${readModelRows.length + 1}`,
-              updatedAt: new Date(),
-              ...item,
-            });
-          }
-          return arr;
-        }),
+        save: jest
+          .fn()
+          .mockImplementation(async (items: Record<string, unknown>[]) => {
+            const arr = Array.isArray(items) ? items : [items];
+            for (const item of arr) {
+              readModelRows.push({
+                id: `read-model-${readModelRows.length + 1}`,
+                updatedAt: new Date(),
+                ...item,
+              });
+            }
+            return arr;
+          }),
       };
     }
 
@@ -775,9 +779,11 @@ describe('LeagueStandingsService', () => {
         mockReadModelRepo,
         { manager: { transaction: jest.fn() } } as any,
         {
-          find: jest.fn().mockResolvedValue([
-            { id: uid(1), displayName: 'Player One', email: null },
-          ]),
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { id: uid(1), displayName: 'Player One', email: null },
+            ]),
         } as any,
         { create: jest.fn().mockResolvedValue(undefined) } as any,
         {
@@ -844,9 +850,11 @@ describe('LeagueStandingsService', () => {
         mockReadModelRepo,
         { manager: { transaction } } as any,
         {
-          find: jest.fn().mockResolvedValue([
-            { id: uid(1), displayName: 'Player One', email: null },
-          ]),
+          find: jest
+            .fn()
+            .mockResolvedValue([
+              { id: uid(1), displayName: 'Player One', email: null },
+            ]),
         } as any,
         { create: jest.fn().mockResolvedValue(undefined) } as any,
         {
@@ -923,4 +931,3 @@ describe('LeagueStandingsService', () => {
     });
   });
 });
-

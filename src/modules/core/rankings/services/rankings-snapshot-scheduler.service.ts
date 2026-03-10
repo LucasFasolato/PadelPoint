@@ -42,7 +42,8 @@ export type RankingSnapshotBatchSummary = {
   mode: RankingMode;
 };
 
-const DEFAULT_TIMEZONE = process.env.RANKINGS_SNAPSHOT_TZ ?? 'America/Argentina/Cordoba';
+const DEFAULT_TIMEZONE =
+  process.env.RANKINGS_SNAPSHOT_TZ ?? 'America/Argentina/Cordoba';
 
 @Injectable()
 export class RankingsSnapshotSchedulerService {
@@ -66,7 +67,9 @@ export class RankingsSnapshotSchedulerService {
     await this.runBatch({}, 'SCHEDULED');
   }
 
-  async runManual(input: RankingSnapshotBatchInput): Promise<RankingSnapshotBatchSummary> {
+  async runManual(
+    input: RankingSnapshotBatchInput,
+  ): Promise<RankingSnapshotBatchSummary> {
     return this.runBatch(input, 'MANUAL');
   }
 
@@ -118,16 +121,17 @@ export class RankingsSnapshotSchedulerService {
 
     try {
       for (const target of targets) {
-        const result = await this.rankingsService.createGlobalRankingSnapshotDetailed({
-          scope: target.scope,
-          provinceCode: target.provinceCode,
-          cityId: target.cityId,
-          categoryKey,
-          categoryNumber,
-          timeframe,
-          modeKey: mode,
-          asOfDate,
-        });
+        const result =
+          await this.rankingsService.createGlobalRankingSnapshotDetailed({
+            scope: target.scope,
+            provinceCode: target.provinceCode,
+            cityId: target.cityId,
+            categoryKey,
+            categoryNumber,
+            timeframe,
+            modeKey: mode,
+            asOfDate,
+          });
 
         computedRows += result.computedRows;
         if (result.inserted) {

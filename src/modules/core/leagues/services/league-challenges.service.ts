@@ -12,7 +12,10 @@ import { LeagueChallenge } from '../entities/league-challenge.entity';
 import { LeagueChallengeStatus } from '../enums/league-challenge-status.enum';
 import { LeagueMember } from '../entities/league-member.entity';
 import { League } from '../entities/league.entity';
-import { MatchResult, MatchResultStatus } from '../../matches/entities/match-result.entity';
+import {
+  MatchResult,
+  MatchResultStatus,
+} from '../../matches/entities/match-result.entity';
 import { UserNotificationsService } from '@/modules/core/notifications/services/user-notifications.service';
 import { UserNotificationType } from '@/modules/core/notifications/enums/user-notification-type.enum';
 import { LeagueActivityService } from './league-activity.service';

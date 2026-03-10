@@ -56,7 +56,8 @@ export class LeagueChallengeActionsController {
   @Post(':id/link-match')
   @ApiOperation({
     summary: 'Link a completed match to a league challenge',
-    description: 'Either participant can link the match once the league challenge is accepted.',
+    description:
+      'Either participant can link the match once the league challenge is accepted.',
   })
   linkMatch(
     @Req() req: Request,

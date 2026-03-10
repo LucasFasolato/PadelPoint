@@ -64,7 +64,7 @@ export class RankingsController {
     const headerValue = req.headers['x-railway-request-id'];
     const requestId = Array.isArray(headerValue)
       ? headerValue[0]
-      : headerValue ?? null;
+      : (headerValue ?? null);
     const rawKeys =
       req.query && typeof req.query === 'object' ? Object.keys(req.query) : [];
 

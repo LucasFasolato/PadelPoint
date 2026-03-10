@@ -1,4 +1,11 @@
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class MeActivityQueryDto {
@@ -14,4 +21,3 @@ export class MeActivityQueryDto {
   @Max(50)
   limit?: number;
 }
-

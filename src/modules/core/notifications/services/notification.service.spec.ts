@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { NotificationService } from '../services/notification.service';
-import { Notification, NotificationStatus } from '../entities/notification.entity';
+import {
+  Notification,
+  NotificationStatus,
+} from '../entities/notification.entity';
 import { createMockRepo, MockRepo } from '@/test-utils/mock-repo';
 
 describe('NotificationService', () => {

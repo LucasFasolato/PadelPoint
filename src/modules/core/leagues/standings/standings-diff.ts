@@ -53,9 +53,9 @@ export function computeStandingsDiff(
     const movementType: MovementType =
       oldPosition === null
         ? 'NEW'
-        : delta! > 0
+        : delta > 0
           ? 'UP'
-          : delta! < 0
+          : delta < 0
             ? 'DOWN'
             : 'SAME';
 

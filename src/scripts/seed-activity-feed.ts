@@ -5,7 +5,9 @@ import { UserNotificationType } from '@/modules/core/notifications/enums/user-no
 async function run() {
   const userId = process.argv[2];
   if (!userId) {
-    throw new Error('Usage: ts-node src/scripts/seed-activity-feed.ts <userId>');
+    throw new Error(
+      'Usage: ts-node src/scripts/seed-activity-feed.ts <userId>',
+    );
   }
 
   await dataSource.initialize();
@@ -74,16 +76,14 @@ async function run() {
   ]);
 
   await dataSource.destroy();
-  // eslint-disable-next-line no-console
+
   console.log(`Seeded activity feed notifications for userId=${userId}`);
 }
 
 run().catch(async (err) => {
-  // eslint-disable-next-line no-console
   console.error(err);
   if (dataSource.isInitialized) {
     await dataSource.destroy();
   }
   process.exit(1);
 });
-

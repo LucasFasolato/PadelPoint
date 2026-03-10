@@ -241,7 +241,10 @@ export class LeaguesController {
         lossPoints: { type: 'integer', minimum: 0, maximum: 10 },
         tieBreakers: {
           type: 'array',
-          items: { type: 'string', enum: ['points', 'wins', 'setsDiff', 'gamesDiff'] },
+          items: {
+            type: 'string',
+            enum: ['points', 'wins', 'setsDiff', 'gamesDiff'],
+          },
         },
         includeSources: {
           type: 'array',

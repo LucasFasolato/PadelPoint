@@ -7,4 +7,3 @@ export enum ActivityFeedEventType {
   RANKING_MOVEMENT = 'RANKING_MOVEMENT',
   SYSTEM = 'SYSTEM',
 }
-

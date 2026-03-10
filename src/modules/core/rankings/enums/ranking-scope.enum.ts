@@ -3,4 +3,3 @@ export enum RankingScope {
   PROVINCE = 'PROVINCE',
   CITY = 'CITY',
 }
-

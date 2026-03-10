@@ -103,9 +103,7 @@ export class LeagueActivityService {
       : null;
 
     // Bulk-resolve actorNames — single query, no N+1
-    const actorIds = [
-      ...new Set(items.map((a) => a.actorId).filter(Boolean) as string[]),
-    ];
+    const actorIds = [...new Set(items.map((a) => a.actorId).filter(Boolean))];
     const actorMap = new Map<string, string | null>();
     if (actorIds.length > 0) {
       const users = await this.userRepo.find({

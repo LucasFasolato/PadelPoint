@@ -822,11 +822,16 @@ export class LeagueStandingsService {
       gamesDiff: row.gamesDiff,
       position: row.position,
       ...(row.lastWinAt ? { lastWinAt: row.lastWinAt.toISOString() } : {}),
-      ...(row.lastMatchAt ? { lastMatchAt: row.lastMatchAt.toISOString() } : {}),
+      ...(row.lastMatchAt
+        ? { lastMatchAt: row.lastMatchAt.toISOString() }
+        : {}),
       ...(row.delta !== null ? { delta: row.delta } : {}),
       ...(row.oldPosition !== null ? { oldPosition: row.oldPosition } : {}),
       ...(row.movementType
-        ? { movementType: row.movementType as LeagueStandingsSnapshotRow['movementType'] }
+        ? {
+            movementType:
+              row.movementType as LeagueStandingsSnapshotRow['movementType'],
+          }
         : {}),
     };
   }
@@ -1011,7 +1016,7 @@ export class LeagueStandingsService {
       return `You moved up ${places} to #${mv.newPosition}`;
     }
     if (mv.movementType === 'DOWN') {
-      const n = Math.abs(mv.delta!);
+      const n = Math.abs(mv.delta);
       const places = n === 1 ? '1 place' : `${n} places`;
       return `You moved down ${places} to #${mv.newPosition}`;
     }

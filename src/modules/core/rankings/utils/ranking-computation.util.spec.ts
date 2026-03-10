@@ -37,7 +37,9 @@ describe('ranking-computation.util', () => {
 
     it('supports opt-in all category', () => {
       expect(normalizeCategoryInputToKey('all')).toBeUndefined();
-      expect(normalizeCategoryInputToKey('all', { allowAll: true })).toBe('all');
+      expect(normalizeCategoryInputToKey('all', { allowAll: true })).toBe(
+        'all',
+      );
     });
 
     it('enforces max length and trims input', () => {

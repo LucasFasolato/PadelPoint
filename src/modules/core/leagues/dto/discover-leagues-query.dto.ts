@@ -56,9 +56,7 @@ export class DiscoverLeaguesQueryDto {
 
   @ApiPropertyOptional({ description: 'Opaque pagination cursor' })
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(300)
   cursor?: string;

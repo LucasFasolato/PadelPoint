@@ -70,7 +70,9 @@ export class ActivityFeedService {
     return { items, nextCursor };
   }
 
-  private parseCursor(cursor?: string): { createdAt: Date; id: string | null } | null {
+  private parseCursor(
+    cursor?: string,
+  ): { createdAt: Date; id: string | null } | null {
     if (!cursor || cursor.trim().length === 0) return null;
     const raw = cursor.trim();
     const [datePart, idPart] = raw.split('|');
@@ -118,9 +120,7 @@ export class ActivityFeedService {
     const data = notification.data ?? null;
     if (!data) return null;
 
-    if (
-      notification.type === UserNotificationType.RANKING_SNAPSHOT_PUBLISHED
-    ) {
+    if (notification.type === UserNotificationType.RANKING_SNAPSHOT_PUBLISHED) {
       return {
         snapshotId: data.snapshotId ?? null,
         scope: data.scope ?? null,
@@ -176,4 +176,3 @@ export class ActivityFeedService {
     return data;
   }
 }
-
