@@ -266,6 +266,25 @@ describe('MatchesController', () => {
     expect(matchesService.rejectMatch).not.toHaveBeenCalled();
   });
 
+  it('keeps PATCH /matches/:id/admin-confirm on the legacy service', async () => {
+    matchesService.adminConfirmMatch.mockResolvedValue({
+      id: 'match-1',
+      status: 'confirmed',
+    });
+
+    const result = await controller.adminConfirm(
+      { user: { userId: 'league-admin-1' } } as any,
+      'match-1',
+    );
+
+    expect(result).toEqual({ id: 'match-1', status: 'confirmed' });
+    expect(matchesService.adminConfirmMatch).toHaveBeenCalledWith(
+      'league-admin-1',
+      'match-1',
+    );
+    expect(matchesV2BridgeService.confirmResult).not.toHaveBeenCalled();
+  });
+
   it('delegates POST /matches/:id/dispute to the matches-v2 bridge', async () => {
     matchesV2BridgeService.openDispute.mockResolvedValue({
       dispute: { id: 'dispute-1' },
@@ -310,5 +329,29 @@ describe('MatchesController', () => {
       dto,
     );
     expect(matchesService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  it('keeps POST /matches/:id/resolve-confirm-as-is on the legacy service', async () => {
+    matchesService.resolveConfirmAsIs.mockResolvedValue({
+      matchId: 'match-1',
+      matchStatus: 'confirmed',
+      resolution: 'confirm_as_is',
+    });
+
+    const result = await controller.resolveConfirmAsIs(
+      { user: { userId: 'league-admin-1' } } as any,
+      'match-1',
+    );
+
+    expect(result).toEqual({
+      matchId: 'match-1',
+      matchStatus: 'confirmed',
+      resolution: 'confirm_as_is',
+    });
+    expect(matchesService.resolveConfirmAsIs).toHaveBeenCalledWith(
+      'league-admin-1',
+      'match-1',
+    );
+    expect(matchesV2BridgeService.resolveDispute).not.toHaveBeenCalled();
   });
 });

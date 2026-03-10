@@ -24,6 +24,7 @@ describe('MatchesV2BridgeService', () => {
     reportResult: jest.Mock;
     confirmResult: jest.Mock;
     rejectResult: jest.Mock;
+    resolveDispute: jest.Mock;
   };
   let matchesService: {
     reportMatch: jest.Mock;
@@ -46,6 +47,7 @@ describe('MatchesV2BridgeService', () => {
       reportResult: jest.fn(),
       confirmResult: jest.fn(),
       rejectResult: jest.fn(),
+      resolveDispute: jest.fn(),
     };
     matchesService = {
       reportMatch: jest.fn(),
@@ -442,10 +444,38 @@ describe('MatchesV2BridgeService', () => {
     );
   });
 
-  it('falls back to legacy disputeMatch because dispute semantics are not canonical-compatible yet', async () => {
+  it('falls back to legacy disputeMatch when no canonical correlation exists', async () => {
+    matchQueryService.findByLegacyMatchResultId.mockResolvedValue(null);
+    matchesService.disputeMatch.mockResolvedValue({
+      dispute: { id: 'dispute-1' },
+      matchStatus: MatchResultStatus.DISPUTED,
+    });
+
+    const dto = { reasonCode: 'wrong_score' as const };
+    const result = await service.openDispute(
+      'user-1',
+      'legacy-match-1',
+      dto as any,
+    );
+
+    expect(result).toEqual({
+      dispute: { id: 'dispute-1' },
+      matchStatus: MatchResultStatus.DISPUTED,
+    });
+    expect(matchesService.disputeMatch).toHaveBeenCalledWith(
+      'user-1',
+      'legacy-match-1',
+      dto,
+    );
+    expect(matchResultLifecycleService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  it('falls back to legacy disputeMatch even with correlation because the status contract does not overlap cleanly', async () => {
     matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
       id: 'match-v2-1',
       legacyMatchResultId: 'legacy-match-1',
+      status: MatchStatus.CONFIRMED,
+      hasOpenDispute: false,
     });
     matchesService.disputeMatch.mockResolvedValue({
       dispute: { id: 'dispute-1' },
@@ -468,12 +498,84 @@ describe('MatchesV2BridgeService', () => {
       'legacy-match-1',
       dto,
     );
+    expect(matchResultLifecycleService.resolveDispute).not.toHaveBeenCalled();
   });
 
-  it('falls back to legacy resolveDispute because admin resolution is not modeled in matches-v2 yet', async () => {
+  it('delegates resolveDispute to matches-v2 for the safe participant-admin subset and preserves the legacy response shape', async () => {
     matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
       id: 'match-v2-1',
       legacyMatchResultId: 'legacy-match-1',
+      status: MatchStatus.DISPUTED,
+      hasOpenDispute: true,
+      teamAPlayer1Id: 'admin-1',
+      teamAPlayer2Id: 'user-2',
+      teamBPlayer1Id: 'user-3',
+      teamBPlayer2Id: 'user-4',
+    });
+    matchResultLifecycleService.resolveDispute.mockResolvedValue(
+      makeCanonicalMatch({
+        id: 'match-v2-1',
+        legacyMatchResultId: 'legacy-match-1',
+        status: MatchStatus.CONFIRMED,
+        hasOpenDispute: false,
+        confirmedByUserId: 'admin-1',
+        openDispute: {
+          id: 'dispute-v2-1',
+          createdByUserId: 'user-3',
+          reasonCode: 'WRONG_SCORE',
+          message: 'score mismatch',
+          status: 'resolved',
+          resolution: 'confirm_as_is',
+          resolutionMessage: 'Reviewed by admin',
+          resolvedByUserId: 'admin-1',
+          resolvedAt: '2026-03-01T13:00:00.000Z',
+          createdAt: '2026-03-01T12:00:00.000Z',
+          updatedAt: '2026-03-01T13:00:00.000Z',
+        },
+      }),
+    );
+
+    const dto = {
+      resolution: 'confirm_as_is',
+      note: '  Reviewed by admin  ',
+    } as const;
+    const result = await service.resolveDispute(
+      'admin-1',
+      'legacy-match-1',
+      dto as any,
+    );
+
+    expect(result).toEqual({
+      dispute: {
+        id: 'dispute-v2-1',
+        matchId: 'legacy-match-1',
+        status: 'resolved',
+        resolvedAt: '2026-03-01T13:00:00.000Z',
+      },
+      resolution: 'confirm_as_is',
+      matchStatus: MatchResultStatus.CONFIRMED,
+    });
+    expect(matchResultLifecycleService.resolveDispute).toHaveBeenCalledWith(
+      'match-v2-1',
+      'admin-1',
+      {
+        resolution: 'CONFIRM_AS_IS',
+        message: 'Reviewed by admin',
+      },
+    );
+    expect(matchesService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  it('falls back to legacy resolveDispute when the admin caller is not a canonical participant', async () => {
+    matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
+      id: 'match-v2-1',
+      legacyMatchResultId: 'legacy-match-1',
+      status: MatchStatus.DISPUTED,
+      hasOpenDispute: true,
+      teamAPlayer1Id: 'user-1',
+      teamAPlayer2Id: 'user-2',
+      teamBPlayer1Id: 'user-3',
+      teamBPlayer2Id: 'user-4',
     });
     matchesService.resolveDispute.mockResolvedValue({
       resolution: 'confirm_as_is',
@@ -496,6 +598,42 @@ describe('MatchesV2BridgeService', () => {
       'legacy-match-1',
       dto,
     );
+    expect(matchResultLifecycleService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  it('falls back to legacy resolveDispute when the canonical match is not in disputed/open state', async () => {
+    matchQueryService.findByLegacyMatchResultId.mockResolvedValue({
+      id: 'match-v2-1',
+      legacyMatchResultId: 'legacy-match-1',
+      status: MatchStatus.CONFIRMED,
+      hasOpenDispute: false,
+      teamAPlayer1Id: 'admin-1',
+      teamAPlayer2Id: 'user-2',
+      teamBPlayer1Id: 'user-3',
+      teamBPlayer2Id: 'user-4',
+    });
+    matchesService.resolveDispute.mockResolvedValue({
+      resolution: 'void_match',
+      matchStatus: MatchResultStatus.RESOLVED,
+    });
+
+    const dto = { resolution: 'void_match' as const };
+    const result = await service.resolveDispute(
+      'admin-1',
+      'legacy-match-1',
+      dto as any,
+    );
+
+    expect(result).toEqual({
+      resolution: 'void_match',
+      matchStatus: MatchResultStatus.RESOLVED,
+    });
+    expect(matchesService.resolveDispute).toHaveBeenCalledWith(
+      'admin-1',
+      'legacy-match-1',
+      dto,
+    );
+    expect(matchResultLifecycleService.resolveDispute).not.toHaveBeenCalled();
   });
 });
 

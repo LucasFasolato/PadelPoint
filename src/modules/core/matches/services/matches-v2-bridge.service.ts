@@ -203,9 +203,10 @@ export class MatchesV2BridgeService {
       return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
     }
 
-    // The canonical lifecycle currently disputes reported/rejected results and
-    // does not model the confirmed-with-window semantics from the legacy path.
-    // Keep those cases on fallback until the public contract converges.
+    // Legacy dispute is confirmed-only, enforces a dispute window and is
+    // idempotent when the match is already disputed. Canonical dispute is for
+    // reported/rejected results and rejects already-open disputes, so there is
+    // no clean overlap to delegate yet without changing the public contract.
     return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
   }
 
@@ -230,10 +231,31 @@ export class MatchesV2BridgeService {
       );
     }
 
-    // Legacy resolution stays on fallback for now because the public route is
-    // admin-owned while the canonical service is intentionally participant-only
-    // until admin override semantics are designed in matches-v2.
-    return this.matchesService.resolveDispute(userId, legacyMatchResultId, dto);
+    // Safe subset only: the public route is admin-owned, but matches-v2 models
+    // participant resolution. Delegate only when the admin caller also matches
+    // canonical participant semantics and the dispute is already canonical.
+    if (!this.canDelegateLegacyDisputeResolution(canonicalMatch, userId)) {
+      return this.matchesService.resolveDispute(
+        userId,
+        legacyMatchResultId,
+        dto,
+      );
+    }
+
+    const result = await this.matchResultLifecycleService.resolveDispute(
+      canonicalMatch.id,
+      userId,
+      {
+        resolution: canonicalResolution,
+        message: this.normalizeOptionalText(dto.note),
+      },
+    );
+
+    return this.toLegacyResolveDisputeResponse(
+      result,
+      legacyMatchResultId,
+      dto.resolution,
+    );
   }
 
   private normalizeLimit(limit?: number): number {
@@ -476,6 +498,53 @@ export class MatchesV2BridgeService {
       default:
         return MatchResultStatus.RESOLVED;
     }
+  }
+
+  private canDelegateLegacyDisputeResolution(
+    match: MatchResponseDto,
+    userId: string,
+  ): boolean {
+    if (match.status !== MatchStatus.DISPUTED || !match.hasOpenDispute) {
+      return false;
+    }
+
+    return this.isCanonicalParticipant(match, userId);
+  }
+
+  private isCanonicalParticipant(
+    match: MatchResponseDto,
+    userId: string,
+  ): boolean {
+    return [
+      match.teamAPlayer1Id,
+      match.teamAPlayer2Id,
+      match.teamBPlayer1Id,
+      match.teamBPlayer2Id,
+    ].includes(userId);
+  }
+
+  private normalizeOptionalText(value?: string): string | undefined {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private toLegacyResolveDisputeResponse(
+    match: MatchResponseDto,
+    legacyMatchResultId: string,
+    resolution: ResolveDisputeDto['resolution'],
+  ) {
+    return {
+      dispute: match.openDispute
+        ? {
+            id: match.openDispute.id,
+            matchId: match.legacyMatchResultId ?? legacyMatchResultId,
+            status: match.openDispute.status,
+            resolvedAt: match.openDispute.resolvedAt,
+          }
+        : null,
+      matchStatus: this.toLegacyMatchStatus(match.status),
+      resolution,
+    };
   }
 
   private toCanonicalDisputeReasonCode(

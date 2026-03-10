@@ -133,6 +133,7 @@ export class MatchesController {
   @Patch(':id/admin-confirm')
   adminConfirm(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
+    // League-admin override semantics still depend on legacy RBAC/audit rules.
     return this.service.adminConfirmMatch(user.userId, id);
   }
 
@@ -180,6 +181,7 @@ export class MatchesController {
   @Post(':id/resolve-confirm-as-is')
   resolveConfirmAsIs(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
+    // This flow remains legacy until matches-v2 models the league-admin path.
     return this.service.resolveConfirmAsIs(user.userId, id);
   }
 
