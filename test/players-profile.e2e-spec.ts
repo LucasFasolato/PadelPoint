@@ -56,7 +56,7 @@ describe('Players Profile (e2e)', () => {
   });
 
   it('GET /players/me/profile returns the player profile', async () => {
-    playersService.getMyProfile!.mockResolvedValue({
+    playersService.getMyProfile.mockResolvedValue({
       userId: FAKE_PLAYER.userId,
       bio: null,
       playStyleTags: [],
@@ -71,11 +71,13 @@ describe('Players Profile (e2e)', () => {
       .expect(200);
 
     expect(res.body.userId).toBe(FAKE_PLAYER.userId);
-    expect(playersService.getMyProfile).toHaveBeenCalledWith(FAKE_PLAYER.userId);
+    expect(playersService.getMyProfile).toHaveBeenCalledWith(
+      FAKE_PLAYER.userId,
+    );
   });
 
   it('PATCH /players/me/profile updates fields and sends normalized payload to service', async () => {
-    playersService.updateMyProfile!.mockResolvedValue({
+    playersService.updateMyProfile.mockResolvedValue({
       userId: FAKE_PLAYER.userId,
       bio: 'Juego paciente',
       playStyleTags: ['aggressive', 'net-player'],
@@ -113,7 +115,7 @@ describe('Players Profile (e2e)', () => {
   });
 
   it('PATCH /players/me/profile accepts cityName + provinceCode aliases', async () => {
-    playersService.updateMyProfile!.mockResolvedValue({
+    playersService.updateMyProfile.mockResolvedValue({
       userId: FAKE_PLAYER.userId,
       bio: null,
       playStyleTags: [],
@@ -173,4 +175,3 @@ describe('Players Profile (e2e)', () => {
     expect(playersService.updateMyProfile).not.toHaveBeenCalled();
   });
 });
-

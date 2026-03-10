@@ -9,7 +9,9 @@ import { PlayerCompetitiveProfileService } from '@/modules/core/players/services
 
 describe('Players Competitive Profile (e2e)', () => {
   let app: INestApplication<App>;
-  let profileService: Partial<Record<keyof PlayerCompetitiveProfileService, jest.Mock>>;
+  let profileService: Partial<
+    Record<keyof PlayerCompetitiveProfileService, jest.Mock>
+  >;
 
   beforeEach(async () => {
     profileService = {
@@ -50,7 +52,7 @@ describe('Players Competitive Profile (e2e)', () => {
   });
 
   it('GET /players/:id/competitive-profile returns stable response shape', async () => {
-    profileService.getProfile!.mockResolvedValue({
+    profileService.getProfile.mockResolvedValue({
       userId: '11111111-1111-4111-8111-111111111111',
       displayName: 'Lucas Fasolato',
       avatarUrl: 'https://cdn.test/avatar.png',

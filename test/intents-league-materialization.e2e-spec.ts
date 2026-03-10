@@ -53,7 +53,9 @@ describe('Intents League Materialization (e2e)', () => {
   let challengesService: Partial<Record<keyof ChallengesService, jest.Mock>>;
   let matchesService: Partial<Record<keyof MatchesService, jest.Mock>>;
   let leaguesService: Partial<Record<keyof LeaguesService, jest.Mock>>;
-  let standingsService: Partial<Record<keyof LeagueStandingsService, jest.Mock>>;
+  let standingsService: Partial<
+    Record<keyof LeagueStandingsService, jest.Mock>
+  >;
   let activityService: Partial<Record<keyof LeagueActivityService, jest.Mock>>;
 
   beforeEach(async () => {
@@ -109,10 +111,12 @@ describe('Intents League Materialization (e2e)', () => {
     };
 
     matchesService = {
-      getByChallenge: jest.fn().mockImplementation(async (challengeId: string) => {
-        if (challengeId === CHALLENGE_ID) return materializedMatch;
-        return null;
-      }),
+      getByChallenge: jest
+        .fn()
+        .mockImplementation(async (challengeId: string) => {
+          if (challengeId === CHALLENGE_ID) return materializedMatch;
+          return null;
+        }),
       confirmMatch: jest.fn().mockImplementation(async () => {
         standingsUpdated = true;
         materializedMatch = { ...materializedMatch, status: 'confirmed' };
@@ -245,4 +249,3 @@ describe('Intents League Materialization (e2e)', () => {
     );
   });
 });
-

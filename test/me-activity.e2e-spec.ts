@@ -14,7 +14,9 @@ const FAKE_USER = {
 
 describe('Me Activity (e2e)', () => {
   let app: INestApplication<App>;
-  let activityFeedService: Partial<Record<keyof ActivityFeedService, jest.Mock>>;
+  let activityFeedService: Partial<
+    Record<keyof ActivityFeedService, jest.Mock>
+  >;
 
   beforeEach(async () => {
     activityFeedService = {
@@ -23,7 +25,9 @@ describe('Me Activity (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [MeActivityController],
-      providers: [{ provide: ActivityFeedService, useValue: activityFeedService }],
+      providers: [
+        { provide: ActivityFeedService, useValue: activityFeedService },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({
@@ -52,7 +56,7 @@ describe('Me Activity (e2e)', () => {
   });
 
   it('GET /me/activity returns newest-first compact feed', async () => {
-    activityFeedService.listForUser!.mockResolvedValue({
+    activityFeedService.listForUser.mockResolvedValue({
       items: [
         {
           id: 'n-1',
@@ -88,7 +92,8 @@ describe('Me Activity (e2e)', () => {
   "type",
 ]
 `);
-    expect(Object.keys(res.body.items[0].metadata).sort()).toMatchInlineSnapshot(`
+    expect(Object.keys(res.body.items[0].metadata).sort())
+      .toMatchInlineSnapshot(`
 [
   "deltaPositions",
   "newPosition",

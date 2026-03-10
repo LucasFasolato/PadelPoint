@@ -19,4 +19,3 @@ export function setupOpenApi(app: INestApplication) {
 
   return document;
 }
-

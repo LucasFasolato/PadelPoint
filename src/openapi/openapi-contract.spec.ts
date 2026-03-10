@@ -79,4 +79,3 @@ describe('OpenAPI contract snapshot (critical endpoints)', () => {
     }
   });
 });
-

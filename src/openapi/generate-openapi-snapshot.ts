@@ -22,7 +22,8 @@ async function main() {
   process.env.OPENAPI_SNAPSHOT_MODE = '1';
   process.env.NODE_ENV ??= 'test';
   process.env.ENABLE_CRONS ??= 'false';
-  process.env.DATABASE_URL ??= 'postgres://postgres:postgres@localhost:5432/padelpoint';
+  process.env.DATABASE_URL ??=
+    'postgres://postgres:postgres@localhost:5432/padelpoint';
   process.env.JWT_SECRET ??= 'openapi-snapshot-secret';
   process.env.CLOUDINARY_CLOUD_NAME ??= 'openapi-snapshot';
   process.env.CLOUDINARY_API_KEY ??= 'openapi-snapshot';
@@ -42,7 +43,11 @@ async function main() {
     const document = createOpenApiDocument(app);
     const outputPath = resolve(process.cwd(), 'openapi.snapshot.json');
     const stableDoc = sortJson(document);
-    writeFileSync(outputPath, `${JSON.stringify(stableDoc, null, 2)}\n`, 'utf8');
+    writeFileSync(
+      outputPath,
+      `${JSON.stringify(stableDoc, null, 2)}\n`,
+      'utf8',
+    );
     process.stdout.write(`Wrote ${outputPath}\n`);
   } finally {
     await app.close();

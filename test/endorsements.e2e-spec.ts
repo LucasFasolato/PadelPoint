@@ -26,7 +26,11 @@ describe('Endorsements (e2e)', () => {
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [MatchEndorsementsController, PlayerStrengthsController, MeReputationController],
+      controllers: [
+        MatchEndorsementsController,
+        PlayerStrengthsController,
+        MeReputationController,
+      ],
       providers: [
         {
           provide: MatchEndorsementsService,
@@ -66,7 +70,7 @@ describe('Endorsements (e2e)', () => {
   });
 
   it('POST /matches/:id/endorsements returns stable response shape', async () => {
-    service.create!.mockResolvedValue({
+    service.create.mockResolvedValue({
       id: '33333333-3333-4333-8333-333333333333',
       matchId: MATCH_ID,
       fromUserId: ME_USER_ID,
@@ -96,7 +100,7 @@ describe('Endorsements (e2e)', () => {
   });
 
   it('GET /players/:id/strengths returns stable response shape', async () => {
-    service.getStrengthSummary!.mockResolvedValue({
+    service.getStrengthSummary.mockResolvedValue({
       userId: '44444444-4444-4444-8444-444444444444',
       days: 90,
       totalVotes: 8,
@@ -134,7 +138,7 @@ describe('Endorsements (e2e)', () => {
   // ── Flow 2: endorsement pipeline ─────────────────────────────────────────
 
   it('GET /me/endorsements/pending returns stable response shape', async () => {
-    service.getPendingEndorsements!.mockResolvedValue({
+    service.getPendingEndorsements.mockResolvedValue({
       items: [
         {
           matchId: MATCH_ID,
@@ -160,7 +164,8 @@ describe('Endorsements (e2e)', () => {
   "rivals",
 ]
 `);
-    expect(Object.keys(res.body.items[0].rivals[0]).sort()).toMatchInlineSnapshot(`
+    expect(Object.keys(res.body.items[0].rivals[0]).sort())
+      .toMatchInlineSnapshot(`
 [
   "displayName",
   "userId",
@@ -171,7 +176,7 @@ describe('Endorsements (e2e)', () => {
 
   it('Flow 2: GET /me/endorsements/pending → POST /matches/:id/endorsements pipeline', async () => {
     // Step 1 — caller fetches pending endorsements after a confirmed match
-    service.getPendingEndorsements!.mockResolvedValue({
+    service.getPendingEndorsements.mockResolvedValue({
       items: [
         {
           matchId: MATCH_ID,
@@ -199,7 +204,7 @@ describe('Endorsements (e2e)', () => {
       strengths: ['TACTICA'],
       createdAt: new Date().toISOString(),
     };
-    service.create!.mockResolvedValue(createdEndorsement);
+    service.create.mockResolvedValue(createdEndorsement);
 
     const endorseRes = await request(app.getHttpServer())
       .post(`/matches/${pendingItem.matchId}/endorsements`)
@@ -214,11 +219,14 @@ describe('Endorsements (e2e)', () => {
     expect(service.create).toHaveBeenCalledWith(
       MATCH_ID,
       ME_USER_ID,
-      expect.objectContaining({ toUserId: RIVAL_USER_ID, strengths: ['TACTICA'] }),
+      expect.objectContaining({
+        toUserId: RIVAL_USER_ID,
+        strengths: ['TACTICA'],
+      }),
     );
 
     // Step 3 — after endorsement, pending list is empty (rival no longer pending)
-    service.getPendingEndorsements!.mockResolvedValue({ items: [] });
+    service.getPendingEndorsements.mockResolvedValue({ items: [] });
 
     const afterRes = await request(app.getHttpServer())
       .get('/me/endorsements/pending')

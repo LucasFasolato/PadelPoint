@@ -223,7 +223,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
   describe('POST /leagues/:leagueId/report-manual', () => {
     it('should create a manual league match with leagueId set', async () => {
-      matchesService.reportManual!.mockResolvedValue({
+      matchesService.reportManual.mockResolvedValue({
         id: 'match-manual-new',
         leagueId: LEAGUE_ID,
         challengeId: 'ch-manual',
@@ -255,7 +255,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
   describe('PATCH /leagues/:leagueId/matches/:matchId/result', () => {
     it('should accept frontend payload shape { playedAt, sets } and map to score.sets', async () => {
-      matchesService.submitLeagueMatchResult!.mockResolvedValue({
+      matchesService.submitLeagueMatchResult.mockResolvedValue({
         id: MATCH_ID,
         leagueId: LEAGUE_ID,
         status: MatchResultStatus.CONFIRMED,
@@ -364,7 +364,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
   describe('GET /leagues/:leagueId/pending-confirmations', () => {
     it('should return league-scoped pending confirmations', async () => {
-      matchesService.getLeaguePendingConfirmations!.mockResolvedValue({
+      matchesService.getLeaguePendingConfirmations.mockResolvedValue({
         items: [
           {
             id: MATCH_ID,
@@ -418,7 +418,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
 
   describe('GET /leagues/:leagueId/matches', () => {
     it('returns stable teams, participants and score summary', async () => {
-      matchesService.listLeagueMatches!.mockResolvedValue([
+      matchesService.listLeagueMatches.mockResolvedValue([
         {
           id: MATCH_ID,
           leagueId: LEAGUE_ID,
@@ -506,13 +506,13 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
         ],
       };
 
-      matchesService.getLeaguePendingConfirmations!.mockImplementation(
+      matchesService.getLeaguePendingConfirmations.mockImplementation(
         async () => ({
           items: [...state.items],
           nextCursor: null,
         }),
       );
-      matchesService.confirmLeaguePendingConfirmation!.mockImplementation(
+      matchesService.confirmLeaguePendingConfirmation.mockImplementation(
         async () => {
           state.items = [];
           return {
@@ -540,7 +540,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     });
 
     it('uses the same service method for confirm with POST and PATCH', async () => {
-      matchesService.confirmLeaguePendingConfirmation!.mockResolvedValue({
+      matchesService.confirmLeaguePendingConfirmation.mockResolvedValue({
         status: 'CONFIRMED',
         confirmationId: MATCH_ID,
         matchId: MATCH_ID,
@@ -583,7 +583,7 @@ describe('League Matches – POST /leagues/:leagueId/report-from-reservation (e2
     });
 
     it('uses the same service method for reject with POST and PATCH', async () => {
-      matchesService.rejectLeaguePendingConfirmation!.mockResolvedValue({
+      matchesService.rejectLeaguePendingConfirmation.mockResolvedValue({
         status: 'REJECTED',
         confirmationId: MATCH_ID,
         matchId: MATCH_ID,

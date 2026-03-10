@@ -1,4 +1,8 @@
-import { BadRequestException, INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -53,21 +57,23 @@ describe('Players Favorites (e2e)', () => {
         favorites = favorites.filter((item) => item.userId !== targetUserId);
         return { ok: true };
       }),
-      listFavorites: jest.fn(async (_userId: string, opts: { limit?: number; cursor?: string }) => {
-        if (opts.cursor === 'bad-cursor') {
-          throw new BadRequestException({
-            statusCode: 400,
-            code: 'PLAYER_FAVORITES_CURSOR_INVALID',
-            message: 'Invalid favorites cursor',
-          });
-        }
+      listFavorites: jest.fn(
+        async (_userId: string, opts: { limit?: number; cursor?: string }) => {
+          if (opts.cursor === 'bad-cursor') {
+            throw new BadRequestException({
+              statusCode: 400,
+              code: 'PLAYER_FAVORITES_CURSOR_INVALID',
+              message: 'Invalid favorites cursor',
+            });
+          }
 
-        const limit = opts.limit ?? 20;
-        return {
-          items: favorites.slice(0, limit),
-          nextCursor: null,
-        };
-      }),
+          const limit = opts.limit ?? 20;
+          return {
+            items: favorites.slice(0, limit),
+            nextCursor: null,
+          };
+        },
+      ),
       listFavoriteIds: jest.fn(async () => ({
         ids: favorites.map((item) => item.userId).slice(0, 500),
       })),

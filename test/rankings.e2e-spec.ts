@@ -75,7 +75,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings returns leaderboard page', async () => {
-    rankingsService.getLeaderboard!.mockResolvedValue({
+    rankingsService.getLeaderboard.mockResolvedValue({
       items: [
         {
           position: 1,
@@ -163,7 +163,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings returns my eligibility block when below minimum matches', async () => {
-    rankingsService.getLeaderboard!.mockResolvedValue({
+    rankingsService.getLeaderboard.mockResolvedValue({
       items: [],
       meta: {
         page: 1,
@@ -204,7 +204,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings accepts CITY scope with cityName + provinceCode fallback', async () => {
-    rankingsService.getLeaderboard!.mockResolvedValue({
+    rankingsService.getLeaderboard.mockResolvedValue({
       items: [],
       meta: {
         page: 1,
@@ -241,7 +241,7 @@ describe('Rankings (e2e)', () => {
 
   it('GET /rankings accepts lower-case city scope with cityName + provinceCode fallback', async () => {
     const requestId = 'req-rankings-city-123';
-    rankingsService.getLeaderboard!.mockResolvedValue({
+    rankingsService.getLeaderboard.mockResolvedValue({
       items: [],
       meta: {
         page: 1,
@@ -261,7 +261,9 @@ describe('Rankings (e2e)', () => {
     });
 
     await request(app.getHttpServer())
-      .get('/rankings?scope=city&provinceCode=ar-s&cityName=%20Rosario%20&mode=COMPETITIVE')
+      .get(
+        '/rankings?scope=city&provinceCode=ar-s&cityName=%20Rosario%20&mode=COMPETITIVE',
+      )
       .set('x-railway-request-id', requestId)
       .expect(200);
 
@@ -279,7 +281,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings/scopes returns scope contract keys', async () => {
-    rankingsService.getAvailableScopes!.mockResolvedValue({
+    rankingsService.getAvailableScopes.mockResolvedValue({
       items: [
         { scope: 'COUNTRY' },
         { scope: 'PROVINCE', provinceCode: 'AR-S' },
@@ -321,7 +323,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings/me/intelligence returns stable response shape', async () => {
-    rankingsService.getMyRankingIntelligence!.mockResolvedValue({
+    rankingsService.getMyRankingIntelligence.mockResolvedValue({
       position: 14,
       previousPosition: 16,
       deltaPosition: 2,
@@ -409,7 +411,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings/me/suggested-rivals returns stable response shape', async () => {
-    rankingsService.getSuggestedRivals!.mockResolvedValue({
+    rankingsService.getSuggestedRivals.mockResolvedValue({
       items: [
         {
           userId: 'u-above',
@@ -467,7 +469,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('GET /rankings/me/movement-feed returns stable response shape', async () => {
-    rankingsService.getMyRankingMovementFeed!.mockResolvedValue({
+    rankingsService.getMyRankingMovementFeed.mockResolvedValue({
       items: [
         {
           type: 'PASSED_BY',
@@ -531,7 +533,7 @@ describe('Rankings (e2e)', () => {
   });
 
   it('POST /rankings/snapshots/run triggers manual run for admin', async () => {
-    schedulerService.runManual!.mockResolvedValue({
+    schedulerService.runManual.mockResolvedValue({
       runId: 'run-1',
       trigger: 'MANUAL',
       candidates: 1,

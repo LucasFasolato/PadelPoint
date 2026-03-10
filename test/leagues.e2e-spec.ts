@@ -980,7 +980,7 @@ describe('Leagues (e2e)', () => {
           position: expect.any(Number),
         }),
       );
-      expect(standingsService.getStandingsWithMovement!).toHaveBeenCalledWith(
+      expect(standingsService.getStandingsWithMovement).toHaveBeenCalledWith(
         LEAGUE_ID,
         { requestId: 'req-league-standings-1' },
       );

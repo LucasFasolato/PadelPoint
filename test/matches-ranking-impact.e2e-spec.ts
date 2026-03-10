@@ -63,7 +63,7 @@ describe('Matches Ranking Impact (e2e)', () => {
   });
 
   it('GET /matches/:id/ranking-impact returns stable response shape', async () => {
-    matchesService.getRankingImpact!.mockResolvedValue({
+    matchesService.getRankingImpact.mockResolvedValue({
       matchId: '22222222-2222-4222-8222-222222222222',
       viewerUserId: '11111111-1111-4111-8111-111111111111',
       result: 'WIN',
@@ -122,7 +122,7 @@ describe('Matches Ranking Impact (e2e)', () => {
     const viewerUserId = '11111111-1111-4111-8111-111111111111';
 
     // Step 1 — confirm the match (opponent's side); service applies ELO inside
-    matchesService.confirmMatch!.mockResolvedValue({
+    matchesService.confirmMatch.mockResolvedValue({
       id: matchId,
       status: 'confirmed',
       eloApplied: true,
@@ -144,10 +144,13 @@ describe('Matches Ranking Impact (e2e)', () => {
     expect(confirmRes.body.status).toBe('confirmed');
     expect(confirmRes.body.eloApplied).toBe(true);
     expect(confirmRes.body.rankingImpact.applied).toBe(true);
-    expect(matchesService.confirmMatch).toHaveBeenCalledWith(viewerUserId, matchId);
+    expect(matchesService.confirmMatch).toHaveBeenCalledWith(
+      viewerUserId,
+      matchId,
+    );
 
     // Step 2 — ranking impact is now queryable
-    matchesService.getRankingImpact!.mockResolvedValue({
+    matchesService.getRankingImpact.mockResolvedValue({
       matchId,
       viewerUserId,
       result: 'WIN',
@@ -173,6 +176,9 @@ describe('Matches Ranking Impact (e2e)', () => {
     expect(impactRes.body.eloDelta).toBe(18);
     expect(impactRes.body.result).toBe('WIN');
     expect(impactRes.body.impactRanking).toBe(true);
-    expect(matchesService.getRankingImpact).toHaveBeenCalledWith(matchId, viewerUserId);
+    expect(matchesService.getRankingImpact).toHaveBeenCalledWith(
+      matchId,
+      viewerUserId,
+    );
   });
 });

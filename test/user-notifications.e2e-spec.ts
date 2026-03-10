@@ -151,7 +151,9 @@ describe('User Notifications (e2e)', () => {
               challengeId: null,
               inviteId: 'invite-1',
             },
-            actions: [{ type: 'VIEW', label: 'Ver', href: '/leagues/invites/invite-1' }],
+            actions: [
+              { type: 'VIEW', label: 'Ver', href: '/leagues/invites/invite-1' },
+            ],
             data: { inviteId: 'invite-1' },
           },
         ],
