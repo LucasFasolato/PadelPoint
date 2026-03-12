@@ -10,6 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import {
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+} from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { ChallengesService } from '../services/challenges.service';
@@ -21,6 +26,10 @@ import { CreateOpenChallengeDto } from '../dto/create-open-challenge.dto';
 import { ListOpenQueryDto } from '../dto/list-open-query.dto';
 import { CreateChallengeProposalDto } from '../dto/create-challenge-proposal.dto';
 import { CreateChallengeMessageDto } from '../dto/create-challenge-message.dto';
+import {
+  ChallengeCoordinationResponseDto,
+  ChallengeMessageResponseDto,
+} from '../dto/challenge-coordination-response.dto';
 
 type AuthUser = {
   userId: string;
@@ -92,18 +101,36 @@ export class ChallengesController {
   }
 
   @Get(':id/coordination')
+  @ApiOperation({
+    summary: 'Get challenge coordination state',
+    description:
+      'Hybrid endpoint. Delegates to matches-v2 when the challenge has an exact canonical correlation; otherwise falls back to legacy challenge coordination.',
+  })
+  @ApiOkResponse({ type: ChallengeCoordinationResponseDto })
   getCoordination(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
     return this.coordinationBridge.getCoordinationState(id, me.userId);
   }
 
   @Get(':id/messages')
+  @ApiOperation({
+    summary: 'List challenge coordination messages',
+    description:
+      'Hybrid endpoint. Reads canonical match messages only when the legacy challenge correlation is exact; otherwise reads legacy challenge messages.',
+  })
+  @ApiOkResponse({ type: ChallengeMessageResponseDto, isArray: true })
   getMessages(@Req() req: Request, @Param('id') id: string) {
     const me = req.user as AuthUser;
     return this.coordinationBridge.listMessages(id, me.userId);
   }
 
   @Post(':id/proposals')
+  @ApiOperation({
+    summary: 'Create a challenge schedule proposal',
+    description:
+      'Hybrid endpoint. Uses canonical scheduling only when the correlated matches-v2 aggregate is safe to mutate.',
+  })
+  @ApiCreatedResponse({ type: ChallengeCoordinationResponseDto })
   createProposal(
     @Req() req: Request,
     @Param('id') id: string,
@@ -114,6 +141,12 @@ export class ChallengesController {
   }
 
   @Post(':id/proposals/:proposalId/accept')
+  @ApiOperation({
+    summary: 'Accept a challenge schedule proposal',
+    description:
+      'Hybrid endpoint. Falls back to legacy when the public proposal id cannot be resolved canonically.',
+  })
+  @ApiCreatedResponse({ type: ChallengeCoordinationResponseDto })
   acceptProposal(
     @Req() req: Request,
     @Param('id') id: string,
@@ -124,6 +157,12 @@ export class ChallengesController {
   }
 
   @Post(':id/proposals/:proposalId/reject')
+  @ApiOperation({
+    summary: 'Reject a challenge schedule proposal',
+    description:
+      'Hybrid endpoint. Falls back to legacy when the public proposal id cannot be resolved canonically.',
+  })
+  @ApiCreatedResponse({ type: ChallengeCoordinationResponseDto })
   rejectProposal(
     @Req() req: Request,
     @Param('id') id: string,
@@ -134,6 +173,12 @@ export class ChallengesController {
   }
 
   @Post(':id/messages')
+  @ApiOperation({
+    summary: 'Create a challenge coordination message',
+    description:
+      'Hybrid endpoint. Uses canonical match messaging only when the correlated matches-v2 aggregate is safe to mutate.',
+  })
+  @ApiCreatedResponse({ type: ChallengeMessageResponseDto })
   createMessage(
     @Req() req: Request,
     @Param('id') id: string,

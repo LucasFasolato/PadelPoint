@@ -242,6 +242,10 @@
       },
       "ChallengeInboxItemDto": {
         "properties": {
+          "coordinationStatus": {
+            "nullable": true,
+            "type": "string"
+          },
           "cta": {
             "properties": {
               "href": {
@@ -261,11 +265,20 @@
           "id": {
             "type": "string"
           },
+          "locationLabel": {
+            "nullable": true,
+            "type": "string"
+          },
           "message": {
             "nullable": true,
             "type": "string"
           },
           "opponentName": {
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "status": {
@@ -483,6 +496,45 @@
       },
       "CreateAvailabilityRuleDto": {
         "properties": {},
+        "type": "object"
+      },
+      "CreateChallengeMessageDto": {
+        "properties": {
+          "message": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "CreateChallengeProposalDto": {
+        "properties": {
+          "clubId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "courtId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "locationLabel": {
+            "description": "Free-text location label when the slot is not tied to a club",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduledAt"
+        ],
         "type": "object"
       },
       "CreateClubDto": {
@@ -1637,6 +1689,10 @@
       },
       "MatchIntentItemDto": {
         "properties": {
+          "coordinationStatus": {
+            "nullable": true,
+            "type": "string"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -1662,6 +1718,10 @@
           "location": {
             "$ref": "#/components/schemas/MatchIntentLocationDto"
           },
+          "locationLabel": {
+            "nullable": true,
+            "type": "string"
+          },
           "matchId": {
             "nullable": true,
             "type": "string"
@@ -1685,6 +1745,11 @@
             "type": "string"
           },
           "partnerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "scheduledAt": {
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -4825,6 +4890,7 @@
         ]
       },
       "post": {
+        "description": "Only the opponent can accept. Validates league membership and expiry. Canon endpoint for league challenge accept — do NOT use PATCH /challenges/:id/accept (regular direct challenge).",
         "operationId": "LeagueChallengeActionsController_accept",
         "parameters": [
           {
@@ -4841,8 +4907,14 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept a league challenge (canonical)",
         "tags": [
-          "LeagueChallengeActions"
+          "league-challenge-actions"
         ]
       }
     },
@@ -4915,8 +4987,32 @@
         ]
       }
     },
+    "/challenges/{id}/coordination": {
+      "get": {
+        "operationId": "ChallengesController_getCoordination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
     "/challenges/{id}/decline": {
       "post": {
+        "description": "Only the opponent can decline. Canon endpoint for league challenge decline — do NOT use PATCH /challenges/:id/reject (regular direct challenge).",
         "operationId": "LeagueChallengeActionsController_decline",
         "parameters": [
           {
@@ -4933,13 +5029,20 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Decline a league challenge (canonical)",
         "tags": [
-          "LeagueChallengeActions"
+          "league-challenge-actions"
         ]
       }
     },
     "/challenges/{id}/link-match": {
       "post": {
+        "description": "Either participant can link the match once the league challenge is accepted.",
         "operationId": "LeagueChallengeActionsController_linkMatch",
         "parameters": [
           {
@@ -4966,8 +5069,163 @@
             "description": ""
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Link a completed match to a league challenge",
         "tags": [
-          "LeagueChallengeActions"
+          "league-challenge-actions"
+        ]
+      }
+    },
+    "/challenges/{id}/messages": {
+      "get": {
+        "operationId": "ChallengesController_getMessages",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      },
+      "post": {
+        "operationId": "ChallengesController_createMessage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChallengeMessageDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/proposals": {
+      "post": {
+        "operationId": "ChallengesController_createProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChallengeProposalDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/proposals/{proposalId}/accept": {
+      "post": {
+        "operationId": "ChallengesController_acceptProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/challenges/{id}/proposals/{proposalId}/reject": {
+      "post": {
+        "operationId": "ChallengesController_rejectProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Challenges"
         ]
       }
     },
@@ -5869,6 +6127,8 @@
     },
     "/competitive/profile/me": {
       "get": {
+        "deprecated": true,
+        "description": "Use GET /competitive/me instead.",
         "operationId": "CompetitiveController_me",
         "parameters": [],
         "responses": {
@@ -5876,6 +6136,7 @@
             "description": ""
           }
         },
+        "summary": "Get competitive profile for current player (legacy endpoint)",
         "tags": [
           "competitive"
         ]
@@ -5919,6 +6180,8 @@
     },
     "/competitive/ranking": {
       "get": {
+        "deprecated": true,
+        "description": "Use GET /rankings instead.",
         "operationId": "CompetitiveController_ranking",
         "parameters": [],
         "responses": {
@@ -5926,6 +6189,7 @@
             "description": ""
           }
         },
+        "summary": "Get ranking list (legacy endpoint)",
         "tags": [
           "competitive"
         ]
@@ -8155,6 +8419,16 @@
               "minimum": 1,
               "type": "number"
             }
+          },
+          {
+            "description": "Compatibility flag. Use legacy=1 to force the legacy pending confirmations query path.",
+            "in": "query",
+            "name": "legacy",
+            "required": false,
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9520,6 +9794,33 @@
           }
         },
         "summary": "Add a player to my favorites",
+        "tags": [
+          "players"
+        ]
+      }
+    },
+    "/players/me/onboarding": {
+      "post": {
+        "deprecated": true,
+        "description": "Backward-compatible alias. Canon endpoint: PUT /competitive/onboarding. This route will be removed once the frontend migrates.",
+        "operationId": "CompetitiveOnboardingCompatController_upsertOnboarding",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOnboardingDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[COMPAT] Upsert onboarding — delegates to PUT /competitive/onboarding",
         "tags": [
           "players"
         ]

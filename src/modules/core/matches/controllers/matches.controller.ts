@@ -11,7 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiOkResponse, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/modules/core/auth/guards/jwt-auth.guard';
 import { CityRequiredGuard } from '@common/guards/city-required.guard';
 import { ParseRequiredUuidPipe } from '@common/pipes/parse-required-uuid.pipe';
@@ -119,12 +125,37 @@ export class MatchesController {
   }
 
   @Post()
+  @ApiOperation({
+    summary: 'Report a match result through the public compatibility edge',
+    description:
+      'Hybrid endpoint. Delegates to matches-v2 only when legacy correlation preserves the observable public ids; otherwise falls back to MatchesService.',
+  })
+  @ApiCreatedResponse({
+    description:
+      'Legacy-shaped match result response. Public contract remains compatibility-first even when the write delegates canonically.',
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  })
   report(@Req() req: Request, @Body() dto: ReportMatchDto) {
     const user = req.user as AuthUser;
     return this.matchesV2BridgeService.reportResult(user.userId, dto);
   }
 
   @Patch(':id/confirm')
+  @ApiOperation({
+    summary: 'Confirm a reported match result',
+    description:
+      'Hybrid endpoint. Delegates to matches-v2 only when the legacy match-result id resolves safely to the canonical aggregate.',
+  })
+  @ApiOkResponse({
+    description: 'Legacy-shaped match result response.',
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  })
   confirm(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.matchesV2BridgeService.confirmResult(user.userId, id);
@@ -138,6 +169,18 @@ export class MatchesController {
   }
 
   @Patch(':id/reject')
+  @ApiOperation({
+    summary: 'Reject a reported match result',
+    description:
+      'Hybrid endpoint. Delegates to matches-v2 only when the legacy match-result id resolves safely; otherwise falls back to MatchesService.',
+  })
+  @ApiOkResponse({
+    description: 'Legacy-shaped match result response.',
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  })
   reject(
     @Req() req: Request,
     @Param('id') id: string,
@@ -152,6 +195,27 @@ export class MatchesController {
   }
 
   @Post(':id/dispute')
+  @ApiOperation({
+    summary: 'Open a dispute for a match result',
+    description:
+      'Legacy-owned public contract. The bridge entrypoint exists, but current runtime behavior always falls back to MatchesService because canonical dispute semantics do not match the legacy confirmed-only, windowed contract.',
+  })
+  @ApiCreatedResponse({
+    description: 'Legacy dispute-open response shape.',
+    schema: {
+      type: 'object',
+      properties: {
+        dispute: {
+          type: 'object',
+          nullable: true,
+          additionalProperties: true,
+        },
+        matchStatus: {
+          type: 'string',
+        },
+      },
+    },
+  })
   dispute(
     @Req() req: Request,
     @Param('id') id: string,
@@ -162,6 +226,33 @@ export class MatchesController {
   }
 
   @Post(':id/resolve')
+  @ApiOperation({
+    summary: 'Resolve a disputed match result',
+    description:
+      'Admin-only hybrid endpoint. Delegates to matches-v2 only for a narrow safe subset; all other cases remain on MatchesService.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Only admins can resolve disputes on the public edge.',
+  })
+  @ApiCreatedResponse({
+    description: 'Legacy-compatible dispute-resolution response shape.',
+    schema: {
+      type: 'object',
+      properties: {
+        dispute: {
+          type: 'object',
+          nullable: true,
+          additionalProperties: true,
+        },
+        matchStatus: {
+          type: 'string',
+        },
+        resolution: {
+          type: 'string',
+        },
+      },
+    },
+  })
   resolve(
     @Req() req: Request,
     @Param('id') id: string,
@@ -202,12 +293,56 @@ export class MatchesController {
   }
 
   @Get(':id')
+  @ApiOperation({
+    summary: 'Get match detail by legacy public id',
+    description:
+      'Legacy read endpoint over match_results. This route does not expose the canonical matches-v2 aggregate directly.',
+  })
+  @ApiOkResponse({
+    description:
+      'Legacy match-result detail response enriched with normalized matchType, impactRanking, and computed action flags.',
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  })
   getById(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     return this.service.getById(id, user.userId);
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'Compatibility lookup by challenge id',
+    description:
+      'Legacy lookup endpoint. Returns an empty array when challengeId is omitted, and otherwise returns the legacy match-result detail for that challenge.',
+  })
+  @ApiQuery({
+    name: 'challengeId',
+    required: false,
+    type: String,
+    description:
+      'Legacy challenge identifier. When omitted, the controller returns [] for compatibility.',
+  })
+  @ApiOkResponse({
+    description:
+      'Compatibility response: [] when challengeId is missing, otherwise a legacy match-result detail object.',
+    schema: {
+      oneOf: [
+        {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+        {
+          type: 'object',
+          additionalProperties: true,
+        },
+      ],
+    },
+  })
   getByChallenge(@Query('challengeId') challengeId?: string) {
     if (!challengeId) return [];
     return this.service.getByChallenge(challengeId);
