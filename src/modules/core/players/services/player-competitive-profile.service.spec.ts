@@ -8,6 +8,7 @@ import { User } from '../../users/entities/user.entity';
 import { PlayerCompetitiveProfileService } from './player-competitive-profile.service';
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
+const FIXED_NOW = new Date('2026-03-12T10:00:00.000Z').getTime();
 
 function makeUser(partial: Partial<User> = {}): User {
   return {
@@ -41,6 +42,7 @@ describe('PlayerCompetitiveProfileService', () => {
   };
 
   beforeEach(async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
     userRepo.findOne.mockReset();
     mockDataSource.query.mockReset();
 
@@ -54,6 +56,10 @@ describe('PlayerCompetitiveProfileService', () => {
     }).compile();
 
     service = module.get(PlayerCompetitiveProfileService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('throws NotFoundException for unknown player', async () => {

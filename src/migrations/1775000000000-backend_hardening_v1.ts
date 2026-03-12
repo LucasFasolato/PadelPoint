@@ -62,9 +62,15 @@ export class BackendHardeningV11775000000000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "idx_court_availability_overrides_lookup"
-      ON "court_availability_overrides"
-      ("courtId", "fecha", "bloqueado", "horaInicio", "horaFin")
+      DO $$
+      BEGIN
+        IF to_regclass('public.court_availability_overrides') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "idx_court_availability_overrides_lookup"
+          ON "court_availability_overrides"
+          ("courtId", "fecha", "bloqueado", "horaInicio", "horaFin");
+        END IF;
+      END
+      $$;
     `);
   }
 

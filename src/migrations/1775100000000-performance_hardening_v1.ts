@@ -23,26 +23,50 @@ export class PerformanceHardeningV11775100000000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "idx_courts_club_active"
-      ON "courts" ("clubId", "activa")
+      DO $$
+      BEGIN
+        IF to_regclass('public.courts') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "idx_courts_club_active"
+          ON "courts" ("clubId", "activa");
+        END IF;
+      END
+      $$;
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "idx_court_availability_rules_lookup"
-      ON "court_availability_rules"
-      ("courtId", "activo", "diaSemana", "horaInicio", "horaFin")
+      DO $$
+      BEGIN
+        IF to_regclass('public.court_availability_rules') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "idx_court_availability_rules_lookup"
+          ON "court_availability_rules"
+          ("courtId", "activo", "diaSemana", "horaInicio", "horaFin");
+        END IF;
+      END
+      $$;
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "idx_reservations_court_status_created"
-      ON "reservations"
-      ("courtId", "status", "startAt", "endAt", "createdAt")
+      DO $$
+      BEGIN
+        IF to_regclass('public.reservations') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "idx_reservations_court_status_created"
+          ON "reservations"
+          ("courtId", "status", "startAt", "endAt", "createdAt");
+        END IF;
+      END
+      $$;
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS "idx_reservations_court_active_overlap"
-      ON "reservations" ("courtId", "startAt", "endAt", "createdAt" DESC)
-      WHERE "status" IN ('hold', 'confirmed', 'payment_pending')
+      DO $$
+      BEGIN
+        IF to_regclass('public.reservations') IS NOT NULL THEN
+          CREATE INDEX IF NOT EXISTS "idx_reservations_court_active_overlap"
+          ON "reservations" ("courtId", "startAt", "endAt", "createdAt" DESC)
+          WHERE "status" IN ('hold', 'confirmed', 'payment_pending');
+        END IF;
+      END
+      $$;
     `);
 
     await queryRunner.query(`

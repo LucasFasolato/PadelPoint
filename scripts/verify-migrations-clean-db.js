@@ -36,6 +36,13 @@ function runCapture(command, args, options = {}) {
   return result;
 }
 
+function cleanDist(repoRoot) {
+  fs.rmSync(path.join(repoRoot, 'dist'), {
+    recursive: true,
+    force: true,
+  });
+}
+
 function hasDocker() {
   const result = runCapture('docker', ['--version']);
   return !result.error && result.status === 0;
@@ -139,6 +146,7 @@ async function verifyWithDocker(repoRoot) {
 
     await waitForDockerPg(containerName);
 
+    cleanDist(repoRoot);
     runOrThrow(npmCmd, ['run', 'build'], { cwd: repoRoot });
     runOrThrow(npmCmd, ['run', 'migration:run'], {
       cwd: repoRoot,
@@ -159,6 +167,7 @@ function verifyWithExistingDatabase(repoRoot) {
     );
   }
 
+  cleanDist(repoRoot);
   runOrThrow(npmCmd, ['run', 'build'], { cwd: repoRoot });
   runOrThrow(npmCmd, ['run', 'migration:run'], {
     cwd: repoRoot,
@@ -199,6 +208,7 @@ function verifyWithLocalPgCluster(repoRoot, pgBinDir) {
 
     runOrThrow(createdb, ['-h', '127.0.0.1', '-p', String(port), '-U', 'postgres', dbName]);
 
+    cleanDist(repoRoot);
     runOrThrow(npmCmd, ['run', 'build'], { cwd: repoRoot });
     runOrThrow(npmCmd, ['run', 'migration:run'], {
       cwd: repoRoot,
