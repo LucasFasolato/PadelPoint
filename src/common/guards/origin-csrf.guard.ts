@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { isCsrfExemptRequest } from '@common/security/csrf-route.util';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -21,6 +22,7 @@ export class OriginCsrfGuard implements CanActivate {
     const method = req.method.toUpperCase();
 
     if (SAFE_METHODS.has(method)) return true;
+    if (isCsrfExemptRequest(req)) return true;
 
     const origin = req.header('origin');
     if (!origin) return true;

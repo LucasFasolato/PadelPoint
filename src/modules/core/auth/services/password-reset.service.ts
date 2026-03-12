@@ -143,6 +143,16 @@ export class PasswordResetService {
     return { ok: true };
   }
 
+  async resolveRateLimitEmail(token: string): Promise<string | null> {
+    const tokenHash = this.sha256(token);
+    const tokenRow = await this.resetTokenRepo.findOne({
+      where: { tokenHash },
+      relations: ['user'],
+    });
+
+    return tokenRow?.user?.email?.toLowerCase().trim() ?? null;
+  }
+
   private sha256(input: string): string {
     return createHash('sha256').update(input).digest('hex');
   }

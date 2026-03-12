@@ -14,6 +14,7 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   DB_SYNC: z.preprocess((val) => val === 'true', z.boolean()).default(false),
   DB_LOG: z.preprocess((val) => val === 'true', z.boolean()).default(false),
+  REDIS_URL: z.string().url().optional(),
 
   // Auth
   JWT_SECRET: z.string(),
@@ -56,6 +57,12 @@ export const envSchema = z.object({
   RANKING_MIN_MATCHES: z
     .preprocess((val) => Number(val), z.number().int().min(1))
     .default(4),
+  SLOW_QUERY_MS: z
+    .preprocess((val) => Number(val), z.number().int().positive())
+    .default(500),
+  SLOW_REQUEST_MS: z
+    .preprocess((val) => Number(val), z.number().int().positive())
+    .default(1500),
 
   // Application environment (for multi-env routing)
   APP_ENV: z.enum(['staging', 'production']).default('staging'),

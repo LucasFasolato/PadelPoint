@@ -20,7 +20,7 @@ export class AuthPasswordController {
     @Req() req: Request,
   ): Promise<{ ok: true }> {
     const ip = req.ip ?? 'unknown';
-    if (this.rateLimiter.isLimited(dto.email, ip)) {
+    if (await this.rateLimiter.isRequestLimited(dto.email, ip)) {
       // Silently rate-limited — return ok without sending the email
       return { ok: true };
     }
@@ -30,8 +30,16 @@ export class AuthPasswordController {
   @Post('reset/confirm')
   @HttpCode(200)
   async confirmReset(
+    @Req() req: Request,
     @Body() dto: PasswordResetConfirmDto,
   ): Promise<{ ok: true }> {
+    const ip = req.ip ?? 'unknown';
+    const email = await this.passwordReset.resolveRateLimitEmail(dto.token);
+    await this.rateLimiter.assertConfirmAllowed({
+      email,
+      token: dto.token,
+      ip,
+    });
     return this.passwordReset.confirmReset(dto.token, dto.newPassword);
   }
 }

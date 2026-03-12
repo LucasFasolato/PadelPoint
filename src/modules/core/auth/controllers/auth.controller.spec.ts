@@ -51,7 +51,7 @@ describe('AuthController', () => {
         .fn()
         .mockResolvedValue({ newPlaintext: 'new-rt', userId: 'uid' }),
       revoke: jest.fn().mockResolvedValue(undefined),
-      revokeAllForUser: jest.fn(),
+      revokeAllForUser: jest.fn().mockResolvedValue(undefined),
     };
     usersService = {
       findById: jest.fn().mockResolvedValue({

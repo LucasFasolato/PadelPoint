@@ -11,6 +11,13 @@ import { Court } from '@legacy/courts/court.entity';
 
 @Entity({ name: 'court_availability_overrides' })
 @Index(['court', 'fecha', 'horaInicio', 'horaFin'])
+@Index('idx_court_availability_overrides_lookup', [
+  'court',
+  'fecha',
+  'bloqueado',
+  'horaInicio',
+  'horaFin',
+])
 export class CourtAvailabilityOverride {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

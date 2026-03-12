@@ -10,6 +10,11 @@ import { UserNotificationType } from '../enums/user-notification-type.enum';
 @Entity('user_notifications')
 @Index(['userId', 'createdAt'])
 @Index(['userId', 'readAt'])
+@Index('idx_user_notifications_user_read_created_at', [
+  'userId',
+  'readAt',
+  'createdAt',
+])
 export class UserNotification {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

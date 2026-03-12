@@ -12,6 +12,9 @@ import { User } from '@core/users/entities/user.entity';
 @Entity('refresh_tokens')
 @Index('idx_refresh_tokens_user_id', ['userId'])
 @Index('idx_refresh_tokens_token_hash', ['tokenHash'])
+@Index('idx_refresh_tokens_token_family_id', ['tokenFamilyId'])
+@Index('idx_refresh_tokens_user_family', ['userId', 'tokenFamilyId'])
+@Index('idx_refresh_tokens_family_revoked', ['tokenFamilyId', 'revoked'])
 export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -26,8 +29,14 @@ export class RefreshToken {
   @Column({ type: 'varchar', length: 255 })
   tokenHash!: string;
 
+  @Column({ type: 'uuid' })
+  tokenFamilyId!: string;
+
   @Column({ type: 'timestamp with time zone' })
   expiresAt!: Date;
+
+  @Column({ type: 'boolean', default: false })
+  revoked!: boolean;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   revokedAt!: Date | null;

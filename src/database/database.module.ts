@@ -11,6 +11,8 @@ import {
   type Repository,
   type TreeRepository,
 } from 'typeorm';
+import { StructuredTypeOrmLogger } from '@common/observability/structured-typeorm.logger';
+import { DEFAULT_SLOW_QUERY_MS } from '@common/security/security.constants';
 
 const OPENAPI_SNAPSHOT_MODE = process.env.OPENAPI_SNAPSHOT_MODE === '1';
 
@@ -70,6 +72,7 @@ const databaseImports = OPENAPI_SNAPSHOT_MODE
         useFactory: (configService: ConfigService) => {
           const isProduction = configService.get('nodeEnv') === 'production';
           const dbUrl = configService.get<string>('databaseUrl') ?? '';
+          const dbLogging = configService.get<boolean>('db.log') ?? false;
 
           // Detectar si necesitamos SSL (Railway lo requiere, Localhost usualmente no)
           const sslEnabled =
@@ -82,7 +85,13 @@ const databaseImports = OPENAPI_SNAPSHOT_MODE
             url: dbUrl,
             autoLoadEntities: true,
             synchronize: configService.get<boolean>('db.sync'),
-            logging: configService.get<boolean>('db.log'),
+            logging: dbLogging
+              ? ['query', 'error', 'warn', 'migration', 'schema']
+              : ['error', 'warn', 'migration'],
+            logger: new StructuredTypeOrmLogger(dbLogging),
+            maxQueryExecutionTime:
+              configService.get<number>('observability.slowQueryMs') ??
+              DEFAULT_SLOW_QUERY_MS,
             ssl: sslEnabled ? { rejectUnauthorized: false } : false,
           };
         },

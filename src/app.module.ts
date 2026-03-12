@@ -27,6 +27,7 @@ import { IntentsModule } from './modules/core/intents/intents.module';
 import { InsightsModule } from './modules/core/insights/insights.module';
 import { EndorsementsModule } from './modules/core/endorsements/endorsements.module';
 import { ObservabilityModule } from './common/observability/observability.module';
+import { SecurityModule } from './common/security/security.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ObservabilityModule } from './common/observability/observability.module
       load: [configuration],
     }),
     ObservabilityModule,
+    SecurityModule,
     ScheduleModule.forRoot(),
 
     DatabaseModule,

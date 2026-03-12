@@ -1,34 +1,81 @@
-import { Injectable } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { SlidingWindowRateLimiterService } from '@common/security/sliding-window-rate-limiter.service';
 
-const MAX_REQUESTS = 5;
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const WINDOW_MS = 15 * 60 * 1000;
+const REQUEST_EMAIL_LIMIT = 5;
+const REQUEST_IP_LIMIT = 20;
+const CONFIRM_EMAIL_LIMIT = 8;
+const CONFIRM_TOKEN_LIMIT = 10;
+const CONFIRM_IP_LIMIT = 20;
 
-/**
- * Lightweight in-memory rate limiter for the password reset request endpoint.
- * Key: lowercase(email) + ip.  Window: 15 min, max 5 requests.
- * Returns true when the limit is exceeded — callers should return { ok: true }
- * without sending the email (prevents abuse without leaking user existence).
- */
+function normalizeIp(ip: string): string {
+  return ip?.trim() || 'unknown';
+}
+
+function normalizeEmail(email: string): string {
+  return email.toLowerCase().trim();
+}
+
 @Injectable()
 export class PasswordResetRateLimiter {
-  private readonly store = new Map<string, number[]>();
+  constructor(private readonly limiter: SlidingWindowRateLimiterService) {}
 
-  isLimited(email: string, ip: string): boolean {
-    const key = `${email.toLowerCase()}:${ip}`;
-    const now = Date.now();
-    const windowStart = now - WINDOW_MS;
+  async isRequestLimited(email: string, ip: string): Promise<boolean> {
+    const [emailResult, ipResult] = await Promise.all([
+      this.limiter.consume(
+        `password-reset:request:email:${normalizeEmail(email)}`,
+        REQUEST_EMAIL_LIMIT,
+        WINDOW_MS,
+      ),
+      this.limiter.consume(
+        `password-reset:request:ip:${normalizeIp(ip)}`,
+        REQUEST_IP_LIMIT,
+        WINDOW_MS,
+      ),
+    ]);
 
-    const timestamps = (this.store.get(key) ?? []).filter(
-      (t) => t > windowStart,
-    );
+    return !emailResult.allowed || !ipResult.allowed;
+  }
 
-    if (timestamps.length >= MAX_REQUESTS) {
-      this.store.set(key, timestamps);
-      return true;
+  async assertConfirmAllowed(input: {
+    email: string | null;
+    token: string;
+    ip: string;
+  }): Promise<void> {
+    const checks = [
+      this.limiter.consume(
+        `password-reset:confirm:ip:${normalizeIp(input.ip)}`,
+        CONFIRM_IP_LIMIT,
+        WINDOW_MS,
+      ),
+      this.limiter.consume(
+        `password-reset:confirm:token:${this.hashToken(input.token)}`,
+        CONFIRM_TOKEN_LIMIT,
+        WINDOW_MS,
+      ),
+    ];
+
+    if (input.email) {
+      checks.push(
+        this.limiter.consume(
+          `password-reset:confirm:email:${normalizeEmail(input.email)}`,
+          CONFIRM_EMAIL_LIMIT,
+          WINDOW_MS,
+        ),
+      );
     }
 
-    timestamps.push(now);
-    this.store.set(key, timestamps);
-    return false;
+    const results = await Promise.all(checks);
+    if (results.some((result) => !result.allowed)) {
+      throw new HttpException(
+        'Too many password reset attempts',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }

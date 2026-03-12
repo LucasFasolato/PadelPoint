@@ -85,10 +85,20 @@ export class AuthController {
     const rt = (req.cookies as Record<string, string>)?.['pp_rt'];
     if (!rt) throw new UnauthorizedException('No refresh token');
 
-    const { newPlaintext, userId } = await this.refreshTokens.rotate(rt);
+    let rotated: { newPlaintext: string; userId: string };
+    try {
+      rotated = await this.refreshTokens.rotate(rt);
+    } catch (error) {
+      clearCookies(res);
+      throw error;
+    }
 
-    const user = await this.users.findById(userId);
-    if (!user || !user.active) throw new UnauthorizedException();
+    const user = await this.users.findById(rotated.userId);
+    if (!user || !user.active) {
+      await this.refreshTokens.revokeAllForUser(rotated.userId).catch(() => {});
+      clearCookies(res);
+      throw new UnauthorizedException();
+    }
 
     const { accessToken, user: userPayload } = this.auth.issueAccessToken(
       user.id,
@@ -96,7 +106,7 @@ export class AuthController {
       user.role,
     );
 
-    setCookies(res, accessToken, newPlaintext);
+    setCookies(res, accessToken, rotated.newPlaintext);
     return { accessToken, user: userPayload };
   }
 

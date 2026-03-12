@@ -12,7 +12,9 @@ const makeToken = (overrides: Partial<RefreshToken> = {}): RefreshToken =>
     id: 'token-id',
     userId: 'user-id',
     tokenHash: 'some-hash',
+    tokenFamilyId: 'family-id',
     expiresAt: future,
+    revoked: false,
     revokedAt: null,
     createdAt: new Date(),
     user: {} as never,
@@ -57,7 +59,12 @@ describe('RefreshTokenService', () => {
       expect(typeof plaintext).toBe('string');
       expect(plaintext.length).toBeGreaterThan(20);
       expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-id', revokedAt: null }),
+        expect.objectContaining({
+          userId: 'user-id',
+          tokenFamilyId: expect.any(String),
+          revoked: false,
+          revokedAt: null,
+        }),
       );
       // Stored hash must differ from plaintext
       const saved = repo.save.mock.calls[0][0];
@@ -86,6 +93,12 @@ describe('RefreshTokenService', () => {
 
       expect(await service.validate('expired-token')).toBeNull();
     });
+
+    it('returns null when token is revoked', async () => {
+      repo.findOne.mockResolvedValue(makeToken({ revoked: true }));
+
+      expect(await service.validate('revoked-token')).toBeNull();
+    });
   });
 
   describe('rotate', () => {
@@ -97,7 +110,10 @@ describe('RefreshTokenService', () => {
 
       // Old token revoked
       expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ revokedAt: expect.any(Date) }),
+        expect.objectContaining({
+          revoked: true,
+          revokedAt: expect.any(Date),
+        }),
       );
       // New token created
       expect(repo.save).toHaveBeenCalledTimes(2);
@@ -113,16 +129,39 @@ describe('RefreshTokenService', () => {
         UnauthorizedException,
       );
     });
+
+    it('revokes the entire family when a rotated token is reused', async () => {
+      repo.findOne.mockResolvedValue(
+        makeToken({ revoked: true, revokedAt: new Date() }),
+      );
+
+      await expect(service.rotate('reused-rt')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-id',
+          tokenFamilyId: 'family-id',
+        }),
+        expect.objectContaining({
+          revoked: true,
+          revokedAt: expect.any(Date),
+        }),
+      );
+    });
   });
 
   describe('revoke', () => {
-    it('calls repo.update with a tokenHash criteria and sets revokedAt', async () => {
+    it('marks an active token as revoked', async () => {
+      repo.findOne.mockResolvedValue(makeToken());
+
       await service.revoke('some-plaintext');
 
-      // The service passes IsNull() (a FindOperator), not literal null, for revokedAt criteria
-      expect(repo.update).toHaveBeenCalledWith(
-        expect.objectContaining({ tokenHash: expect.any(String) }),
-        expect.objectContaining({ revokedAt: expect.any(Date) }),
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          revoked: true,
+          revokedAt: expect.any(Date),
+        }),
       );
     });
   });
@@ -133,7 +172,10 @@ describe('RefreshTokenService', () => {
 
       expect(repo.update).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-id' }),
-        expect.objectContaining({ revokedAt: expect.any(Date) }),
+        expect.objectContaining({
+          revoked: true,
+          revokedAt: expect.any(Date),
+        }),
       );
     });
   });

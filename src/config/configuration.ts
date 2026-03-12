@@ -12,6 +12,9 @@ export default () => {
       sync: env.DB_SYNC,
       log: env.DB_LOG,
     },
+    redis: {
+      url: env.REDIS_URL ?? null,
+    },
     jwt: {
       secret: env.JWT_SECRET,
       expiresIn: env.JWT_EXPIRES_IN,
@@ -41,6 +44,10 @@ export default () => {
     },
     ranking: {
       minMatches: env.RANKING_MIN_MATCHES,
+    },
+    observability: {
+      slowQueryMs: env.SLOW_QUERY_MS,
+      slowRequestMs: env.SLOW_REQUEST_MS,
     },
   };
 };

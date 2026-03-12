@@ -1,5 +1,7 @@
 import { join } from 'path';
 import { DataSource } from 'typeorm';
+import { StructuredTypeOrmLogger } from '@common/observability/structured-typeorm.logger';
+import { DEFAULT_SLOW_QUERY_MS } from '@common/security/security.constants';
 
 function parseBoolean(value: string | undefined, fallback = false): boolean {
   if (typeof value !== 'string') return fallback;
@@ -34,7 +36,13 @@ export default new DataSource({
   type: 'postgres',
   url: databaseUrl,
   synchronize: false,
-  logging: parseBoolean(process.env.DB_LOG, false),
+  logging: parseBoolean(process.env.DB_LOG, false)
+    ? ['query', 'error', 'warn', 'migration', 'schema']
+    : ['error', 'warn', 'migration'],
+  logger: new StructuredTypeOrmLogger(parseBoolean(process.env.DB_LOG, false)),
+  maxQueryExecutionTime:
+    Number(process.env.SLOW_QUERY_MS ?? DEFAULT_SLOW_QUERY_MS) ||
+    DEFAULT_SLOW_QUERY_MS,
   entities: [join(__dirname, '..', '**', '*.entity.{js,ts}')],
   migrations: [join(__dirname, '..', 'migrations', '*.{js,ts}')],
   ssl: sslEnabled ? { rejectUnauthorized } : false,
