@@ -15,6 +15,11 @@ import { Match } from './match.entity';
 @Index('idx_match_proposals_v2_match_id', ['matchId'])
 @Index('idx_match_proposals_v2_match_id_status', ['matchId', 'status'])
 @Index('idx_match_proposals_v2_created_at', ['createdAt'])
+@Index('idx_match_proposals_v2_match_created_id', [
+  'matchId',
+  'createdAt',
+  'id',
+])
 export class MatchProposal {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

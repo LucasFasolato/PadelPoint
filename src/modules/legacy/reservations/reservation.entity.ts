@@ -19,6 +19,13 @@ export enum ReservationStatus {
 
 @Entity({ name: 'reservations' })
 @Index(['court', 'startAt', 'endAt', 'status'])
+@Index('idx_reservations_court_status_created', [
+  'court',
+  'status',
+  'startAt',
+  'endAt',
+  'createdAt',
+])
 export class Reservation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

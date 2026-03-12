@@ -2,7 +2,21 @@ import type { NextFunction, Request, Response } from 'express';
 import { RequestMetricsService } from './request-metrics.service';
 import { ensureRequestContext } from './request-context.util';
 
+function hasRoutePath(value: unknown): value is { path: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'path' in value &&
+    typeof (value as { path?: unknown }).path === 'string'
+  );
+}
+
 function resolveEndpoint(req: Request): string {
+  const route: unknown = Reflect.get(req as object, 'route');
+  if (hasRoutePath(route) && route.path.length > 0) {
+    return `${req.baseUrl ?? ''}${route.path}`;
+  }
+
   return req.originalUrl.split('?')[0] || req.path;
 }
 

@@ -80,6 +80,11 @@ export type CanonicalNotificationsInboxResponse = {
   unreadCount: number;
 };
 
+type NotificationCursorPayload = {
+  createdAt: string;
+  id: string;
+};
+
 @Injectable()
 export class UserNotificationsService {
   private readonly logger = new Logger(UserNotificationsService.name);
@@ -161,17 +166,21 @@ export class UserNotificationsService {
     userId: string,
     opts: { cursor?: string; limit?: number },
   ): Promise<{ items: NotificationView[]; nextCursor: string | null }> {
+    const startedAt = Date.now();
     const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+    const cursor = this.parseCursor(opts.cursor);
 
     const qb = this.repo
       .createQueryBuilder('n')
       .where('n.userId = :userId', { userId })
       .orderBy('n.createdAt', 'DESC')
+      .addOrderBy('n.id', 'DESC')
       .take(limit + 1);
 
-    if (opts.cursor) {
-      qb.andWhere('n.createdAt < :cursor', {
-        cursor: new Date(opts.cursor),
+    if (cursor) {
+      qb.andWhere('(n.createdAt, n.id) < (:cursorCreatedAt, :cursorId)', {
+        cursorCreatedAt: cursor.createdAt,
+        cursorId: cursor.id,
       });
     }
 
@@ -179,8 +188,12 @@ export class UserNotificationsService {
     const hasMore = rows.length > limit;
     const items = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore
-      ? items[items.length - 1].createdAt.toISOString()
+      ? this.encodeCursor(items[items.length - 1])
       : null;
+
+    this.logger.log(
+      `notifications.list completed userId=${userId} limit=${limit} returned=${items.length} hasMore=${hasMore} durationMs=${Date.now() - startedAt}`,
+    );
 
     return {
       items: items.map((n) => this.toView(n)),
@@ -192,6 +205,7 @@ export class UserNotificationsService {
     userId: string,
     opts: { cursor?: string; limit?: number },
   ): Promise<CanonicalNotificationsInboxResponse> {
+    const startedAt = Date.now();
     const [listResult, unreadCount] = await Promise.all([
       this.list(userId, opts),
       this.getUnreadCount(userId),
@@ -200,13 +214,19 @@ export class UserNotificationsService {
       listResult.items.map((item) => this.pickString(item.data?.inviteId)),
     );
 
-    return {
+    const response = {
       items: listResult.items.map((item) =>
         this.toCanonicalItem(item, inviteStatusById),
       ),
       nextCursor: listResult.nextCursor,
       unreadCount,
     };
+
+    this.logger.log(
+      `notifications.inbox completed userId=${userId} unreadCount=${unreadCount} returned=${response.items.length} durationMs=${Date.now() - startedAt}`,
+    );
+
+    return response;
   }
 
   async listLegacyFromCanonical(
@@ -313,6 +333,38 @@ export class UserNotificationsService {
       .limit(1)
       .getCount();
     return count > 0;
+  }
+
+  private parseCursor(cursor?: string): NotificationCursorPayload | null {
+    if (!cursor || cursor.trim().length === 0) {
+      return null;
+    }
+
+    const normalized = cursor.trim();
+    const legacyDate = new Date(normalized);
+    if (!Number.isNaN(legacyDate.getTime())) {
+      return {
+        createdAt: legacyDate.toISOString(),
+        id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+      };
+    }
+
+    const [createdAtRaw, id] = normalized.split('|');
+    const createdAt = new Date(createdAtRaw ?? '');
+    if (!id || Number.isNaN(createdAt.getTime())) {
+      return null;
+    }
+
+    return {
+      createdAt: createdAt.toISOString(),
+      id,
+    };
+  }
+
+  private encodeCursor(
+    notification: Pick<UserNotification, 'createdAt' | 'id'>,
+  ): string {
+    return `${notification.createdAt.toISOString()}|${notification.id}`;
   }
 
   private toView(n: UserNotification): NotificationView {

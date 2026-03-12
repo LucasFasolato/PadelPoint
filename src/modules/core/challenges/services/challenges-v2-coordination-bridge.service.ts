@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -40,6 +41,10 @@ type KnownUser = Pick<User, 'id' | 'displayName' | 'email'>;
 //   old proposal-id contract and avoids reader/writer drift.
 @Injectable()
 export class ChallengesV2CoordinationBridgeService {
+  private readonly logger = new Logger(
+    ChallengesV2CoordinationBridgeService.name,
+  );
+
   constructor(
     private readonly matchQueryService: MatchQueryService,
     private readonly matchSchedulingService: MatchSchedulingService,
@@ -58,6 +63,7 @@ export class ChallengesV2CoordinationBridgeService {
     challengeId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
@@ -66,10 +72,21 @@ export class ChallengesV2CoordinationBridgeService {
     if (this.shouldFallbackToLegacyCoordinationRead(context.match)) {
       // Keep pre-v2 challenges readable until the legacy scheduling writes
       // switch over to the canonical match aggregate in the next bridge lot.
-      return this.legacyCoordinationService.getCoordinationState(
-        challengeId,
-        actorUserId,
+      const response =
+        await this.legacyCoordinationService.getCoordinationState(
+          challengeId,
+          actorUserId,
+        );
+      const proposalCount = Array.isArray(response.proposals)
+        ? response.proposals.length
+        : 0;
+      const messageCount = Array.isArray(response.messages)
+        ? response.messages.length
+        : 0;
+      this.logger.log(
+        `challenge.coordination.read completed challengeId=${challengeId} actorUserId=${actorUserId} mode=legacy proposals=${proposalCount} messages=${messageCount} durationMs=${Date.now() - startedAt}`,
       );
+      return response;
     }
 
     const match = context.match;
@@ -84,7 +101,7 @@ export class ChallengesV2CoordinationBridgeService {
           proposal.status === ChallengeScheduleProposalStatus.PENDING,
       ) ?? null;
 
-    return {
+    const response = {
       challengeId: context.challenge.id,
       challengeStatus: context.challenge.status,
       coordinationStatus: this.resolveCoordinationStatus(
@@ -113,29 +130,44 @@ export class ChallengesV2CoordinationBridgeService {
         this.toMessageDto(message, usersById),
       ),
     };
+
+    this.logger.log(
+      `challenge.coordination.read completed challengeId=${challengeId} actorUserId=${actorUserId} mode=canonical proposals=${proposals.length} messages=${messages.length} durationMs=${Date.now() - startedAt}`,
+    );
+
+    return response;
   }
 
   async listMessages(
     challengeId: string,
     actorUserId: string,
   ): Promise<ChallengeMessageResponseDto[]> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
     );
 
     if (this.shouldFallbackToLegacyCoordinationRead(context.match)) {
-      return this.legacyCoordinationService.listMessages(
+      const messages = await this.legacyCoordinationService.listMessages(
         challengeId,
         actorUserId,
       );
+      this.logger.log(
+        `challenge.messages.read completed challengeId=${challengeId} actorUserId=${actorUserId} mode=legacy messages=${messages.length} durationMs=${Date.now() - startedAt}`,
+      );
+      return messages;
     }
 
     const match = context.match;
     const usersById = await this.loadUsersById(context.challenge, match);
-    return this.sortByCreatedAsc(match.messages ?? []).map((message) =>
-      this.toMessageDto(message, usersById),
+    const messages = this.sortByCreatedAsc(match.messages ?? []).map(
+      (message) => this.toMessageDto(message, usersById),
     );
+    this.logger.log(
+      `challenge.messages.read completed challengeId=${challengeId} actorUserId=${actorUserId} mode=canonical messages=${messages.length} durationMs=${Date.now() - startedAt}`,
+    );
+    return messages;
   }
 
   async createProposal(

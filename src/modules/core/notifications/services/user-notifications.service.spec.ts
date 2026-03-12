@@ -224,6 +224,7 @@ describe('UserNotificationsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(items),
       });
@@ -246,6 +247,7 @@ describe('UserNotificationsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(items),
       });
@@ -253,7 +255,32 @@ describe('UserNotificationsService', () => {
       const result = await service.list(FAKE_USER_ID, { limit: 2 });
 
       expect(result.items).toHaveLength(2);
-      expect(result.nextCursor).toBe('2025-01-02T00:00:00.000Z');
+      expect(result.nextCursor).toBe('2025-01-02T00:00:00.000Z|n2');
+    });
+
+    it('accepts legacy createdAt-only cursors while ordering by createdAt and id', async () => {
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      repo.createQueryBuilder = jest.fn().mockReturnValue(mockQb);
+
+      await service.list(FAKE_USER_ID, {
+        cursor: '2025-01-02T00:00:00.000Z',
+        limit: 20,
+      });
+
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        '(n.createdAt, n.id) < (:cursorCreatedAt, :cursorId)',
+        {
+          cursorCreatedAt: '2025-01-02T00:00:00.000Z',
+          cursorId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+        },
+      );
     });
   });
 
@@ -275,6 +302,7 @@ describe('UserNotificationsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(listItems),
         getCount: jest.fn().mockResolvedValue(1),
@@ -314,6 +342,7 @@ describe('UserNotificationsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(listItems),
         getCount: jest.fn().mockResolvedValue(1),

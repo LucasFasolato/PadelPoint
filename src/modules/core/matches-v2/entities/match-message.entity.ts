@@ -12,6 +12,7 @@ import { Match } from './match.entity';
 @Entity('match_messages_v2')
 @Index('idx_match_messages_v2_match_id', ['matchId'])
 @Index('idx_match_messages_v2_created_at', ['createdAt'])
+@Index('idx_match_messages_v2_match_created_id', ['matchId', 'createdAt', 'id'])
 export class MatchMessage {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

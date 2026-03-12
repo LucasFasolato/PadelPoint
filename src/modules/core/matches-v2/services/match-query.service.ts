@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -29,6 +30,7 @@ const MATCH_FEED_SORT_SQL =
 
 @Injectable()
 export class MatchQueryService {
+  private readonly logger = new Logger(MatchQueryService.name);
   private readonly compareByCreatedAtAsc = <
     T extends { createdAt: Date; id: string },
   >(
@@ -107,6 +109,7 @@ export class MatchQueryService {
     },
     status?: MatchStatus,
   ): Promise<{ items: MatchResponseDto[]; nextCursor: string | null }> {
+    const startedAt = Date.now();
     const limit = this.normalizeLimit(query.limit);
     const cursor = this.parseCursor(query.cursor);
     const qb = this.buildParticipantQuery(userId);
@@ -137,13 +140,18 @@ export class MatchQueryService {
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor =
+      hasMore && page.length > 0
+        ? this.encodeCursor(this.toCursorPayload(page[page.length - 1]))
+        : null;
+
+    this.logger.log(
+      `matches-v2.list completed userId=${userId} status=${status ?? 'all'} leagueId=${query.leagueId ?? 'all'} limit=${limit} returned=${page.length} hasMore=${hasMore} durationMs=${Date.now() - startedAt}`,
+    );
 
     return {
       items: page.map((match) => mapEntityToMatchResponse(match)),
-      nextCursor:
-        hasMore && page.length > 0
-          ? this.encodeCursor(this.toCursorPayload(page[page.length - 1]))
-          : null,
+      nextCursor,
     };
   }
 

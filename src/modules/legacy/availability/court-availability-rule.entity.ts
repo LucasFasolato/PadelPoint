@@ -15,6 +15,13 @@ import { Court } from '@legacy/courts/court.entity';
   ['court', 'diaSemana', 'horaInicio', 'horaFin', 'slotMinutos'],
   { unique: true },
 )
+@Index('idx_court_availability_rules_lookup', [
+  'court',
+  'activo',
+  'diaSemana',
+  'horaInicio',
+  'horaFin',
+])
 export class CourtAvailabilityRule {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

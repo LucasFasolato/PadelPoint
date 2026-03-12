@@ -444,8 +444,11 @@ export class LeagueStandingsService {
     snapshotVersion?: number | null;
     lastUpdatedAt?: string | null;
   }> {
+    const startedAt = Date.now();
     let readModelRows = await this.getCurrentReadModelRows(leagueId);
+    let cacheMiss = false;
     if (readModelRows.length === 0) {
+      cacheMiss = true;
       await this.snapshotRepo.manager.transaction(async (manager) => {
         await this.recomputeLeague(manager, leagueId, context);
       });
@@ -454,6 +457,15 @@ export class LeagueStandingsService {
 
     if (readModelRows.length === 0) {
       const rows = await this.getCurrentRowsFromMembers(leagueId);
+      logStructured(this.logger, 'log', {
+        event: 'league.standings.read',
+        requestId: context.requestId,
+        leagueId,
+        durationMs: Date.now() - startedAt,
+        cacheMiss,
+        rows: rows.length,
+        snapshotVersion: null,
+      });
       return {
         computedAt: null,
         rows: await this.enrichRowsWithUsers(rows),
@@ -468,6 +480,15 @@ export class LeagueStandingsService {
     );
     const movement = this.buildMovementFromRows(rows);
     const metadata = this.getReadModelMetadata(readModelRows);
+    logStructured(this.logger, 'log', {
+      event: 'league.standings.read',
+      requestId: context.requestId,
+      leagueId,
+      durationMs: Date.now() - startedAt,
+      cacheMiss,
+      rows: rows.length,
+      snapshotVersion: metadata.snapshotVersion,
+    });
     return {
       computedAt: metadata.computedAt,
       rows: await this.enrichRowsWithUsers(rows),
@@ -526,6 +547,7 @@ export class LeagueStandingsService {
     movements: StandingsMovement[];
     topMovers: { up: StandingsMovement[]; down: StandingsMovement[] };
   }> {
+    const startedAt = Date.now();
     const latest = await this.snapshotRepo
       .createQueryBuilder('s')
       .where('s."leagueId" = :leagueId', { leagueId })
@@ -536,6 +558,13 @@ export class LeagueStandingsService {
       const rawTable = await this.getCurrentRowsFromMembers(leagueId);
       const movements = computeStandingsDiff([], rawTable);
       const table = await this.enrichRowsWithUsers(rawTable);
+      logStructured(this.logger, 'log', {
+        event: 'league.standings.latest',
+        leagueId,
+        durationMs: Date.now() - startedAt,
+        snapshotVersion: null,
+        rows: table.length,
+      });
       return {
         computedAt: null,
         table,
@@ -562,6 +591,13 @@ export class LeagueStandingsService {
     };
 
     const table = await this.enrichRowsWithUsers(rawTable);
+    logStructured(this.logger, 'log', {
+      event: 'league.standings.latest',
+      leagueId,
+      durationMs: Date.now() - startedAt,
+      snapshotVersion: latest.version,
+      rows: table.length,
+    });
 
     return {
       computedAt: latest.computedAt.toISOString(),

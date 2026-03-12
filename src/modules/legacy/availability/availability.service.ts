@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -49,6 +50,8 @@ export interface AvailabilitySlot {
 
 @Injectable()
 export class AvailabilityService {
+  private readonly logger = new Logger(AvailabilityService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(CourtAvailabilityRule)
@@ -152,6 +155,7 @@ export class AvailabilityService {
   async calculateAvailability(
     q: AvailabilityRangeQueryDto,
   ): Promise<AvailabilitySlot[]> {
+    const startedAt = Date.now();
     clampRangeDays(q.from, q.to, 31);
 
     const { from, to, clubId, courtId } = q;
@@ -161,6 +165,38 @@ export class AvailabilityService {
     WITH dias AS (
       SELECT gs::date AS fecha
       FROM generate_series($1::date, $2::date, interval '1 day') gs
+    ),
+    filtered_overrides AS (
+      SELECT
+        o."courtId",
+        o.fecha,
+        o."horaInicio",
+        o."horaFin",
+        o.motivo
+      FROM "court_availability_overrides" o
+      WHERE o.bloqueado = true
+        AND o.fecha BETWEEN $1::date AND $2::date
+        AND ($4::uuid IS NULL OR o."courtId" = $4::uuid)
+    ),
+    filtered_reservations AS (
+      SELECT
+        r.id,
+        r."courtId",
+        r."startAt",
+        r."endAt",
+        r.status,
+        r."expiresAt",
+        r."createdAt"
+      FROM "reservations" r
+      WHERE ($4::uuid IS NULL OR r."courtId" = $4::uuid)
+        AND r.status IN ('hold','confirmed','payment_pending')
+        AND r."startAt" < (($2::date + interval '1 day') AT TIME ZONE '${TZ_DB}')
+        AND r."endAt" > ($1::date AT TIME ZONE '${TZ_DB}')
+        AND (
+          r.status = 'confirmed'
+          OR r.status = 'payment_pending'
+          OR (r.status = 'hold' AND r."expiresAt" > now())
+        )
     ),
     rules AS (
       SELECT
@@ -220,45 +256,31 @@ export class AvailabilityService {
         to_char(s.ts_fin, 'HH24:MI') AS "horaFin",
         (
           EXISTS (
-            SELECT 1 FROM "court_availability_overrides" o
-            WHERE o.bloqueado = true
-              AND o."courtId" = s."courtId"
+            SELECT 1 FROM filtered_overrides o
+            WHERE o."courtId" = s."courtId"
               AND o.fecha = s.fecha
               AND s.ts_inicio::time < o."horaFin"
               AND s.ts_fin::time > o."horaInicio"
           )
           OR
           EXISTS (
-            SELECT 1 FROM "reservations" r
+            SELECT 1 FROM filtered_reservations r
             WHERE r."courtId" = s."courtId"
-              AND r.status IN ('hold','confirmed','payment_pending')
-              AND (
-                r.status = 'confirmed'
-                OR r.status = 'payment_pending'
-                OR (r.status = 'hold' AND r."expiresAt" > now())
-              )
               AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}') 
               AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
           )
         ) AS ocupado,
         (
-          SELECT o.motivo FROM "court_availability_overrides" o
-          WHERE o.bloqueado = true
-            AND o."courtId" = s."courtId"
+          SELECT o.motivo FROM filtered_overrides o
+          WHERE o."courtId" = s."courtId"
             AND o.fecha = s.fecha
             AND s.ts_inicio::time < o."horaFin"
             AND s.ts_fin::time > o."horaInicio"
           ORDER BY o."horaInicio" LIMIT 1
         ) AS "motivoBloqueo",
         (
-          SELECT r.id FROM "reservations" r
+          SELECT r.id FROM filtered_reservations r
           WHERE r."courtId" = s."courtId"
-            AND r.status IN ('hold','confirmed','payment_pending')
-            AND (
-              r.status = 'confirmed'
-              OR r.status = 'payment_pending'
-              OR (r.status = 'hold' AND r."expiresAt" > now())
-            )
             AND r."startAt" < (s.ts_fin AT TIME ZONE '${TZ_DB}')
             AND r."endAt" > (s.ts_inicio AT TIME ZONE '${TZ_DB}')
           ORDER BY r."createdAt" DESC LIMIT 1
@@ -293,7 +315,7 @@ export class AvailabilityService {
     ]);
 
     // Explicitly map response to satisfy TypeScript
-    return rows.map((r: any): AvailabilitySlot => {
+    const mappedRows = rows.map((r: any): AvailabilitySlot => {
       const isOccupied =
         r.ocupado === true || r.ocupado === 't' || r.ocupado === 1;
 
@@ -310,6 +332,12 @@ export class AvailabilityService {
         reservationId: r.reservationId ?? null,
       };
     });
+
+    this.logger.log(
+      `availability.calculate completed from=${from} to=${to} clubId=${clubId ?? 'all'} courtId=${courtId ?? 'all'} slots=${mappedRows.length} durationMs=${Date.now() - startedAt}`,
+    );
+
+    return mappedRows;
   }
 
   // --- OVERRIDES MANAGEMENT ---

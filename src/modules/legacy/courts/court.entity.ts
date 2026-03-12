@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -11,6 +12,7 @@ import { Club } from '../clubs/club.entity';
 import { Reservation } from '@legacy/reservations/reservation.entity';
 
 @Entity({ name: 'courts' })
+@Index('idx_courts_club_active', ['club', 'activa'])
 export class Court {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

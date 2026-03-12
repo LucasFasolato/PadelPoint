@@ -12,6 +12,11 @@ import { League } from '../entities/league.entity';
 @Entity('league_standings_snapshot')
 @Index(['leagueId', 'userId'], { unique: true })
 @Index(['leagueId', 'position'])
+@Index('idx_league_standings_read_model_rank_order', [
+  'leagueId',
+  'position',
+  'userId',
+])
 @Index(['leagueId', 'snapshotVersion'])
 @Index(['leagueId', 'computedAt'])
 export class LeagueStandingsReadModel {
