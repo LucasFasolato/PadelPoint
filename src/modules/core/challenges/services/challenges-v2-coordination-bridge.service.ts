@@ -175,12 +175,16 @@ export class ChallengesV2CoordinationBridgeService {
     actorUserId: string,
     dto: CreateChallengeProposalDto,
   ): Promise<ChallengeCoordinationResponseDto> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
     );
 
     if (this.shouldFallbackToLegacyCoordinationWrite(context.match)) {
+      this.logger.log(
+        `challenge.proposal.write completed challengeId=${challengeId} actorUserId=${actorUserId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.legacyCoordinationService.createProposal(
         challengeId,
         actorUserId,
@@ -197,6 +201,10 @@ export class ChallengesV2CoordinationBridgeService {
       note: dto.note,
     });
 
+    this.logger.log(
+      `challenge.proposal.write completed challengeId=${challengeId} actorUserId=${actorUserId} mode=canonical matchId=${match.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.getCoordinationState(challengeId, actorUserId);
   }
 
@@ -205,6 +213,7 @@ export class ChallengesV2CoordinationBridgeService {
     proposalId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
@@ -213,6 +222,9 @@ export class ChallengesV2CoordinationBridgeService {
     if (
       this.shouldFallbackToLegacyProposalDecision(context.match, proposalId)
     ) {
+      this.logger.log(
+        `challenge.proposal.accept completed challengeId=${challengeId} proposalId=${proposalId} actorUserId=${actorUserId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.legacyCoordinationService.acceptProposal(
         challengeId,
         proposalId,
@@ -227,6 +239,10 @@ export class ChallengesV2CoordinationBridgeService {
       actorUserId,
     );
 
+    this.logger.log(
+      `challenge.proposal.accept completed challengeId=${challengeId} proposalId=${proposalId} actorUserId=${actorUserId} mode=canonical matchId=${match.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.getCoordinationState(challengeId, actorUserId);
   }
 
@@ -235,6 +251,7 @@ export class ChallengesV2CoordinationBridgeService {
     proposalId: string,
     actorUserId: string,
   ): Promise<ChallengeCoordinationResponseDto> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
@@ -243,6 +260,9 @@ export class ChallengesV2CoordinationBridgeService {
     if (
       this.shouldFallbackToLegacyProposalDecision(context.match, proposalId)
     ) {
+      this.logger.log(
+        `challenge.proposal.reject completed challengeId=${challengeId} proposalId=${proposalId} actorUserId=${actorUserId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.legacyCoordinationService.rejectProposal(
         challengeId,
         proposalId,
@@ -258,6 +278,10 @@ export class ChallengesV2CoordinationBridgeService {
       {},
     );
 
+    this.logger.log(
+      `challenge.proposal.reject completed challengeId=${challengeId} proposalId=${proposalId} actorUserId=${actorUserId} mode=canonical matchId=${match.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.getCoordinationState(challengeId, actorUserId);
   }
 
@@ -266,12 +290,16 @@ export class ChallengesV2CoordinationBridgeService {
     actorUserId: string,
     dto: CreateChallengeMessageDto,
   ): Promise<ChallengeMessageResponseDto> {
+    const startedAt = Date.now();
     const context = await this.resolveCoordinationContext(
       challengeId,
       actorUserId,
     );
 
     if (this.shouldFallbackToLegacyCoordinationWrite(context.match)) {
+      this.logger.log(
+        `challenge.message.write completed challengeId=${challengeId} actorUserId=${actorUserId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.legacyCoordinationService.createMessage(
         challengeId,
         actorUserId,
@@ -284,6 +312,9 @@ export class ChallengesV2CoordinationBridgeService {
       match.id,
       actorUserId,
       { message: dto.message },
+    );
+    this.logger.log(
+      `challenge.message.write completed challengeId=${challengeId} actorUserId=${actorUserId} mode=canonical matchId=${match.id} durationMs=${Date.now() - startedAt}`,
     );
     const messages = await this.listMessages(challengeId, actorUserId);
     const hydratedMessage = messages.find(

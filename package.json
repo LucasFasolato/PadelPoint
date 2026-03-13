@@ -32,7 +32,7 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "pretest": "npm run lint:quotes",
     "test": "jest",
-    "test:contracts": "jest src/modules/core/matches/controllers/matches.contract.spec.ts src/modules/core/challenges/controllers/challenges.contract.spec.ts src/modules/core/notifications/controllers/user-notifications.contract.spec.ts --runInBand",
+    "test:contracts": "jest src/modules/core/matches/controllers/matches.contract.spec.ts src/modules/core/challenges/controllers/challenges.contract.spec.ts src/modules/core/notifications/controllers/user-notifications.contract.spec.ts src/modules/core/auth/controllers/auth-identities.contract.spec.ts --runInBand",
     "test:integration": "jest src/modules/core/auth/controllers/auth-hardening.integration.spec.ts src/common/security/csrf.middleware.integration.spec.ts --runInBand",
     "test:migrations": "npm run verify:migrations:clean",
     "test:watch": "jest --watch",

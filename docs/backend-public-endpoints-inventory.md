@@ -8,6 +8,7 @@ Date: 2026-03-12
 - Route presence vs OpenAPI:
   - `openapi.snapshot.json` is broadly aligned with current controllers.
   - Confirmed default snapshot omissions: `GET /auth/apple`, `POST /auth/apple/callback`.
+  - New controller-level metadata for `GET /auth/identities` and `POST /auth/identities/:id/unlink` is ahead of the checked-in snapshot until the next intentional refresh.
   - For all other rows below, assume "appears in OpenAPI" unless the `Notes` column says otherwise.
 - `Source of truth` means runtime ownership today, not architectural aspiration.
 - `Frontend safe to consume?`
@@ -31,6 +32,8 @@ Date: 2026-03-12
 | `POST` | `/auth/apple/callback` | FRAGILE | `AuthAppleController` | `OAuthService` + `AuthService` + `UsersService` | OAuth callback | redirect | auth/oauth | partial | conditional route; absent from default OpenAPI snapshot |
 | `POST` | `/auth/password/reset/request` | SAFE | `AuthPasswordController` | `PasswordResetService` | `PasswordResetRequestDto` | `{ ok: true }` | auth | yes | intentionally non-enumerating |
 | `POST` | `/auth/password/reset/confirm` | SAFE | `AuthPasswordController` | `PasswordResetService` | `PasswordResetConfirmDto` | `{ ok: true }` | auth | yes | password reset completion |
+| `GET` | `/auth/identities` | SAFE | `AuthIdentitiesController` | `AuthIdentitiesService` | none | `AuthIdentityResponseDto[]` | auth identities | yes | authenticated self-only identity list; hides provider internals |
+| `POST` | `/auth/identities/:id/unlink` | SAFE | `AuthIdentitiesController` | `AuthIdentitiesService` | none | `{ ok: true }` | auth identities | yes | authenticated self-only unlink; last identity cannot be removed |
 | `POST` | `/auth/bootstrap-admin` | INTERNAL/ADMIN | `AuthAdminBootstrapController` | `UsersService` | inline `{ key, email }` | `{ ok: true }` | auth/admin | no | bootstrap key required |
 | `GET` | `/users/search` | SAFE | `UsersController` | `UsersService` | query `q` | `UserSearchResult[]` | users | yes | auth required |
 | `GET` | `/me/profile` | SAFE | `MeProfileController` | `UsersService` | none | player profile plain object | users | yes | player role only |
@@ -232,11 +235,11 @@ Date: 2026-03-12
 | `DELETE` | `/courts/:id` | LEGACY | `CourtsController` | `CourtsService` | none | delete/plain object | legacy courts | no | mutating/admin-like |
 | `GET` | `/public/courts/club/:clubId` | SAFE | `PublicCourtsController` | `CourtsService` | none | court list/plain array | legacy courts public | yes | public list |
 | `GET` | `/public/courts/:id` | SAFE | `PublicCourtsController` | `CourtsService` | none | court/plain object | legacy courts public | yes | public detail |
-| `POST` | `/availability/rules` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | `CreateAvailabilityRuleDto` | rule/plain object | booking legacy | no | club-admin tooling |
-| `POST` | `/availability/rules/bulk` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | `BulkCreateAvailabilityDto` | bulk result/plain object | booking legacy | no | club-admin tooling |
-| `GET` | `/availability/rules/court/:courtId` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | none | rule list/plain array | booking legacy | no | club-admin tooling |
-| `POST` | `/availability/overrides` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | `CreateOverrideDto` | override/plain object | booking legacy | no | club-admin tooling |
-| `DELETE` | `/availability/overrides/:id` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | none | delete/plain object | booking legacy | no | club-admin tooling |
+| `POST` | `/availability/rules` | SAFE | `AvailabilityController` | `AvailabilityService` | `CreateAvailabilityRuleDto` | rule/plain object | booking legacy | partial | club-admin/staff tooling route guarded by JWT + club access |
+| `POST` | `/availability/rules/bulk` | SAFE | `AvailabilityController` | `AvailabilityService` | `BulkCreateAvailabilityDto` | bulk result/plain object | booking legacy | partial | club-admin/staff tooling route guarded by JWT + club access |
+| `GET` | `/availability/rules/court/:courtId` | SAFE | `AvailabilityController` | `AvailabilityService` | none | rule list/plain array | booking legacy | partial | stable club-admin/staff tooling route guarded by JWT + club access |
+| `POST` | `/availability/overrides` | SAFE | `AvailabilityController` | `AvailabilityService` | `CreateOverrideDto` | override/plain object | booking legacy | partial | club-admin/staff tooling route guarded by JWT + club access |
+| `DELETE` | `/availability/overrides/:id` | SAFE | `AvailabilityController` | `AvailabilityService` | none | delete/plain object | booking legacy | partial | club-admin/staff tooling route guarded by JWT + club access |
 | `GET` | `/availability/slots` | SAFE | `AvailabilityController` | `AvailabilityService` | `AvailabilityRangeQueryDto` | `AvailabilitySlotDto[]` | booking legacy | partial | read-only but legacy |
 | `DELETE` | `/availability/admin/cleanup-duplicates` | INTERNAL/ADMIN | `AvailabilityController` | `AvailabilityService` | none | cleanup/plain object | booking ops | no | maintenance endpoint |
 | `GET` | `/clubs/:clubId/agenda` | LEGACY | `AgendaController` | `AgendaService` | query `AgendaQueryDto` | `AgendaResponseDto` | booking legacy | partial | legacy club agenda |
@@ -247,7 +250,7 @@ Date: 2026-03-12
 | `PATCH` | `/reservations/:id/confirm` | LEGACY | `ReservationsController` | `ReservationsService` | `ConfirmReservationDto` | reservation/plain object | booking legacy | partial | booking flow |
 | `PATCH` | `/reservations/:id/cancel` | LEGACY | `ReservationsController` | `ReservationsService` | none | reservation/plain object | booking legacy | partial | booking flow |
 | `GET` | `/reservations/:id` | LEGACY | `ReservationsController` | `ReservationsService` | none | reservation/plain object | booking legacy | partial | legacy |
-| `GET` | `/reservations/list` | LEGACY | `ReservationsController` | `ReservationsService` | `ReservationsRangeQueryDto` + filters | reservation list/plain array | booking legacy | no | club/admin surface |
+| `GET` | `/reservations/list` | LEGACY | `ReservationsController` | `ReservationsService` | `ReservationsRangeQueryDto` + filters | reservation list/plain array | booking legacy | partial | stable club-admin dashboard path guarded by JWT + club access |
 | `GET` | `/reservations/club/:clubId` | LEGACY | `ReservationsController` | `ReservationsService` | `ReservationsRangeQueryDto` | reservation list/plain array | booking legacy | no | club/admin surface |
 | `GET` | `/reservations/court/:courtId` | LEGACY | `ReservationsController` | `ReservationsService` | `ReservationsRangeQueryDto` | reservation list/plain array | booking legacy | no | club/admin surface |
 | `GET` | `/reservations/club/:clubId/range` | LEGACY | `ReservationsController` | `ReservationsService` | query `from`, `to` | reservation list/plain array | booking legacy | no | club/admin surface |
@@ -262,13 +265,13 @@ Date: 2026-03-12
 | `POST` | `/payments/intents/:id/simulate-success` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `SimulatePaymentDto` | payment intent/plain object | payments testing | no | simulation tooling |
 | `POST` | `/payments/intents/:id/simulate-failure` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `SimulatePaymentDto` | payment intent/plain object | payments testing | no | simulation tooling |
 | `GET` | `/payments/intents/:id` | LEGACY | `PaymentsController` | `PaymentsService` | none | payment intent/plain object | payments legacy | partial | payment detail |
-| `GET` | `/payments/intents` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `AdminListPaymentIntentsDto` | payment intent list/plain object | payments admin | no | admin/backoffice |
+| `GET` | `/payments/intents` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `AdminListPaymentIntentsDto` | payment intent list/plain object | payments admin | no | platform-admin backoffice only; not a club-admin contract |
 | `GET` | `/payments/intents/by-reference` | LEGACY | `PaymentsController` | `PaymentsService` | query filters | payment intent/plain object | payments legacy | partial | reference lookup |
 | `POST` | `/payments/public/intents` | SAFE | `PaymentsController` | `PaymentsService` | `CreatePaymentIntentDto` | payment intent/plain object | payments public | partial | public payment intent entry |
 | `POST` | `/payments/webhook/mock` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `MockPaymentWebhookDto` | webhook/plain object | payments testing | no | mock webhook |
 | `POST` | `/payments/public/intents/:id/simulate-success` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `SimulatePaymentDto` | payment intent/plain object | payments testing | no | public simulation tooling |
 | `POST` | `/payments/public/intents/:id/simulate-failure` | INTERNAL/ADMIN | `PaymentsController` | `PaymentsService` | `SimulatePaymentDto` | payment intent/plain object | payments testing | no | public simulation tooling |
-| `GET` | `/reports/revenue` | INTERNAL/ADMIN | `ReportsController` | `ReportsService` | `RevenueQueryDto` | `RevenueResponseDto` | reports | no | backoffice reporting |
-| `GET` | `/reports/occupancy` | INTERNAL/ADMIN | `ReportsController` | `ReportsService` | `OccupancyQueryDto` | `OccupancyResponseDto` | reports | no | backoffice reporting |
-| `GET` | `/reports/peak-hours` | INTERNAL/ADMIN | `ReportsController` | `ReportsService` | `PeakHoursQueryDto` | `PeakHoursResponseDto` | reports | no | backoffice reporting |
-| `GET` | `/reports/summary` | INTERNAL/ADMIN | `ReportsController` | `ReportsService` | `SummaryQueryDto` | `SummaryResponseDto` | reports | no | backoffice reporting |
+| `GET` | `/reports/revenue` | SAFE | `ReportsController` | `ReportsService` | `RevenueQueryDto` | `RevenueResponseDto` | reports | partial | stable club-admin/staff reporting route guarded by JWT + club access |
+| `GET` | `/reports/occupancy` | SAFE | `ReportsController` | `ReportsService` | `OccupancyQueryDto` | `OccupancyResponseDto` | reports | partial | stable club-admin/staff reporting route guarded by JWT + club access |
+| `GET` | `/reports/peak-hours` | SAFE | `ReportsController` | `ReportsService` | `PeakHoursQueryDto` | `PeakHoursResponseDto` | reports | partial | stable club-admin/staff reporting route guarded by JWT + club access |
+| `GET` | `/reports/summary` | SAFE | `ReportsController` | `ReportsService` | `SummaryQueryDto` | `SummaryResponseDto` | reports | partial | stable club-admin/staff reporting route guarded by JWT + club access |

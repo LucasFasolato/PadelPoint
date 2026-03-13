@@ -25,6 +25,7 @@ This matrix captures the runtime delegation boundary for the public matches and 
 - `POST /matches/:id/dispute` is intentionally a bridge-shaped no-op with respect to canonical writes today. It resolves correlation, then still returns the legacy service path.
 - `POST /matches/:id/resolve` is the only disputed-match route that can delegate canonically, and even there the safe subset is small.
 - Challenge proposal accept/reject is stricter than challenge proposal create because proposal-id stability is part of the public contract.
+- Runtime logs now emit explicit `mode=canonical` vs `mode=legacy` ownership markers for the bridge-backed reads and writes above.
 
 ## Practical ownership summary
 
@@ -33,3 +34,9 @@ This matrix captures the runtime delegation boundary for the public matches and 
 - Compatibility-only reads: `GET /matches/:id`, `GET /matches?challengeId=...`.
 - Compatibility-only dispute open: `POST /matches/:id/dispute`.
 - Fragile admin hybrid: `POST /matches/:id/resolve`.
+
+## Non-bridge clarifications from the same runtime reconciliation pass
+
+- `GET /auth/identities` and `POST /auth/identities/:id/unlink` are direct auth-owned routes with no fallback path.
+- `GET /reports/*` and `GET /availability/rules/court/:courtId` are direct club-admin/staff routes with no canonical fallback.
+- `GET /payments/intents` is direct platform-admin only and should not be treated as a club-admin compatibility surface.

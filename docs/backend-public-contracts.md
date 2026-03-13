@@ -7,6 +7,8 @@ Date: 2026-03-12
 - Internal source of truth for match lifecycle is `matches-v2`.
 - Public HTTP ownership is still hybrid at the controller boundary.
 - `MatchesController` and `ChallengesController` are compatibility edges, not pure canonical controllers.
+- Auth identities now have an explicit authenticated contract at `GET /auth/identities` and `POST /auth/identities/:id/unlink`.
+- Club-admin booking and reporting routes stay on legacy modules, but the intended contract truth is now explicit instead of being inferred from frontend usage.
 
 ## Classification legend
 
@@ -71,6 +73,20 @@ Date: 2026-03-12
 | `SAFE` | `POST` | `/leagues/:leagueId/report-from-reservation` | `LeagueMatchesController` | `MatchesService.reportFromReservation()` | legacy matches + leagues | `ReportFromReservationDto` | plain match view | none | League tooling surface |
 | `SAFE` | `POST` | `/leagues/:leagueId/report-manual` | `LeagueMatchesController` | `MatchesService.reportManual()` | legacy matches + leagues | `ReportManualDto` | plain match view | none | League tooling surface |
 
+## Targeted contract patch
+
+| Class | Method | Path | Controller | Service | Internal owner | Request DTO | Response DTO | Fallback behavior | Compatibility notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `SAFE` | `GET` | `/auth/identities` | `AuthIdentitiesController` | `AuthIdentitiesService.listForUser()` | auth identities | none | `AuthIdentityResponseDto[]` | none | Returns only identities owned by the authenticated user; hides `providerUserId` and `passwordHash` |
+| `SAFE` | `POST` | `/auth/identities/:id/unlink` | `AuthIdentitiesController` | `AuthIdentitiesService.unlinkForUser()` | auth identities | none | plain `{ ok: true }` | none | Rejects unlink of the last remaining identity; ownership enforced by `userId`-scoped lookup |
+| `SAFE` | `GET` | `/reports/revenue` | `ReportsController` | `ReportsService.revenueReport()` | legacy reports | `RevenueQueryDto` | `RevenueReportDto` | none | Club-admin/staff tooling surface; requires `JwtAuthGuard + ClubAccessGuard + ClubRoles(admin, staff)` |
+| `SAFE` | `GET` | `/reports/occupancy` | `ReportsController` | `ReportsService.occupancyReport()` | legacy reports | `OccupancyQueryDto` | `OccupancyReportDto` | none | Club-admin/staff tooling surface; same guard policy as revenue |
+| `SAFE` | `GET` | `/reports/peak-hours` | `ReportsController` | `ReportsService.peakHoursReport()` | legacy reports | `PeakHoursQueryDto` | `PeakHoursReportDto` | none | Club-admin/staff tooling surface; same guard policy as revenue |
+| `SAFE` | `GET` | `/reports/summary` | `ReportsController` | `ReportsService.summaryReport()` | legacy reports | `SummaryQueryDto` | `SummaryResponseDto` | none | Club-admin/staff dashboard summary; same guard policy as revenue |
+| `LEGACY` | `GET` | `/reservations/list` | `ReservationsController` | `ReservationsService.listReservations()` | legacy booking | `ReservationsRangeQueryDto` + filters | plain reservation array | none | Stable club-admin dashboard path, but still legacy booking-owned |
+| `SAFE` | `GET` | `/availability/rules/court/:courtId` | `AvailabilityController` | `AvailabilityService.listByCourt()` | legacy booking | none | plain rule array | none | Stable club-admin tooling surface; guard resolves club access from `courtId` |
+| `INTERNAL/ADMIN` | `GET` | `/payments/intents` | `PaymentsController` | `PaymentsService.listAdminIntents()` | payments admin | `AdminListPaymentIntentsDto` | plain list/object | none | Platform-admin only via `RolesGuard(UserRole.ADMIN)`; not a club-admin contract |
+
 ## Contract closure for ambiguous routes
 
 | Endpoint | Canonical source of truth | Should delegate to matches-v2? | Fallback logic if legacy data exists | Closure decision |
@@ -87,6 +103,21 @@ Date: 2026-03-12
 - `openapi.snapshot.json` is broadly aligned on route presence for the matches/challenges surface.
 - The main drift is semantic, not routing:
   - Snapshot does not encode bridge ownership or fallback predicates.
+  - Snapshot predates the new `/auth/identities` controller surface until the next explicit snapshot refresh.
   - `GET /matches` is documented in the snapshot with required `challengeId`, but the controller makes it optional and returns `[]` when omitted.
   - Several challenge coordination operations and ambiguous matches operations historically had empty response schemas; controller-level Swagger annotations should be treated as the source of truth once the snapshot is regenerated.
   - There is no `POST /matches/:id/report` route in controllers or snapshot; the implemented public report route is `POST /matches`.
+
+## Admin contract truth
+
+- `GET /reports/summary`, `GET /reports/occupancy`, `GET /reports/peak-hours`, and `GET /reports/revenue` are genuine club-admin/staff routes. They are not public-player routes, but they are valid frontend contracts for authenticated club tooling.
+- `GET /reservations/list` remains the canonical club-admin reservation dashboard path on the current frontend edge. It is legacy-owned, not deprecated away.
+- `GET /availability/rules/court/:courtId` is a stable club-admin tooling route, not an internal-only ops endpoint.
+- `GET /payments/intents` remains platform-admin only. Do not route club-admin frontend work through it.
+- No compatibility alias was added in this patch. Existing paths remain canonical for their current consumers.
+
+## Bridge transparency
+
+- `MatchesV2BridgeService` now emits explicit `mode=canonical` vs `mode=legacy` logs for `POST /matches`, `PATCH /matches/:id/confirm`, `PATCH /matches/:id/reject`, `POST /matches/:id/dispute`, and `POST /matches/:id/resolve`.
+- `ChallengesV2CoordinationBridgeService` already logged read ownership and now logs proposal/message write ownership the same way.
+- These logs are operational only. No response DTOs or public headers were changed.

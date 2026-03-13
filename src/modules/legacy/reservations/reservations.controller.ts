@@ -1,4 +1,10 @@
 import {
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
   BadRequestException,
   Body,
   Controller,
@@ -38,6 +44,7 @@ interface RequestWithUser extends Request {
   user: { email: string; userId: string; role: string };
 }
 
+@ApiTags('Reservations')
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly service: ReservationsService) {}
@@ -78,6 +85,23 @@ export class ReservationsController {
   // Replaces listByClub, listByCourt, and listByClubRange duplications
   @Get('list')
   @UseGuards(JwtAuthGuard, ClubAccessGuard)
+  @ApiOperation({
+    summary: 'List reservations for the club-admin dashboard',
+    description:
+      'Stable legacy booking-admin surface. Requires authenticated club access for the queried clubId.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+      },
+    },
+  })
+  @ApiForbiddenResponse({
+    description: 'Requires authenticated club-admin or staff access.',
+  })
   list(
     @Query('clubId') clubId: string, // Guard checks if user has access to this club
     @Query('courtId') courtId: string, // Optional filter

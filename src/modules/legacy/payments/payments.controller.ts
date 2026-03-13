@@ -1,4 +1,10 @@
 import {
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
   Body,
   Controller,
   Get,
@@ -39,6 +45,7 @@ type PaymentIntentPublicResponse = {
   receiptToken: string | null;
 };
 
+@ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
@@ -78,6 +85,9 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('intents')
+  @ApiOperation({
+    summary: 'Create a payment intent for the authenticated user',
+  })
   async createIntent(@Req() req: Request, @Body() dto: CreatePaymentIntentDto) {
     const user = req.user as AuthUser;
     const intent = await this.paymentsService.createIntent({
@@ -125,6 +135,9 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('intents/:id')
+  @ApiOperation({
+    summary: 'Get one payment intent owned by the authenticated user',
+  })
   async getIntent(@Req() req: Request, @Param('id') id: string) {
     const user = req.user as AuthUser;
     const intent = await this.paymentsService.getIntent({
@@ -137,12 +150,29 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get('intents')
+  @ApiOperation({
+    summary: 'List payment intents for platform admin backoffice',
+    description:
+      'This is not a club-admin surface. Access is restricted to platform admins through RolesGuard.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+    },
+  })
+  @ApiForbiddenResponse({
+    description: 'Only platform admins can access this list.',
+  })
   listIntents(@Query() query: AdminListPaymentIntentsDto) {
     return this.paymentsService.listAdminIntents(query);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('intents/by-reference')
+  @ApiOperation({
+    summary: 'Find the current user payment intents by reference',
+  })
   async findByReference(
     @Req() req: Request,
     @Query('referenceType') referenceType?: string,

@@ -23,7 +23,9 @@ import { ResendEmailSender } from './email/resend-email-sender';
 import { EMAIL_SENDER } from './email/email-sender';
 import { PasswordResetRateLimiter } from './guards/password-reset-rate-limiter';
 import { AuthPasswordController } from './controllers/auth-password.controller';
+import { AuthIdentitiesController } from './controllers/auth-identities.controller';
 import { isAppleOAuthEnabled } from './utils/apple-oauth.util';
+import { AuthIdentitiesService } from './services/auth-identities.service';
 
 const logger = new Logger('AuthModule');
 
@@ -73,9 +75,11 @@ export class AuthModule {
         AuthGoogleController,
         ...(appleEnabled ? [AuthAppleController] : []),
         AuthPasswordController,
+        AuthIdentitiesController,
       ],
       providers: [
         AuthService,
+        AuthIdentitiesService,
         RefreshTokenService,
         OAuthService,
         JwtStrategy,

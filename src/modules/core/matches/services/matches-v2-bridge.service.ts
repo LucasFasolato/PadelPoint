@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { League } from '../../leagues/entities/league.entity';
@@ -40,6 +40,8 @@ type LegacyPendingConfirmationsCursorPayload = {
 //   in matches-v2 yet.
 @Injectable()
 export class MatchesV2BridgeService {
+  private readonly logger = new Logger(MatchesV2BridgeService.name);
+
   constructor(
     private readonly matchQueryService: MatchQueryService,
     private readonly matchResultLifecycleService: MatchResultLifecycleService,
@@ -124,11 +126,15 @@ export class MatchesV2BridgeService {
   }
 
   async reportResult(userId: string, dto: ReportMatchDto) {
+    const startedAt = Date.now();
     const canonicalMatch = await this.resolveCanonicalMatchForLegacyChallenge(
       dto.challengeId,
     );
 
     if (this.shouldFallbackLegacyReportResult(canonicalMatch)) {
+      this.logger.log(
+        `matches.report completed challengeId=${dto.challengeId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.matchesService.reportMatch(userId, dto);
     }
 
@@ -143,14 +149,22 @@ export class MatchesV2BridgeService {
       },
     );
 
+    this.logger.log(
+      `matches.report completed challengeId=${dto.challengeId} actorUserId=${userId} mode=canonical matchId=${delegatedMatch.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.toLegacyMatchResultResponse(result);
   }
 
   async confirmResult(userId: string, legacyMatchResultId: string) {
+    const startedAt = Date.now();
     const canonicalMatch =
       await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
     if (this.shouldFallbackLegacyResultLifecycle(canonicalMatch)) {
+      this.logger.log(
+        `matches.confirm completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.matchesService.confirmMatch(userId, legacyMatchResultId);
     }
 
@@ -162,6 +176,10 @@ export class MatchesV2BridgeService {
       {},
     );
 
+    this.logger.log(
+      `matches.confirm completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=canonical matchId=${delegatedMatch.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.toLegacyMatchResultResponse(result);
   }
 
@@ -170,10 +188,14 @@ export class MatchesV2BridgeService {
     legacyMatchResultId: string,
     reason?: string,
   ) {
+    const startedAt = Date.now();
     const canonicalMatch =
       await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
     if (this.shouldFallbackLegacyResultLifecycle(canonicalMatch)) {
+      this.logger.log(
+        `matches.reject completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.matchesService.rejectMatch(
         userId,
         legacyMatchResultId,
@@ -192,6 +214,10 @@ export class MatchesV2BridgeService {
       },
     );
 
+    this.logger.log(
+      `matches.reject completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=canonical matchId=${delegatedMatch.id} durationMs=${Date.now() - startedAt}`,
+    );
+
     return this.toLegacyMatchResultResponse(result);
   }
 
@@ -200,13 +226,20 @@ export class MatchesV2BridgeService {
     legacyMatchResultId: string,
     dto: DisputeMatchDto,
   ) {
+    const startedAt = Date.now();
     const canonicalMatch =
       await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
     if (this.shouldFallbackLegacyOpenDispute(canonicalMatch, dto)) {
+      this.logger.log(
+        `matches.dispute completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
     }
 
+    this.logger.log(
+      `matches.dispute completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+    );
     return this.matchesService.disputeMatch(userId, legacyMatchResultId, dto);
   }
 
@@ -215,10 +248,14 @@ export class MatchesV2BridgeService {
     legacyMatchResultId: string,
     dto: ResolveDisputeDto,
   ) {
+    const startedAt = Date.now();
     const canonicalMatch =
       await this.resolveCanonicalMatchForLegacyResult(legacyMatchResultId);
 
     if (this.shouldFallbackLegacyResolveDispute(canonicalMatch, userId, dto)) {
+      this.logger.log(
+        `matches.resolve completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=legacy durationMs=${Date.now() - startedAt}`,
+      );
       return this.matchesService.resolveDispute(
         userId,
         legacyMatchResultId,
@@ -235,6 +272,10 @@ export class MatchesV2BridgeService {
         resolution: this.toCanonicalDisputeResolution(dto.resolution),
         message: this.normalizeOptionalText(dto.note),
       },
+    );
+
+    this.logger.log(
+      `matches.resolve completed legacyMatchResultId=${legacyMatchResultId} actorUserId=${userId} mode=canonical matchId=${delegatedMatch.id} durationMs=${Date.now() - startedAt}`,
     );
 
     return this.toLegacyResolveDisputeResponse(
